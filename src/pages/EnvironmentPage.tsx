@@ -3,9 +3,9 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityMark, StatusDot } from "../components/Status";
 import { formatBytes } from "../lib/format";
-import type { EnvironmentScan } from "../types";
+import type { EnvironmentScan, PageId } from "../types";
 
-export function EnvironmentPage({ data }: { data: EnvironmentScan }) {
+export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; onNavigate: (page: PageId) => void }) {
   const [copied, setCopied] = useState<string>();
   const copyText = async (id: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -37,7 +37,7 @@ export function EnvironmentPage({ data }: { data: EnvironmentScan }) {
         </section>
         <section className="panel environment-health">
           <div className="panel__header"><h2>健康报告</h2><span className="count-label">{data.healthIssues.length}</span></div>
-          <div className="health-list">{data.healthIssues.map((issue) => <div className="health-item" key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}</strong><p>{issue.description}</p>{issue.path ? <code>{issue.path}</code> : null}</div></div>)}{data.healthIssues.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
+          <div className="health-list">{data.healthIssues.map((issue) => { const destination = issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE" ? "dependencies" : issue.path ? "projects" : undefined; return <div className="health-item" key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}</strong><p>{issue.description}</p>{issue.path ? <code>{issue.path}</code> : null}{destination ? <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>查看相关{destination === "dependencies" ? "依赖" : "项目"}<Icon name="chevron" /></button> : null}</div></div>; })}{data.healthIssues.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
         </section>
         <section className="panel environment-logs">
           <div className="panel__header"><h2>扫描日志</h2><span className="quiet-label">最近 {data.logs.length} 条</span></div>

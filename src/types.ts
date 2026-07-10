@@ -49,7 +49,21 @@ export interface ProjectMetadata {
   runtimeRequirements: RuntimeRequirement[];
   packageManager?: string;
   dependencies: ProjectDependency[];
+  workspace?: ProjectWorkspaceRef;
   warnings: string[];
+}
+
+export interface ProjectWorkspaceRef {
+  name: string;
+  path: string;
+  ecosystem: string;
+}
+
+export interface ProjectWorkspace {
+  name: string;
+  path: string;
+  ecosystem: string;
+  memberPaths: string[];
 }
 
 export interface ProjectDependency {
@@ -74,11 +88,13 @@ export interface DependencyInsight {
   versionRequirements: string[];
   projects: DependencyProjectUsage[];
   hasVersionDivergence: boolean;
+  hasHealthRisk: boolean;
 }
 
 export interface ProjectAnalysis {
   projects: ProjectMetadata[];
   dependencyInsights: DependencyInsight[];
+  workspaces: ProjectWorkspace[];
 }
 
 export type HealthSeverity = "info" | "warning" | "error";
@@ -116,6 +132,7 @@ export interface EnvironmentScan {
   packages: ManagedPackage[];
   projects: ProjectMetadata[];
   dependencyInsights: DependencyInsight[];
+  workspaces: ProjectWorkspace[];
   scanRoots: string[];
   healthIssues: HealthIssue[];
   logs: TaskLog[];

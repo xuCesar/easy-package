@@ -21,7 +21,7 @@ describe("ProjectsPage", () => {
     const onAddRoot = vi.fn().mockResolvedValue(undefined);
     const onRemoveRoot = vi.fn().mockResolvedValue(undefined);
 
-    render(<ProjectsPage projects={[project]} scanRoots={[project.path]} onAddRoot={onAddRoot} onRemoveRoot={onRemoveRoot} onRefresh={vi.fn()} />);
+    render(<ProjectsPage projects={[project]} workspaces={[]} scanRoots={[project.path]} onAddRoot={onAddRoot} onRemoveRoot={onRemoveRoot} onRefresh={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加目录" }));
     await waitFor(() => expect(onAddRoot).toHaveBeenCalledWith("/Users/demo/Code/new-project"));
@@ -33,7 +33,7 @@ describe("ProjectsPage", () => {
   it("显示添加扫描目录失败原因", async () => {
     const onAddRoot = vi.fn().mockRejectedValue(new Error("目录不可读取"));
 
-    render(<ProjectsPage projects={[]} scanRoots={[]} onAddRoot={onAddRoot} onRemoveRoot={vi.fn()} onRefresh={vi.fn()} />);
+    render(<ProjectsPage projects={[]} workspaces={[]} scanRoots={[]} onAddRoot={onAddRoot} onRemoveRoot={vi.fn()} onRefresh={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加目录" }));
     expect(await screen.findByText("目录不可读取")).toBeInTheDocument();

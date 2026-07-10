@@ -13,6 +13,7 @@ export const mockProjects: ProjectMetadata[] = [
       { runtime: "Python", requirement: ">=3.12" },
     ],
     packageManager: "pnpm@11.5.3",
+    workspace: { name: "developer-tools", path: "~/Code", ecosystem: "JavaScript" },
     dependencies: [
       { ecosystem: "JavaScript", name: "react", normalizedName: "react", versionRequirement: "^19.0.0", scopes: ["运行"] },
       { ecosystem: "JavaScript", name: "vitest", normalizedName: "vitest", versionRequirement: "^3.2.0", scopes: ["开发"] },
@@ -30,6 +31,7 @@ export const mockProjects: ProjectMetadata[] = [
       { ecosystem: "Python", name: "httpx", normalizedName: "httpx", versionRequirement: ">=0.27", scopes: ["requirements.txt"] },
       { ecosystem: "Python", name: "pydantic", normalizedName: "pydantic", versionRequirement: ">=2.0", scopes: ["requirements.txt"] },
     ],
+    workspace: { name: "developer-tools", path: "~/Code", ecosystem: "JavaScript" },
     warnings: [],
   },
 ];
@@ -58,11 +60,12 @@ export const mockScan: EnvironmentScan = {
   ],
   projects: mockProjects,
   dependencyInsights: [
-    { ecosystem: "JavaScript", name: "react", projectCount: 1, versionRequirements: ["^19.0.0"], projects: [{ projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: "^19.0.0", scopes: ["运行"] }], hasVersionDivergence: false },
-    { ecosystem: "JavaScript", name: "vitest", projectCount: 1, versionRequirements: ["^3.2.0"], projects: [{ projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: "^3.2.0", scopes: ["开发"] }], hasVersionDivergence: false },
-    { ecosystem: "Python", name: "httpx", projectCount: 2, versionRequirements: [">=0.27", ">=0.28"], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=0.27", scopes: ["requirements.txt"] }, { projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: ">=0.28", scopes: ["运行"] }], hasVersionDivergence: true },
-    { ecosystem: "Python", name: "pydantic", projectCount: 1, versionRequirements: [">=2.0"], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=2.0", scopes: ["requirements.txt"] }], hasVersionDivergence: false },
+    { ecosystem: "JavaScript", name: "react", projectCount: 1, versionRequirements: ["^19.0.0"], projects: [{ projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: "^19.0.0", scopes: ["运行"] }], hasVersionDivergence: false, hasHealthRisk: false },
+    { ecosystem: "JavaScript", name: "vitest", projectCount: 1, versionRequirements: ["^3.2.0"], projects: [{ projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: "^3.2.0", scopes: ["开发"] }], hasVersionDivergence: false, hasHealthRisk: false },
+    { ecosystem: "Python", name: "httpx", projectCount: 2, versionRequirements: [">=0.27", ">=0.28"], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=0.27", scopes: ["requirements.txt"] }, { projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: ">=0.28", scopes: ["运行"] }], hasVersionDivergence: true, hasHealthRisk: true },
+    { ecosystem: "Python", name: "pydantic", projectCount: 1, versionRequirements: [">=2.0"], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=2.0", scopes: ["requirements.txt"] }], hasVersionDivergence: false, hasHealthRisk: false },
   ],
+  workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
   scanRoots: ["~/Code"],
   healthIssues: [
     { id: "updates", severity: "warning", code: "UPDATES_AVAILABLE", title: "3 个软件包可更新", description: "本版本仅展示更新状态，不会修改本机环境。" },

@@ -1,11 +1,11 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { mockScan } from "../mock-data";
 import { EnvironmentPage } from "./EnvironmentPage";
 
 describe("EnvironmentPage", () => {
   it("展示 PATH 冲突、健康提示和扫描日志", () => {
-    render(<EnvironmentPage data={mockScan} />);
+    render(<EnvironmentPage data={mockScan} onNavigate={() => undefined} />);
 
     expect(screen.getByRole("heading", { name: "PATH 解析" })).toBeInTheDocument();
     expect(screen.getAllByText("多个来源")).toHaveLength(3);
@@ -22,9 +22,18 @@ describe("EnvironmentPage", () => {
       error: { code: "VERSION_COMMAND_FAILED", message: "版本命令执行失败", output: "诊断输出" },
     };
 
-    render(<EnvironmentPage data={data} />);
+    render(<EnvironmentPage data={data} onNavigate={() => undefined} />);
 
     expect(screen.getByText("版本命令执行失败")).toBeInTheDocument();
     expect(screen.getByTitle("复制诊断输出")).toBeInTheDocument();
+  });
+
+  it("将带路径的健康项定位到项目页", () => {
+    const onNavigate = vi.fn();
+    const data = structuredClone(mockScan);
+    data.healthIssues = [{ id: "project-warning", severity: "warning", code: "PROJECT_CONFIGURATION_MISMATCH", title: "项目配置不一致", description: "请检查锁文件", path: "/tmp/project" }];
+    render(<EnvironmentPage data={data} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: "查看相关项目" }));
+    expect(onNavigate).toHaveBeenCalledWith("projects");
   });
 });

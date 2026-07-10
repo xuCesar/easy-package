@@ -25,9 +25,9 @@ export function App() {
         {notice ? <div className="inline-alert"><Icon name="info" /><span>{notice}</span></div> : null}
         {page === "overview" ? <OverviewPage data={data} isLoading={isLoading} scanProgress={scanProgress} onRefresh={() => void refresh()} onCancel={() => void cancelScan()} onNavigate={setPage} /> : null}
         {page === "packages" ? <PackagesPage packages={data.packages} /> : null}
-        {page === "projects" ? <ProjectsPage projects={data.projects} scanRoots={data.scanRoots} onAddRoot={addRoot} onRemoveRoot={removeRoot} onRefresh={() => void refresh()} /> : null}
+        {page === "projects" ? <ProjectsPage projects={data.projects} workspaces={data.workspaces} scanRoots={data.scanRoots} onAddRoot={addRoot} onRemoveRoot={removeRoot} onRefresh={() => void refresh()} /> : null}
         {page === "dependencies" ? <DependenciesPage insights={data.dependencyInsights} /> : null}
-        {page === "environment" ? <EnvironmentPage data={data} /> : null}
+        {page === "environment" ? <EnvironmentPage data={data} onNavigate={setPage} /> : null}
       </>
     );
   }

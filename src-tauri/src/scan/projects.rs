@@ -15,15 +15,17 @@ use crate::{
     error::AppError,
     models::{
         DependencyInsight, DependencyProjectUsage, LogCategory, LogStatus, ProjectAnalysis,
-        ProjectDependency, ProjectMetadata, RuntimeRequirement, TaskLog,
+        ProjectDependency, ProjectMetadata, ProjectWorkspace, ProjectWorkspaceRef,
+        RuntimeRequirement, TaskLog,
     },
 };
 
-const MARKERS: [&str; 11] = [
+const MARKERS: [&str; 12] = [
     "package.json",
     "pyproject.toml",
     "requirements.txt",
     "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
     "package-lock.json",
     "uv.lock",
     "yarn.lock",
@@ -38,6 +40,7 @@ const MAX_DEPTH: usize = 6;
 pub struct ProjectScan {
     pub projects: Vec<ProjectMetadata>,
     pub dependency_insights: Vec<DependencyInsight>,
+    pub workspaces: Vec<ProjectWorkspace>,
     pub logs: Vec<TaskLog>,
     pub failures: usize,
 }
@@ -89,10 +92,11 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
         }
     }
 
-    let projects = directories
+    let mut projects = directories
         .into_iter()
         .map(|(directory, markers)| parse_project(&directory, &markers))
         .collect::<Vec<_>>();
+    let workspaces = discover_workspaces(&mut projects);
     if !roots.is_empty() {
         logs.push(project_log(
             LogStatus::Success,
@@ -103,6 +107,7 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
     Ok(ProjectScan {
         projects,
         dependency_insights,
+        workspaces,
         logs,
         failures,
     })
@@ -116,6 +121,161 @@ pub fn analyze_projects(
     Ok(ProjectAnalysis {
         projects: scan.projects,
         dependency_insights: scan.dependency_insights,
+        workspaces: scan.workspaces,
+    })
+}
+
+fn discover_workspaces(projects: &mut [ProjectMetadata]) -> Vec<ProjectWorkspace> {
+    let candidates = projects
+        .iter()
+        .flat_map(|project| {
+            workspace_candidates(project)
+                .into_iter()
+                .map(move |candidate| (project.path.clone(), candidate))
+        })
+        .collect::<Vec<_>>();
+    let mut workspaces = Vec::new();
+
+    for (path, candidate) in candidates {
+        let members = projects
+            .iter()
+            .filter(|project| {
+                workspace_matches(&candidate, Path::new(&path), Path::new(&project.path))
+            })
+            .map(|project| project.path.clone())
+            .collect::<Vec<_>>();
+        if members.is_empty() {
+            continue;
+        }
+        let workspace = ProjectWorkspace {
+            name: candidate.name.clone(),
+            path: path.clone(),
+            ecosystem: candidate.ecosystem.clone(),
+            member_paths: members.clone(),
+        };
+        for project in projects
+            .iter_mut()
+            .filter(|project| members.contains(&project.path))
+        {
+            project.workspace = Some(ProjectWorkspaceRef {
+                name: workspace.name.clone(),
+                path: workspace.path.clone(),
+                ecosystem: workspace.ecosystem.clone(),
+            });
+        }
+        workspaces.push(workspace);
+    }
+    workspaces.sort_by(|left, right| left.path.cmp(&right.path));
+    workspaces
+}
+
+#[derive(Debug)]
+struct WorkspaceCandidate {
+    name: String,
+    ecosystem: String,
+    members: Vec<String>,
+}
+
+fn workspace_candidates(project: &ProjectMetadata) -> Vec<WorkspaceCandidate> {
+    let directory = Path::new(&project.path);
+    let mut candidates = Vec::new();
+    if project
+        .ecosystems
+        .iter()
+        .any(|ecosystem| ecosystem == "JavaScript")
+    {
+        if let Ok(source) = fs::read_to_string(directory.join("package.json")) {
+            if let Ok(value) = serde_json::from_str::<JsonValue>(&source) {
+                let members = match value.get("workspaces") {
+                    Some(JsonValue::Array(items)) => items
+                        .iter()
+                        .filter_map(JsonValue::as_str)
+                        .map(str::to_string)
+                        .collect(),
+                    Some(JsonValue::Object(value)) => value
+                        .get("packages")
+                        .and_then(JsonValue::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(JsonValue::as_str)
+                        .map(str::to_string)
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                if !members.is_empty() {
+                    candidates.push(WorkspaceCandidate {
+                        name: project.name.clone(),
+                        ecosystem: "JavaScript".into(),
+                        members,
+                    });
+                }
+            }
+        }
+        if !candidates
+            .iter()
+            .any(|candidate| candidate.ecosystem == "JavaScript")
+        {
+            if let Ok(source) = fs::read_to_string(directory.join("pnpm-workspace.yaml")) {
+                let members = source
+                    .lines()
+                    .map(str::trim)
+                    .filter_map(|line| line.strip_prefix('-'))
+                    .map(str::trim)
+                    .map(|line| line.trim_matches(['\'', '"']).to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>();
+                if !members.is_empty() {
+                    candidates.push(WorkspaceCandidate {
+                        name: project.name.clone(),
+                        ecosystem: "JavaScript".into(),
+                        members,
+                    });
+                }
+            }
+        }
+    }
+    if project
+        .ecosystems
+        .iter()
+        .any(|ecosystem| ecosystem == "Rust")
+    {
+        if let Ok(source) = fs::read_to_string(directory.join("Cargo.toml")) {
+            if let Ok(value) = source.parse::<TomlValue>() {
+                let members = value
+                    .get("workspace")
+                    .and_then(|workspace| workspace.get("members"))
+                    .and_then(TomlValue::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(TomlValue::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                if !members.is_empty() {
+                    candidates.push(WorkspaceCandidate {
+                        name: project.name.clone(),
+                        ecosystem: "Rust".into(),
+                        members,
+                    });
+                }
+            }
+        }
+    }
+    candidates
+}
+
+fn workspace_matches(candidate: &WorkspaceCandidate, root: &Path, project: &Path) -> bool {
+    let Ok(relative) = project.strip_prefix(root) else {
+        return false;
+    };
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    candidate.members.iter().any(|pattern| {
+        let normalized = pattern.trim_end_matches('/');
+        if let Some(prefix) = normalized.strip_suffix("/*") {
+            relative.starts_with(&format!("{prefix}/"))
+                && !relative[prefix.len() + 1..].contains('/')
+        } else {
+            relative == normalized
+        }
     })
 }
 
@@ -155,7 +315,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
     let mut warnings = Vec::new();
     let mut dependencies = Vec::new();
 
-    if markers.contains("package.json") {
+    if markers.contains("package.json") || markers.contains("pnpm-workspace.yaml") {
         ecosystems.push("JavaScript".into());
         if let Ok(value) = fs::read_to_string(directory.join("package.json")).and_then(|value| {
             serde_json::from_str::<JsonValue>(&value).map_err(std::io::Error::other)
@@ -177,6 +337,9 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
         }
         if package_manager.is_none() {
             package_manager = package_manager_from_locks(markers, &mut warnings);
+        }
+        if markers.contains("pnpm-workspace.yaml") && package_manager.is_none() {
+            package_manager = Some("pnpm workspace".into());
         }
     }
 
@@ -241,11 +404,31 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
     }
 
     if let Some(declared) = package_manager.as_deref() {
-        if declared.starts_with("pnpm") && markers.contains("package-lock.json") {
-            warnings.push("packageManager 声明 pnpm，但目录中存在 package-lock.json。".into());
-        }
-        if declared.starts_with("npm") && markers.contains("pnpm-lock.yaml") {
-            warnings.push("packageManager 声明 npm，但目录中存在 pnpm-lock.yaml。".into());
+        let expected_lock = [
+            ("pnpm", "pnpm-lock.yaml"),
+            ("npm", "package-lock.json"),
+            ("yarn", "yarn.lock"),
+            ("bun", "bun.lock"),
+        ]
+        .into_iter()
+        .find(|(manager, _)| declared.starts_with(manager));
+        let node_locks_present = [
+            "pnpm-lock.yaml",
+            "package-lock.json",
+            "yarn.lock",
+            "bun.lock",
+            "bun.lockb",
+        ]
+        .into_iter()
+        .any(|lock| markers.contains(lock));
+        if let Some((manager, lock)) = expected_lock {
+            let has_expected_lock =
+                markers.contains(lock) || (manager == "bun" && markers.contains("bun.lockb"));
+            if node_locks_present && !has_expected_lock {
+                warnings.push(format!(
+                    "packageManager 声明 {manager}，但目录中未发现对应的 {lock}。"
+                ));
+            }
         }
     }
     if markers.contains("pnpm-lock.yaml") && markers.contains("package-lock.json") {
@@ -269,6 +452,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
         runtime_requirements,
         package_manager,
         dependencies: merge_project_dependencies(dependencies, &mut warnings),
+        workspace: None,
         warnings,
     }
 }
@@ -510,6 +694,7 @@ fn dependency_insights(projects: &[ProjectMetadata]) -> Vec<DependencyInsight> {
                     version_requirements: Vec::new(),
                     projects: Vec::new(),
                     has_version_divergence: false,
+                    has_health_risk: false,
                 });
             entry.project_count += 1;
             if !entry
@@ -531,11 +716,24 @@ fn dependency_insights(projects: &[ProjectMetadata]) -> Vec<DependencyInsight> {
     for insight in insights.values_mut() {
         insight.version_requirements.sort();
         insight.has_version_divergence = insight.version_requirements.len() > 1;
+        insight.has_health_risk = insight.has_version_divergence
+            || insight
+                .version_requirements
+                .iter()
+                .any(|requirement| is_dependency_risk(requirement));
         insight
             .projects
             .sort_by(|left, right| left.project_name.cmp(&right.project_name));
     }
     insights.into_values().collect()
+}
+
+fn is_dependency_risk(requirement: &str) -> bool {
+    requirement == "未声明版本"
+        || requirement.starts_with("workspace:")
+        || requirement.starts_with("file:")
+        || requirement.starts_with("link:")
+        || requirement.starts_with("path:")
 }
 
 fn project_log(status: LogStatus, message: &str) -> TaskLog {
@@ -592,6 +790,25 @@ mod tests {
         fs::write(root.path().join("package-lock.json"), "{}").unwrap();
         let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
         assert_eq!(result.projects[0].warnings.len(), 1);
+    }
+
+    #[test]
+    fn reports_yarn_and_bun_lockfile_mismatches() {
+        let root = tempdir().unwrap();
+        let yarn = root.path().join("yarn-project");
+        let bun = root.path().join("bun-project");
+        fs::create_dir_all(&yarn).unwrap();
+        fs::create_dir_all(&bun).unwrap();
+        fs::write(yarn.join("package.json"), r#"{"packageManager":"yarn@4"}"#).unwrap();
+        fs::write(yarn.join("package-lock.json"), "{}").unwrap();
+        fs::write(bun.join("package.json"), r#"{"packageManager":"bun@1"}"#).unwrap();
+        fs::write(bun.join("yarn.lock"), "").unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        assert!(result.projects.iter().all(|project| project
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("未发现对应"))));
     }
 
     #[test]
@@ -708,5 +925,77 @@ mod tests {
             .unwrap();
         assert!(javascript.has_version_divergence);
         assert_eq!(javascript.project_count, 2);
+    }
+
+    #[test]
+    fn recognizes_javascript_and_rust_workspaces() {
+        let root = tempdir().unwrap();
+        let javascript_member = root.path().join("apps/web");
+        let rust_member = root.path().join("crates/cli");
+        fs::create_dir_all(&javascript_member).unwrap();
+        fs::create_dir_all(&rust_member).unwrap();
+        fs::write(
+            root.path().join("package.json"),
+            r#"{"name":"web-suite","workspaces":["apps/*"]}"#,
+        )
+        .unwrap();
+        fs::write(javascript_member.join("package.json"), r#"{"name":"web"}"#).unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            rust_member.join("Cargo.toml"),
+            "[package]\nname = \"cli\"\nversion = \"0.1.0\"",
+        )
+        .unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        assert_eq!(result.workspaces.len(), 2);
+        assert_eq!(
+            result
+                .projects
+                .iter()
+                .find(|project| project.name == "web")
+                .unwrap()
+                .workspace
+                .as_ref()
+                .unwrap()
+                .name,
+            "web-suite"
+        );
+        assert_eq!(
+            result
+                .projects
+                .iter()
+                .find(|project| project.name == "cli")
+                .unwrap()
+                .workspace
+                .as_ref()
+                .unwrap()
+                .ecosystem,
+            "Rust"
+        );
+    }
+
+    #[test]
+    fn recognizes_pnpm_workspace_file_without_root_package_manifest() {
+        let root = tempdir().unwrap();
+        let member = root.path().join("packages/ui");
+        fs::create_dir_all(&member).unwrap();
+        fs::write(
+            root.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - 'packages/*'\n",
+        )
+        .unwrap();
+        fs::write(member.join("package.json"), r#"{"name":"ui"}"#).unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        assert_eq!(result.workspaces.len(), 1);
+        assert_eq!(
+            result.workspaces[0].member_paths,
+            vec![member.to_string_lossy()]
+        );
     }
 }

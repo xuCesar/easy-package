@@ -93,6 +93,7 @@ pub fn scan_environment(
         &managers,
         &packages,
         &project_scan.projects,
+        &project_scan.workspaces,
         &path_observations,
     );
     logs.push(TaskLog {
@@ -120,6 +121,7 @@ pub fn scan_environment(
         packages,
         projects: project_scan.projects,
         dependency_insights: project_scan.dependency_insights,
+        workspaces: project_scan.workspaces,
         scan_roots,
         health_issues,
         logs,

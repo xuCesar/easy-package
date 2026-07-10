@@ -114,7 +114,26 @@ pub struct ProjectMetadata {
     pub package_manager: Option<String>,
     #[serde(default)]
     pub dependencies: Vec<ProjectDependency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<ProjectWorkspaceRef>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWorkspaceRef {
+    pub name: String,
+    pub path: String,
+    pub ecosystem: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWorkspace {
+    pub name: String,
+    pub path: String,
+    pub ecosystem: String,
+    pub member_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,6 +164,8 @@ pub struct DependencyInsight {
     pub version_requirements: Vec<String>,
     pub projects: Vec<DependencyProjectUsage>,
     pub has_version_divergence: bool,
+    #[serde(default)]
+    pub has_health_risk: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +173,7 @@ pub struct DependencyInsight {
 pub struct ProjectAnalysis {
     pub projects: Vec<ProjectMetadata>,
     pub dependency_insights: Vec<DependencyInsight>,
+    pub workspaces: Vec<ProjectWorkspace>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -228,6 +250,8 @@ pub struct EnvironmentScan {
     pub projects: Vec<ProjectMetadata>,
     #[serde(default)]
     pub dependency_insights: Vec<DependencyInsight>,
+    #[serde(default)]
+    pub workspaces: Vec<ProjectWorkspace>,
     pub scan_roots: Vec<String>,
     pub health_issues: Vec<HealthIssue>,
     pub logs: Vec<TaskLog>,

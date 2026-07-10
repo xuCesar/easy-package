@@ -115,6 +115,7 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .health-item strong { display: block; margin-bottom: 6px; font-size: 12px; }
 .health-item p { margin: 0; color: var(--text-2); font-size: 11px; line-height: 1.55; }
 .health-item code { display: block; margin-top: 7px; color: var(--text-3); word-break: break-all; }
+.health-item__link { margin-top: 9px; }
 .severity-mark { width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #5c9ff2; }
 .severity-mark--warning { background: var(--yellow); }
 .severity-mark--error { background: var(--red); }
@@ -160,6 +161,10 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .empty-state p { max-width: 390px; margin: 8px 20px 0; color: var(--text-3); font-size: 11px; line-height: 1.6; }
 
 .project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.project-groups { display: grid; gap: 28px; }
+.project-group__header { margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+.project-group__header h2 { margin: 0 0 5px; color: var(--text); font-size: 15px; }
+.project-group__header p { margin: 0; color: var(--text-3); font-size: 11px; }
 .scan-roots { min-height: 48px; margin-bottom: 16px; padding: 8px 10px 8px 15px; display: flex; align-items: center; gap: 10px; overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; color: var(--text-3); background: rgba(10, 23, 35, .78); font-size: 10px; }
 .scan-roots > span { flex-shrink: 0; text-transform: uppercase; letter-spacing: .06em; }
 .scan-roots > div { min-width: 0; display: flex; align-items: center; gap: 6px; padding-left: 10px; border-left: 1px solid var(--border-soft); }
@@ -171,6 +176,8 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .project-icon svg { width: 19px; }
 .project-card h2 { margin: 0 0 5px; font-size: 14px; }
 .project-card p { overflow: hidden; margin: 0; color: var(--text-3); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.project-card .workspace-label { width: fit-content; max-width: 100%; margin-top: 12px; padding: 4px 7px; border: 1px solid #2d506e; border-radius: 5px; color: #91c3ff; background: #0d2133; font-size: 9px; }
+.project-card .workspace-label--standalone { border-color: var(--border-soft); color: var(--text-3); background: transparent; }
 .project-card__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 17px 0; }
 .project-card__meta div { display: grid; gap: 6px; }
 .project-card__meta span { color: var(--text-3); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; }

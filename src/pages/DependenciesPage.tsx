@@ -12,11 +12,12 @@ export function DependenciesPage({ insights }: DependenciesPageProps) {
   const [query, setQuery] = useState("");
   const [ecosystem, setEcosystem] = useState("all");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
+  const [onlyRisky, setOnlyRisky] = useState(false);
   const ecosystems = useMemo(() => [...new Set(insights.map((insight) => insight.ecosystem))].sort(), [insights]);
   const filtered = useMemo(() => insights.filter((insight) => {
     const matchesQuery = insight.name.toLowerCase().includes(query.trim().toLowerCase());
-    return matchesQuery && (ecosystem === "all" || insight.ecosystem === ecosystem) && (!onlyDivergent || insight.hasVersionDivergence);
-  }), [ecosystem, insights, onlyDivergent, query]);
+    return matchesQuery && (ecosystem === "all" || insight.ecosystem === ecosystem) && (!onlyDivergent || insight.hasVersionDivergence) && (!onlyRisky || insight.hasHealthRisk);
+  }), [ecosystem, insights, onlyDivergent, onlyRisky, query]);
   const divergentCount = insights.filter((insight) => insight.hasVersionDivergence).length;
   const totalProjects = new Set(insights.flatMap((insight) => insight.projects.map((project) => project.projectPath))).size;
 
@@ -32,6 +33,7 @@ export function DependenciesPage({ insights }: DependenciesPageProps) {
         <label className="search-field"><Icon name="search" /><span className="sr-only">搜索依赖</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索依赖名称" /></label>
         <label className="select-field">生态<select aria-label="依赖生态" value={ecosystem} onChange={(event) => setEcosystem(event.target.value)}><option value="all">全部生态</option>{ecosystems.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label className="checkbox-field"><input type="checkbox" checked={onlyDivergent} onChange={(event) => setOnlyDivergent(event.target.checked)} />仅看版本分歧</label>
+        <label className="checkbox-field"><input type="checkbox" checked={onlyRisky} onChange={(event) => setOnlyRisky(event.target.checked)} />仅看健康风险</label>
         <span className="toolbar__count">{filtered.length} 个结果</span>
       </div>
       <section className="panel dependency-panel">
