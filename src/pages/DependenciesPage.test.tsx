@@ -4,8 +4,8 @@ import { DependenciesPage } from "./DependenciesPage";
 import type { DependencyInsight } from "../types";
 
 const insights: DependencyInsight[] = [
-  { ecosystem: "JavaScript", name: "react", projectCount: 2, versionRequirements: ["^18", "^19"], hasVersionDivergence: true, hasHealthRisk: true, projects: [{ projectName: "web", projectPath: "/tmp/web", versionRequirement: "^19", scopes: ["运行"] }, { projectName: "docs", projectPath: "/tmp/docs", versionRequirement: "^18", scopes: ["开发"] }] },
-  { ecosystem: "Python", name: "httpx", projectCount: 1, versionRequirements: [">=0.28"], hasVersionDivergence: false, hasHealthRisk: false, projects: [{ projectName: "api", projectPath: "/tmp/api", versionRequirement: ">=0.28", scopes: ["运行"] }] },
+  { ecosystem: "JavaScript", name: "react", projectCount: 2, versionRequirements: ["^18", "^19"], resolvedVersions: ["18.3.1", "19.1.1"], hasVersionDivergence: true, hasResolvedVersionDivergence: true, hasResolutionRisk: true, hasHealthRisk: true, projects: [{ projectName: "web", projectPath: "/tmp/web", versionRequirement: "^19", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "package-lock.json" }, { projectName: "docs", projectPath: "/tmp/docs", versionRequirement: "^18", scopes: ["开发"], resolvedVersion: "18.3.1", resolutionSource: "package-lock.json" }] },
+  { ecosystem: "Python", name: "httpx", projectCount: 1, versionRequirements: [">=0.28"], resolvedVersions: ["0.28.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "api", projectPath: "/tmp/api", versionRequirement: ">=0.28", scopes: ["运行"], resolvedVersion: "0.28.1", resolutionSource: "uv.lock" }] },
 ];
 
 afterEach(cleanup);
@@ -26,5 +26,7 @@ describe("DependenciesPage", () => {
     expect(screen.queryByText("httpx")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("仅看健康风险"));
     expect(screen.getByText("react")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("仅看解析异常"));
+    expect(screen.getByText("^18 → 18.3.1")).toBeInTheDocument();
   });
 });

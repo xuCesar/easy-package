@@ -22,6 +22,7 @@ function ProjectCard({ project }: { project: ProjectMetadata }) {
     {project.workspace ? <p className="workspace-label">{project.workspace.ecosystem} 工作区 · {project.workspace.name}</p> : <p className="workspace-label workspace-label--standalone">独立项目</p>}
     <div className="project-card__meta"><div><span>生态</span><strong>{project.ecosystems.join(" · ") || "未识别"}</strong></div><div><span>包管理器</span><strong>{project.packageManager ?? "未声明"}</strong></div></div>
     <div className="file-list">{project.lockFiles.length ? project.lockFiles.map((file) => <code key={file}>{file}</code>) : <span>未发现锁文件</span>}</div>
+    {project.dependencies.length ? <div className="project-resolution-list">{project.dependencies.map((dependency) => <span key={`${dependency.ecosystem}:${dependency.normalizedName}`}><b>{dependency.name}</b><code>{dependency.versionRequirement} → {dependency.resolvedVersion ?? "未解析"}</code><small>{dependency.resolutionSource ?? "未发现对应锁文件"}</small></span>)}</div> : null}
     {project.runtimeRequirements.length ? <div className="runtime-list">{project.runtimeRequirements.map((runtime) => <span key={`${runtime.runtime}-${runtime.requirement}`}><b>{runtime.runtime}</b> {runtime.requirement}</span>)}</div> : null}
     {project.warnings.map((warning) => <p className="project-warning" key={warning}><Icon name="warning" />{warning}</p>)}
   </article>;

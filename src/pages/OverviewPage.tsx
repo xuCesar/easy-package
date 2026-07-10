@@ -26,6 +26,7 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
   const cacheSize = data.managers.reduce((total, manager) => total + (manager.cacheSizeBytes ?? 0), 0);
   const divergentDependencies = data.dependencyInsights.filter((insight) => insight.hasVersionDivergence).length;
   const dependencyRisks = data.dependencyInsights.filter((insight) => insight.hasHealthRisk).length;
+  const resolutionRisks = data.dependencyInsights.filter((insight) => insight.hasResolutionRisk).length;
 
   return (
     <>
@@ -70,7 +71,7 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
         </section>
         <section className="panel panel--dependencies">
           <div className="panel__header"><h2>依赖洞察</h2><button className="text-button" onClick={() => onNavigate("dependencies")}>查看全部 <Icon name="chevron" /></button></div>
-          <div className="dependency-preview"><strong>{data.dependencyInsights.length}</strong><span>项直接依赖</span><p>{dependencyRisks ? `${dependencyRisks} 项依赖需要关注${divergentDependencies ? `，含 ${divergentDependencies} 项版本分歧` : ""}` : "未发现跨项目依赖风险"}</p></div>
+          <div className="dependency-preview"><strong>{data.dependencyInsights.length}</strong><span>项直接依赖</span><p>{resolutionRisks ? `${resolutionRisks} 项锁文件解析异常` : dependencyRisks ? `${dependencyRisks} 项依赖需要关注${divergentDependencies ? `，含 ${divergentDependencies} 项版本分歧` : ""}` : "未发现跨项目依赖风险"}</p></div>
         </section>
         <section className="panel panel--updates">
           <div className="panel__header"><h2>软件包状态</h2><button className="text-button" onClick={() => onNavigate("packages")}>查看全部 <Icon name="chevron" /></button></div>

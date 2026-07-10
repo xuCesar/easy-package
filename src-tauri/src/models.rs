@@ -144,6 +144,12 @@ pub struct ProjectDependency {
     pub normalized_name: String,
     pub version_requirement: String,
     pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_source: Option<String>,
+    #[serde(default)]
+    pub resolution_checked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +159,10 @@ pub struct DependencyProjectUsage {
     pub project_path: String,
     pub version_requirement: String,
     pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +174,12 @@ pub struct DependencyInsight {
     pub version_requirements: Vec<String>,
     pub projects: Vec<DependencyProjectUsage>,
     pub has_version_divergence: bool,
+    #[serde(default)]
+    pub resolved_versions: Vec<String>,
+    #[serde(default)]
+    pub has_resolved_version_divergence: bool,
+    #[serde(default)]
+    pub has_resolution_risk: bool,
     #[serde(default)]
     pub has_health_risk: bool,
 }
@@ -284,7 +300,7 @@ pub struct ScanProgress {
 mod tests {
     use serde_json::json;
 
-    use super::{EnvironmentScan, ProjectMetadata};
+    use super::{EnvironmentScan, ProjectDependency, ProjectMetadata};
 
     #[test]
     fn accepts_project_snapshots_without_dependencies() {
@@ -309,5 +325,16 @@ mod tests {
         }))
         .unwrap();
         assert!(scan.dependency_insights.is_empty());
+    }
+
+    #[test]
+    fn accepts_dependency_insights_without_resolution_fields() {
+        let dependency: ProjectDependency = serde_json::from_value(json!({
+            "ecosystem": "JavaScript", "name": "react", "normalizedName": "react",
+            "versionRequirement": "^19", "scopes": ["运行"]
+        }))
+        .unwrap();
+        assert!(dependency.resolved_version.is_none());
+        assert!(!dependency.resolution_checked);
     }
 }

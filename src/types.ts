@@ -72,6 +72,9 @@ export interface ProjectDependency {
   normalizedName: string;
   versionRequirement: string;
   scopes: string[];
+  resolvedVersion?: string;
+  resolutionSource?: string;
+  resolutionChecked: boolean;
 }
 
 export interface DependencyProjectUsage {
@@ -79,6 +82,8 @@ export interface DependencyProjectUsage {
   projectPath: string;
   versionRequirement: string;
   scopes: string[];
+  resolvedVersion?: string;
+  resolutionSource?: string;
 }
 
 export interface DependencyInsight {
@@ -86,8 +91,11 @@ export interface DependencyInsight {
   name: string;
   projectCount: number;
   versionRequirements: string[];
+  resolvedVersions: string[];
   projects: DependencyProjectUsage[];
   hasVersionDivergence: boolean;
+  hasResolvedVersionDivergence: boolean;
+  hasResolutionRisk: boolean;
   hasHealthRisk: boolean;
 }
 

@@ -74,6 +74,20 @@ pub fn build_health_report(
             });
         }
         for dependency in &project.dependencies {
+            if dependency.resolution_checked && dependency.resolved_version.is_none() {
+                issues.push(HealthIssue {
+                    id: format!(
+                        "dependency-unresolved-{}-{}",
+                        project.path, dependency.normalized_name
+                    ),
+                    severity: HealthSeverity::Warning,
+                    code: "DIRECT_DEPENDENCY_NOT_RESOLVED".into(),
+                    title: format!("{} 未在锁文件中解析 {}", project.name, dependency.name),
+                    description: "已找到对应锁文件，但没有匹配的直接依赖已解析版本。".into(),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                });
+            }
             if dependency.version_requirement == "未声明版本" {
                 issues.push(HealthIssue {
                     id: format!(
@@ -148,6 +162,39 @@ pub fn build_health_report(
         }
     }
 
+    let mut resolved_versions =
+        std::collections::BTreeMap::<(String, String), std::collections::BTreeSet<String>>::new();
+    for project in projects {
+        for dependency in &project.dependencies {
+            if let Some(version) = &dependency.resolved_version {
+                resolved_versions
+                    .entry((
+                        dependency.ecosystem.clone(),
+                        dependency.normalized_name.clone(),
+                    ))
+                    .or_default()
+                    .insert(version.clone());
+            }
+        }
+    }
+    for ((ecosystem, name), versions) in resolved_versions
+        .into_iter()
+        .filter(|(_, values)| values.len() > 1)
+    {
+        issues.push(HealthIssue {
+            id: format!("resolved-version-divergence-{ecosystem}-{name}"),
+            severity: HealthSeverity::Warning,
+            code: "RESOLVED_VERSION_DIVERGENCE".into(),
+            title: format!("{name} 的已解析版本存在分歧"),
+            description: format!(
+                "{ecosystem} 锁文件解析出多个版本：{}。",
+                versions.into_iter().collect::<Vec<_>>().join("、")
+            ),
+            manager_id: None,
+            path: None,
+        });
+    }
+
     for path in paths
         .iter()
         .filter(|path| path.has_conflict && matches!(path.command.as_str(), "node" | "python3"))
@@ -216,6 +263,9 @@ mod tests {
                     normalized_name: "shared".into(),
                     version_requirement: "^1".into(),
                     scopes: vec!["运行".into()],
+                    resolved_version: None,
+                    resolution_source: None,
+                    resolution_checked: false,
                 }],
                 workspace: None,
                 warnings: vec![],
@@ -233,6 +283,9 @@ mod tests {
                     normalized_name: "shared".into(),
                     version_requirement: "未声明版本".into(),
                     scopes: vec!["运行".into()],
+                    resolved_version: None,
+                    resolution_source: None,
+                    resolution_checked: false,
                 }],
                 workspace: None,
                 warnings: vec![],

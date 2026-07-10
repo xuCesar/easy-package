@@ -185,6 +185,11 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .file-list, .runtime-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .file-list code, .file-list span, .runtime-list span { padding: 5px 7px; border: 1px solid var(--border-soft); border-radius: 5px; color: var(--text-2); background: #09141f; font-size: 9px; }
 .runtime-list { margin-top: 9px; }
+.project-resolution-list { display: grid; gap: 5px; margin-top: 10px; }
+.project-resolution-list > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 6px 7px; border: 1px solid var(--border-soft); border-radius: 5px; background: #09141f; }
+.project-resolution-list b { overflow: hidden; color: var(--text-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.project-resolution-list code { color: #8fc5ff; font-size: 9px; }
+.project-resolution-list small { grid-column: 1 / -1; color: var(--text-3); font-size: 9px; }
 .runtime-list b { color: #75b4ff; }
 .project-warning { display: flex; align-items: center; gap: 6px; margin-top: 12px !important; color: #e7b957 !important; white-space: normal !important; }
 .project-warning svg { width: 13px; flex-shrink: 0; }

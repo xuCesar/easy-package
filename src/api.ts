@@ -20,16 +20,18 @@ const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
   for (const project of projects) {
     for (const dependency of project.dependencies) {
       const key = `${dependency.ecosystem}:${dependency.normalizedName}`;
-      const insight = insights.get(key) ?? { ecosystem: dependency.ecosystem, name: dependency.name, projectCount: 0, versionRequirements: [], projects: [], hasVersionDivergence: false, hasHealthRisk: false };
+      const insight = insights.get(key) ?? { ecosystem: dependency.ecosystem, name: dependency.name, projectCount: 0, versionRequirements: [], resolvedVersions: [], projects: [], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false };
       insight.projectCount += 1;
       if (!insight.versionRequirements.includes(dependency.versionRequirement)) insight.versionRequirements.push(dependency.versionRequirement);
-      insight.projects.push({ projectName: project.name, projectPath: project.path, versionRequirement: dependency.versionRequirement, scopes: dependency.scopes });
+      if (dependency.resolvedVersion && !insight.resolvedVersions.includes(dependency.resolvedVersion)) insight.resolvedVersions.push(dependency.resolvedVersion);
+      if (dependency.resolutionChecked && !dependency.resolvedVersion) insight.hasResolutionRisk = true;
+      insight.projects.push({ projectName: project.name, projectPath: project.path, versionRequirement: dependency.versionRequirement, scopes: dependency.scopes, resolvedVersion: dependency.resolvedVersion, resolutionSource: dependency.resolutionSource });
       insights.set(key, insight);
     }
   }
   return {
     projects,
-    dependencyInsights: [...insights.values()].map((insight) => ({ ...insight, versionRequirements: [...insight.versionRequirements].sort(), hasVersionDivergence: insight.versionRequirements.length > 1, hasHealthRisk: insight.versionRequirements.length > 1 || insight.versionRequirements.some((requirement) => requirement === "未声明版本" || requirement.startsWith("workspace:") || requirement.startsWith("file:")) })),
+    dependencyInsights: [...insights.values()].map((insight) => ({ ...insight, versionRequirements: [...insight.versionRequirements].sort(), resolvedVersions: [...insight.resolvedVersions].sort(), hasVersionDivergence: insight.versionRequirements.length > 1, hasResolvedVersionDivergence: insight.resolvedVersions.length > 1, hasHealthRisk: insight.versionRequirements.length > 1 || insight.resolvedVersions.length > 1 || insight.hasResolutionRisk || insight.versionRequirements.some((requirement) => requirement === "未声明版本" || requirement.startsWith("workspace:") || requirement.startsWith("file:")) })),
     workspaces: mockScan.workspaces.filter((workspace) => workspace.memberPaths.some((path) => projects.some((project) => project.path === path))),
   };
 };

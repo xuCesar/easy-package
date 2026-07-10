@@ -13,11 +13,12 @@ export function DependenciesPage({ insights }: DependenciesPageProps) {
   const [ecosystem, setEcosystem] = useState("all");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
   const [onlyRisky, setOnlyRisky] = useState(false);
+  const [onlyResolutionRisk, setOnlyResolutionRisk] = useState(false);
   const ecosystems = useMemo(() => [...new Set(insights.map((insight) => insight.ecosystem))].sort(), [insights]);
   const filtered = useMemo(() => insights.filter((insight) => {
     const matchesQuery = insight.name.toLowerCase().includes(query.trim().toLowerCase());
-    return matchesQuery && (ecosystem === "all" || insight.ecosystem === ecosystem) && (!onlyDivergent || insight.hasVersionDivergence) && (!onlyRisky || insight.hasHealthRisk);
-  }), [ecosystem, insights, onlyDivergent, onlyRisky, query]);
+    return matchesQuery && (ecosystem === "all" || insight.ecosystem === ecosystem) && (!onlyDivergent || insight.hasVersionDivergence) && (!onlyRisky || insight.hasHealthRisk) && (!onlyResolutionRisk || insight.hasResolutionRisk);
+  }), [ecosystem, insights, onlyDivergent, onlyResolutionRisk, onlyRisky, query]);
   const divergentCount = insights.filter((insight) => insight.hasVersionDivergence).length;
   const totalProjects = new Set(insights.flatMap((insight) => insight.projects.map((project) => project.projectPath))).size;
 
@@ -34,13 +35,14 @@ export function DependenciesPage({ insights }: DependenciesPageProps) {
         <label className="select-field">生态<select aria-label="依赖生态" value={ecosystem} onChange={(event) => setEcosystem(event.target.value)}><option value="all">全部生态</option>{ecosystems.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label className="checkbox-field"><input type="checkbox" checked={onlyDivergent} onChange={(event) => setOnlyDivergent(event.target.checked)} />仅看版本分歧</label>
         <label className="checkbox-field"><input type="checkbox" checked={onlyRisky} onChange={(event) => setOnlyRisky(event.target.checked)} />仅看健康风险</label>
+        <label className="checkbox-field"><input type="checkbox" checked={onlyResolutionRisk} onChange={(event) => setOnlyResolutionRisk(event.target.checked)} />仅看解析异常</label>
         <span className="toolbar__count">{filtered.length} 个结果</span>
       </div>
       <section className="panel dependency-panel">
         {filtered.length ? <div className="dependency-list">{filtered.map((insight) => (
           <article className="dependency-item" key={`${insight.ecosystem}:${insight.name}`}>
-            <div className="dependency-item__summary"><div><span className="manager-chip">{insight.ecosystem}</span><h2>{insight.name}</h2><p>{insight.projectCount} 个项目 · {insight.versionRequirements.join("、")}</p></div>{insight.hasVersionDivergence ? <span className="divergence-badge"><Icon name="warning" />版本分歧</span> : null}</div>
-            <div className="dependency-projects">{insight.projects.map((project) => <div key={project.projectPath}><strong>{project.projectName}</strong><code title={project.projectPath}>{project.projectPath}</code><span className="mono">{project.versionRequirement}</span><span>{project.scopes.join(" · ")}</span></div>)}</div>
+            <div className="dependency-item__summary"><div><span className="manager-chip">{insight.ecosystem}</span><h2>{insight.name}</h2><p>声明：{insight.versionRequirements.join("、")} · 已解析：{insight.resolvedVersions.join("、") || "未解析"}</p></div>{insight.hasVersionDivergence || insight.hasResolvedVersionDivergence || insight.hasResolutionRisk ? <span className="divergence-badge"><Icon name="warning" />{insight.hasResolutionRisk ? "解析异常" : "版本分歧"}</span> : null}</div>
+            <div className="dependency-projects">{insight.projects.map((project) => <div key={project.projectPath}><strong>{project.projectName}</strong><code title={project.projectPath}>{project.projectPath}</code><span className="mono">{project.versionRequirement} → {project.resolvedVersion ?? "未解析"}</span><span>{project.resolutionSource ?? project.scopes.join(" · ")}</span></div>)}</div>
           </article>
         ))}</div> : <EmptyState icon="dependencies" title="没有匹配的依赖" description="调整搜索条件，或先在“项目”中添加需要索引的目录。" />}
       </section>

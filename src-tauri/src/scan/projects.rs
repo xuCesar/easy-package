@@ -7,6 +7,7 @@ use std::{
 
 use chrono::Utc;
 use serde_json::Value as JsonValue;
+use serde_yaml::Value as YamlValue;
 use toml::Value as TomlValue;
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
@@ -435,6 +436,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
         warnings.push("同时发现 pnpm 与 npm 锁文件，请确认实际使用的包管理器。".into());
     }
 
+    let project_name = name.clone();
     ProjectMetadata {
         name,
         path: directory.to_string_lossy().into_owned(),
@@ -451,7 +453,11 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
             .collect(),
         runtime_requirements,
         package_manager,
-        dependencies: merge_project_dependencies(dependencies, &mut warnings),
+        dependencies: resolve_project_dependencies(
+            directory,
+            &project_name,
+            merge_project_dependencies(dependencies, &mut warnings),
+        ),
         workspace: None,
         warnings,
     }
@@ -636,7 +642,238 @@ fn project_dependency(
         normalized_name: normalize_dependency_name(ecosystem, name),
         version_requirement: version_requirement.into(),
         scopes: vec![scope.into()],
+        resolved_version: None,
+        resolution_source: None,
+        resolution_checked: false,
     }
+}
+
+fn resolve_project_dependencies(
+    directory: &Path,
+    project_name: &str,
+    mut dependencies: Vec<ProjectDependency>,
+) -> Vec<ProjectDependency> {
+    apply_resolutions(
+        &mut dependencies,
+        "JavaScript",
+        find_lock_file(directory, "package-lock.json")
+            .as_deref()
+            .map(resolve_npm_lock),
+        "package-lock.json",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "JavaScript",
+        find_lock_file(directory, "pnpm-lock.yaml")
+            .as_deref()
+            .map(|path| resolve_pnpm_lock(path, directory)),
+        "pnpm-lock.yaml",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Rust",
+        find_lock_file(directory, "Cargo.lock")
+            .as_deref()
+            .map(|path| resolve_cargo_lock(path, project_name)),
+        "Cargo.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Python",
+        find_lock_file(directory, "uv.lock")
+            .as_deref()
+            .map(|path| resolve_uv_lock(path, project_name)),
+        "uv.lock",
+    );
+    dependencies
+}
+
+fn apply_resolutions(
+    dependencies: &mut [ProjectDependency],
+    ecosystem: &str,
+    resolutions: Option<BTreeMap<String, String>>,
+    source: &str,
+) {
+    let Some(resolutions) = resolutions else {
+        return;
+    };
+    for dependency in dependencies
+        .iter_mut()
+        .filter(|dependency| dependency.ecosystem == ecosystem)
+    {
+        dependency.resolution_checked = true;
+        if dependency.resolved_version.is_none() {
+            if let Some(version) = resolutions.get(&dependency.normalized_name) {
+                dependency.resolved_version = Some(version.clone());
+                dependency.resolution_source = Some(source.into());
+            }
+        }
+    }
+}
+
+fn find_lock_file(directory: &Path, name: &str) -> Option<PathBuf> {
+    directory
+        .ancestors()
+        .map(|path| path.join(name))
+        .find(|path| path.is_file())
+}
+
+fn resolve_npm_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<JsonValue>(&source) else {
+        return BTreeMap::new();
+    };
+    value
+        .get("packages")
+        .and_then(JsonValue::as_object)
+        .map(|packages| {
+            packages
+                .iter()
+                .filter_map(|(key, package)| {
+                    let name = key.strip_prefix("node_modules/")?;
+                    let version = package.get("version")?.as_str()?;
+                    Some((
+                        normalize_dependency_name("JavaScript", name),
+                        version.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn resolve_pnpm_lock(path: &Path, project_directory: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_yaml::from_str::<YamlValue>(&source) else {
+        return BTreeMap::new();
+    };
+    let importer_key = path
+        .parent()
+        .and_then(|root| project_directory.strip_prefix(root).ok())
+        .map(|path| path.to_string_lossy().replace('\\', "/"));
+    let importers = value.get("importers").and_then(YamlValue::as_mapping);
+    let importer = importers.and_then(|items| {
+        items.get(YamlValue::String(".".into())).or_else(|| {
+            importer_key
+                .as_ref()
+                .and_then(|key| items.get(YamlValue::String(key.clone())))
+        })
+    });
+    let Some(importer) = importer else {
+        return BTreeMap::new();
+    };
+    ["dependencies", "devDependencies", "optionalDependencies"]
+        .into_iter()
+        .flat_map(|scope| {
+            importer
+                .get(scope)
+                .and_then(YamlValue::as_mapping)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|(name, declaration)| {
+            let version = declaration.as_str().map(str::to_string).or_else(|| {
+                declaration
+                    .get("version")
+                    .and_then(YamlValue::as_str)
+                    .map(str::to_string)
+            })?;
+            let version = version.split('(').next().unwrap_or(&version).to_string();
+            if version.starts_with("link:") || version.starts_with("workspace:") {
+                return None;
+            }
+            Some((
+                normalize_dependency_name("JavaScript", name.as_str()?),
+                version,
+            ))
+        })
+        .collect()
+}
+
+fn resolve_cargo_lock(path: &Path, project_name: &str) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = source.parse::<TomlValue>() else {
+        return BTreeMap::new();
+    };
+    let empty_packages = Vec::new();
+    let packages = value
+        .get("package")
+        .and_then(TomlValue::as_array)
+        .unwrap_or(&empty_packages);
+    let versions = packages
+        .iter()
+        .filter_map(|package| {
+            Some((
+                package.get("name")?.as_str()?,
+                package.get("version")?.as_str()?,
+            ))
+        })
+        .map(|(name, version)| (normalize_dependency_name("Rust", name), version.to_string()))
+        .collect::<BTreeMap<_, _>>();
+    let direct = packages
+        .iter()
+        .find(|package| package.get("name").and_then(TomlValue::as_str) == Some(project_name))
+        .and_then(|package| package.get("dependencies"))
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(TomlValue::as_str)
+        .filter_map(|entry| entry.split_whitespace().next())
+        .map(|name| normalize_dependency_name("Rust", name))
+        .collect::<BTreeSet<_>>();
+    direct
+        .into_iter()
+        .filter_map(|name| versions.get(&name).cloned().map(|version| (name, version)))
+        .collect()
+}
+
+fn resolve_uv_lock(path: &Path, project_name: &str) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = source.parse::<TomlValue>() else {
+        return BTreeMap::new();
+    };
+    let empty_packages = Vec::new();
+    let packages = value
+        .get("package")
+        .and_then(TomlValue::as_array)
+        .unwrap_or(&empty_packages);
+    let versions = packages
+        .iter()
+        .filter_map(|package| {
+            Some((
+                package.get("name")?.as_str()?,
+                package.get("version")?.as_str()?,
+            ))
+        })
+        .map(|(name, version)| {
+            (
+                normalize_dependency_name("Python", name),
+                version.to_string(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let direct = packages
+        .iter()
+        .find(|package| package.get("name").and_then(TomlValue::as_str) == Some(project_name))
+        .and_then(|package| package.get("dependencies"))
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|dependency| dependency.get("name").and_then(TomlValue::as_str))
+        .map(|name| normalize_dependency_name("Python", name))
+        .collect::<BTreeSet<_>>();
+    direct
+        .into_iter()
+        .filter_map(|name| versions.get(&name).cloned().map(|version| (name, version)))
+        .collect()
 }
 
 fn normalize_dependency_name(ecosystem: &str, name: &str) -> String {
@@ -692,8 +929,11 @@ fn dependency_insights(projects: &[ProjectMetadata]) -> Vec<DependencyInsight> {
                     name: dependency.name.clone(),
                     project_count: 0,
                     version_requirements: Vec::new(),
+                    resolved_versions: Vec::new(),
                     projects: Vec::new(),
                     has_version_divergence: false,
+                    has_resolved_version_divergence: false,
+                    has_resolution_risk: false,
                     has_health_risk: false,
                 });
             entry.project_count += 1;
@@ -710,13 +950,27 @@ fn dependency_insights(projects: &[ProjectMetadata]) -> Vec<DependencyInsight> {
                 project_path: project.path.clone(),
                 version_requirement: dependency.version_requirement.clone(),
                 scopes: dependency.scopes.clone(),
+                resolved_version: dependency.resolved_version.clone(),
+                resolution_source: dependency.resolution_source.clone(),
             });
+            if let Some(version) = &dependency.resolved_version {
+                if !entry.resolved_versions.contains(version) {
+                    entry.resolved_versions.push(version.clone());
+                }
+            }
+            if dependency.resolution_checked && dependency.resolved_version.is_none() {
+                entry.has_resolution_risk = true;
+            }
         }
     }
     for insight in insights.values_mut() {
         insight.version_requirements.sort();
+        insight.resolved_versions.sort();
         insight.has_version_divergence = insight.version_requirements.len() > 1;
+        insight.has_resolved_version_divergence = insight.resolved_versions.len() > 1;
         insight.has_health_risk = insight.has_version_divergence
+            || insight.has_resolved_version_divergence
+            || insight.has_resolution_risk
             || insight
                 .version_requirements
                 .iter()
@@ -996,6 +1250,112 @@ mod tests {
         assert_eq!(
             result.workspaces[0].member_paths,
             vec![member.to_string_lossy()]
+        );
+    }
+
+    #[test]
+    fn resolves_direct_dependencies_from_supported_lockfiles() {
+        let root = tempdir().unwrap();
+        let npm = root.path().join("npm");
+        let pnpm = root.path().join("pnpm");
+        let cargo = root.path().join("cargo");
+        let uv = root.path().join("uv");
+        for directory in [&npm, &pnpm, &cargo, &uv] {
+            fs::create_dir_all(directory).unwrap();
+        }
+        fs::write(
+            npm.join("package.json"),
+            r#"{"name":"npm-app","dependencies":{"react":"^19"}}"#,
+        )
+        .unwrap();
+        fs::write(npm.join("package-lock.json"), r#"{"lockfileVersion":3,"packages":{"":{"name":"npm-app","dependencies":{"react":"^19"}},"node_modules/react":{"version":"19.1.1"}}}"#).unwrap();
+        fs::write(
+            pnpm.join("package.json"),
+            r#"{"name":"pnpm-app","dependencies":{"zod":"^3"}}"#,
+        )
+        .unwrap();
+        fs::write(pnpm.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      zod:\n        version: 3.24.1\n").unwrap();
+        fs::write(
+            cargo.join("Cargo.toml"),
+            "[package]\nname = \"cargo-app\"\nversion = \"0.1.0\"\n[dependencies]\nserde = \"1\"\n",
+        )
+        .unwrap();
+        fs::write(cargo.join("Cargo.lock"), "[[package]]\nname = \"cargo-app\"\nversion = \"0.1.0\"\ndependencies = [\"serde 1.0.218\"]\n\n[[package]]\nname = \"serde\"\nversion = \"1.0.218\"\n").unwrap();
+        fs::write(
+            uv.join("pyproject.toml"),
+            "[project]\nname = \"uv-app\"\ndependencies = [\"httpx>=0.28\"]\n",
+        )
+        .unwrap();
+        fs::write(uv.join("uv.lock"), "[[package]]\nname = \"uv-app\"\nversion = \"0.1.0\"\ndependencies = [{ name = \"httpx\" }]\n\n[[package]]\nname = \"httpx\"\nversion = \"0.28.1\"\n").unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let expected = [
+            ("npm-app", "react", "19.1.1", "package-lock.json"),
+            ("pnpm-app", "zod", "3.24.1", "pnpm-lock.yaml"),
+            ("cargo-app", "serde", "1.0.218", "Cargo.lock"),
+            ("uv-app", "httpx", "0.28.1", "uv.lock"),
+        ];
+        for (project_name, dependency_name, version, source) in expected {
+            let dependency = result
+                .projects
+                .iter()
+                .find(|project| project.name == project_name)
+                .unwrap()
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == dependency_name)
+                .unwrap();
+            assert_eq!(dependency.resolved_version.as_deref(), Some(version));
+            assert_eq!(dependency.resolution_source.as_deref(), Some(source));
+        }
+    }
+
+    #[test]
+    fn resolves_pnpm_workspace_importer_and_reports_unresolved_dependencies() {
+        let root = tempdir().unwrap();
+        let member = root.path().join("packages/web");
+        fs::create_dir_all(&member).unwrap();
+        fs::write(
+            root.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - packages/*\n",
+        )
+        .unwrap();
+        fs::write(
+            member.join("package.json"),
+            r#"{"name":"web","dependencies":{"react":"^19","missing":"^1"}}"#,
+        )
+        .unwrap();
+        fs::write(root.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\nimporters:\n  packages/web:\n    dependencies:\n      react:\n        version: 19.1.1\n").unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let web = result
+            .projects
+            .iter()
+            .find(|project| project.name == "web")
+            .unwrap();
+        assert_eq!(
+            web.dependencies
+                .iter()
+                .find(|dependency| dependency.name == "react")
+                .unwrap()
+                .resolved_version
+                .as_deref(),
+            Some("19.1.1")
+        );
+        assert!(
+            web.dependencies
+                .iter()
+                .find(|dependency| dependency.name == "missing")
+                .unwrap()
+                .resolution_checked
+        );
+        assert!(
+            result
+                .dependency_insights
+                .iter()
+                .find(|insight| insight.name == "missing")
+                .unwrap()
+                .has_resolution_risk
         );
     }
 }
