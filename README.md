@@ -43,10 +43,21 @@ pnpm test
 pnpm build
 pnpm test:rust
 pnpm check
+pnpm build:desktop
 ```
 
 `pnpm check` 会依次执行前端测试、前端构建、Rust 单元测试与 Rust 格式检查。
-GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行同一质量门禁。
+`pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
+GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 依次执行质量门禁和原生二进制构建。
+
+## 桌面烟测
+
+原生构建或 `pnpm tauri dev` 成功，只证明应用可以构建和启动，不替代 GUI E2E 或真实使用验证。每次涉及扫描、依赖或界面改动时，在 1440px 窗口完成以下只读检查：
+
+1. 确认概览页显示扫描结果，并验证软件包筛选与空态。
+2. 在系统临时目录创建测试项目目录，添加后检查项目和依赖解析来源，再从扫描根目录移除。
+3. 验证环境页的健康项与诊断日志，并在扫描中执行一次取消操作。
+4. 删除临时测试目录，确认不会遗留扫描根目录或修改任何包管理器状态。
 
 ## 结构
 

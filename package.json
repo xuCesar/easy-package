@@ -10,6 +10,7 @@
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:watch": "vitest",
     "tauri": "tauri",
+    "build:desktop": "tauri build --no-bundle --ci",
     "check": "pnpm test && pnpm build && pnpm test:rust && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
   },
   "dependencies": {
