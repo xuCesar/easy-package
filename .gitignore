@@ -1,0 +1,10 @@
+node_modules
+.pnpm-store
+dist
+.vite
+coverage
+src-tauri/target
+src-tauri/gen
+*.log
+.DS_Store
+work/

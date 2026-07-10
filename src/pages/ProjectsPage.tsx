@@ -1,0 +1,51 @@
+import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { EmptyState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
+import { PageHeader } from "../components/PageHeader";
+import type { ProjectMetadata } from "../types";
+
+interface ProjectsPageProps {
+  projects: ProjectMetadata[];
+  scanRoots: string[];
+  onAddRoot: (path: string) => Promise<void>;
+  onRemoveRoot: (path: string) => Promise<void>;
+  onRefresh: () => void;
+}
+
+const inTauri = () => "__TAURI_INTERNALS__" in window;
+
+export function ProjectsPage({ projects, scanRoots, onAddRoot, onRemoveRoot, onRefresh }: ProjectsPageProps) {
+  const [isChoosing, setIsChoosing] = useState(false);
+  const [actionError, setActionError] = useState<string>();
+
+  const chooseRoot = async () => {
+    setIsChoosing(true);
+    setActionError(undefined);
+    try {
+      const path = inTauri() ? await open({ directory: true, multiple: false, title: "选择项目扫描目录" }) : "/Users/demo/Code/new-project";
+      if (typeof path === "string") await onAddRoot(path);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsChoosing(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader title="项目" description="仅扫描你明确选择的目录，并读取项目类型、锁文件与运行时声明。" actions={<><button className="button button--secondary" onClick={onRefresh}><Icon name="refresh" />重新扫描</button><button className="button button--primary" onClick={() => void chooseRoot()} disabled={isChoosing}><Icon name="folder" />{isChoosing ? "选择中…" : "添加目录"}</button></>} />
+      {actionError ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>{actionError}</span></div> : null}
+      {scanRoots.length ? <section className="scan-roots" aria-label="扫描目录"><span>扫描目录</span>{scanRoots.map((root) => <div key={root}><code>{root}</code><button className="icon-button icon-button--danger" onClick={() => void onRemoveRoot(root)} aria-label={`移除扫描目录 ${root}`}><Icon name="trash" /></button></div>)}</section> : null}
+      {projects.length ? <section className="project-grid">{projects.map((project) => (
+        <article className="project-card" key={project.path}>
+          <div className="project-card__head"><span className="project-icon"><Icon name="folder" /></span><div><h2>{project.name}</h2><p title={project.path}>{project.path}</p></div></div>
+          <div className="project-card__meta"><div><span>生态</span><strong>{project.ecosystems.join(" · ") || "未识别"}</strong></div><div><span>包管理器</span><strong>{project.packageManager ?? "未声明"}</strong></div></div>
+          <div className="file-list">{project.lockFiles.length ? project.lockFiles.map((file) => <code key={file}>{file}</code>) : <span>未发现锁文件</span>}</div>
+          {project.runtimeRequirements.length ? <div className="runtime-list">{project.runtimeRequirements.map((runtime) => <span key={`${runtime.runtime}-${runtime.requirement}`}><b>{runtime.runtime}</b> {runtime.requirement}</span>)}</div> : null}
+          {project.warnings.map((warning) => <p className="project-warning" key={warning}><Icon name="warning" />{warning}</p>)}
+        </article>
+      ))}</section> : <section className="panel"><EmptyState icon="folder" title="尚未添加项目目录" description="选择一个开发目录后，Easy Package 会识别其中的 JavaScript 与 Python 项目元数据。" /></section>}
+    </>
+  );
+}

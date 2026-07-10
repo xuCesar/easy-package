@@ -1,0 +1,62 @@
+import type { EnvironmentScan, ProjectMetadata } from "./types";
+
+const now = new Date().toISOString();
+
+export const mockProjects: ProjectMetadata[] = [
+  {
+    name: "easy-package",
+    path: "~/Code/easy-package",
+    ecosystems: ["JavaScript", "Python"],
+    lockFiles: ["pnpm-lock.yaml", "uv.lock"],
+    runtimeRequirements: [
+      { runtime: "Node.js", requirement: ">=22" },
+      { runtime: "Python", requirement: ">=3.12" },
+    ],
+    packageManager: "pnpm@11.5.3",
+    warnings: [],
+  },
+  {
+    name: "api-lab",
+    path: "~/Code/api-lab",
+    ecosystems: ["Python"],
+    lockFiles: ["requirements.txt"],
+    runtimeRequirements: [{ runtime: "Python", requirement: ">=3.11" }],
+    warnings: [],
+  },
+];
+
+export const mockScan: EnvironmentScan = {
+  managers: [
+    { id: "homebrew", displayName: "Homebrew", version: "4.6.15", executablePath: "/opt/homebrew/bin/brew", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 1_420_000_000, scannedAt: now },
+    { id: "npm", displayName: "npm", version: "11.5.1", executablePath: "/opt/homebrew/bin/npm", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 382_000_000, scannedAt: now },
+    { id: "pnpm", displayName: "pnpm", version: "11.5.3", executablePath: "~/.local/share/pnpm/pnpm", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 3_840_000_000, scannedAt: now },
+    { id: "uv", displayName: "uv", version: "0.8.13", executablePath: "~/.local/bin/uv", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 694_000_000, scannedAt: now },
+    { id: "pip", displayName: "pip", version: "25.2", executablePath: "/opt/homebrew/bin/pip3", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 121_000_000, scannedAt: now },
+  ],
+  packages: [
+    { id: "homebrew:git", managerId: "homebrew", name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system", updateStatus: "available" },
+    { id: "homebrew:ripgrep", managerId: "homebrew", name: "ripgrep", version: "14.1.1", latestVersion: "14.1.1", scope: "system", updateStatus: "upToDate" },
+    { id: "npm:typescript", managerId: "npm", name: "typescript", version: "5.8.3", latestVersion: "5.9.2", scope: "global", updateStatus: "available" },
+    { id: "pnpm:pnpm", managerId: "pnpm", name: "pnpm", version: "11.5.3", latestVersion: "11.5.3", scope: "global", updateStatus: "upToDate" },
+    { id: "uv:httpx", managerId: "uv", name: "httpx", version: "0.28.1", scope: "tool", updateStatus: "unknown" },
+    { id: "pip:black", managerId: "pip", name: "black", version: "24.10.0", latestVersion: "25.1.0", scope: "global", updateStatus: "available" },
+  ],
+  projects: mockProjects,
+  scanRoots: ["~/Code"],
+  healthIssues: [
+    { id: "updates", severity: "warning", code: "UPDATES_AVAILABLE", title: "3 个软件包可更新", description: "本版本仅展示更新状态，不会修改本机环境。" },
+    { id: "python-path", severity: "info", code: "PATH_CONFLICT", title: "发现多个 Python 路径", description: "当前优先使用 /opt/homebrew/bin/python3，请确认这符合预期。" },
+  ],
+  logs: [
+    { id: "scan-complete", category: "scan", status: "success", message: "环境扫描完成", timestamp: now },
+    { id: "uv-outdated", category: "manager", status: "info", message: "uv 当前仅支持已安装工具扫描", managerId: "uv", timestamp: now },
+  ],
+  pathObservations: [
+    { command: "node", activePath: "/opt/homebrew/bin/node", alternatives: ["~/.nvm/versions/node/v22.17.1/bin/node"], hasConflict: true },
+    { command: "python3", activePath: "/opt/homebrew/bin/python3", alternatives: ["/usr/bin/python3"], hasConflict: true },
+    { command: "npm", activePath: "/opt/homebrew/bin/npm", alternatives: [], hasConflict: false },
+    { command: "pip3", activePath: "/opt/homebrew/bin/pip3", alternatives: ["/usr/bin/pip3"], hasConflict: true },
+  ],
+  scannedAt: now,
+  partialFailures: 0,
+};
