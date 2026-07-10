@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell";
 import { Icon } from "./components/Icon";
 import { useDevPkg } from "./hooks/useDevPkg";
 import { EnvironmentPage } from "./pages/EnvironmentPage";
+import { DependenciesPage } from "./pages/DependenciesPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PackagesPage } from "./pages/PackagesPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -25,6 +26,7 @@ export function App() {
         {page === "overview" ? <OverviewPage data={data} isLoading={isLoading} scanProgress={scanProgress} onRefresh={() => void refresh()} onCancel={() => void cancelScan()} onNavigate={setPage} /> : null}
         {page === "packages" ? <PackagesPage packages={data.packages} /> : null}
         {page === "projects" ? <ProjectsPage projects={data.projects} scanRoots={data.scanRoots} onAddRoot={addRoot} onRemoveRoot={removeRoot} onRefresh={() => void refresh()} /> : null}
+        {page === "dependencies" ? <DependenciesPage insights={data.dependencyInsights} /> : null}
         {page === "environment" ? <EnvironmentPage data={data} /> : null}
       </>
     );

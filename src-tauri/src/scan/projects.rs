@@ -13,7 +13,10 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     error::AppError,
-    models::{LogCategory, LogStatus, ProjectMetadata, RuntimeRequirement, TaskLog},
+    models::{
+        DependencyInsight, DependencyProjectUsage, LogCategory, LogStatus, ProjectAnalysis,
+        ProjectDependency, ProjectMetadata, RuntimeRequirement, TaskLog,
+    },
 };
 
 const MARKERS: [&str; 11] = [
@@ -34,6 +37,7 @@ const MAX_DEPTH: usize = 6;
 #[derive(Debug)]
 pub struct ProjectScan {
     pub projects: Vec<ProjectMetadata>,
+    pub dependency_insights: Vec<DependencyInsight>,
     pub logs: Vec<TaskLog>,
     pub failures: usize,
 }
@@ -95,10 +99,23 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
             &format!("项目扫描完成，共识别 {} 个项目", projects.len()),
         ));
     }
+    let dependency_insights = dependency_insights(&projects);
     Ok(ProjectScan {
         projects,
+        dependency_insights,
         logs,
         failures,
+    })
+}
+
+pub fn analyze_projects(
+    roots: &[PathBuf],
+    cancelled: &AtomicBool,
+) -> Result<ProjectAnalysis, AppError> {
+    let scan = scan_projects(roots, cancelled)?;
+    Ok(ProjectAnalysis {
+        projects: scan.projects,
+        dependency_insights: scan.dependency_insights,
     })
 }
 
@@ -136,6 +153,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
     let mut runtime_requirements = Vec::new();
     let mut package_manager = None;
     let mut warnings = Vec::new();
+    let mut dependencies = Vec::new();
 
     if markers.contains("package.json") {
         ecosystems.push("JavaScript".into());
@@ -155,6 +173,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                     requirement: node.into(),
                 });
             }
+            collect_javascript_dependencies(&value, &mut dependencies, &mut warnings);
         }
         if package_manager.is_none() {
             package_manager = package_manager_from_locks(markers, &mut warnings);
@@ -185,6 +204,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                         requirement: requirement.into(),
                     });
                 }
+                collect_rust_dependencies(&value, &mut dependencies, &mut warnings);
             }
         }
     }
@@ -212,7 +232,11 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                         requirement: requirement.into(),
                     });
                 }
+                collect_python_project_dependencies(&value, &mut dependencies, &mut warnings);
             }
+        }
+        if let Ok(source) = fs::read_to_string(directory.join("requirements.txt")) {
+            collect_requirements_dependencies(&source, &mut dependencies);
         }
     }
 
@@ -244,6 +268,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
             .collect(),
         runtime_requirements,
         package_manager,
+        dependencies: merge_project_dependencies(dependencies, &mut warnings),
         warnings,
     }
 }
@@ -270,6 +295,247 @@ fn package_manager_from_locks(
     } else {
         found.into_iter().next().map(str::to_string)
     }
+}
+
+fn collect_javascript_dependencies(
+    value: &JsonValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    for (key, scope) in [
+        ("dependencies", "运行"),
+        ("devDependencies", "开发"),
+        ("optionalDependencies", "可选"),
+        ("peerDependencies", "Peer"),
+    ] {
+        let Some(items) = value.get(key).and_then(JsonValue::as_object) else {
+            continue;
+        };
+        for (name, requirement) in items {
+            let Some(requirement) = requirement.as_str() else {
+                warnings.push(format!("JavaScript 依赖 {name} 的版本声明无效。"));
+                continue;
+            };
+            dependencies.push(project_dependency("JavaScript", name, requirement, scope));
+        }
+    }
+}
+
+fn collect_python_project_dependencies(
+    value: &TomlValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    let Some(project) = value.get("project") else {
+        return;
+    };
+    if let Some(items) = project.get("dependencies").and_then(TomlValue::as_array) {
+        for item in items.iter().filter_map(TomlValue::as_str) {
+            push_python_requirement(item, "运行", dependencies, warnings);
+        }
+    }
+    if let Some(groups) = project
+        .get("optional-dependencies")
+        .and_then(TomlValue::as_table)
+    {
+        for (group, items) in groups {
+            for item in items
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(TomlValue::as_str)
+            {
+                push_python_requirement(item, &format!("可选:{group}"), dependencies, warnings);
+            }
+        }
+    }
+}
+
+fn collect_requirements_dependencies(source: &str, dependencies: &mut Vec<ProjectDependency>) {
+    for line in source.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() || line.starts_with('-') || line.contains("://") || line.starts_with('.')
+        {
+            continue;
+        }
+        let mut ignored_warnings = Vec::new();
+        push_python_requirement(
+            line,
+            "requirements.txt",
+            dependencies,
+            &mut ignored_warnings,
+        );
+    }
+}
+
+fn push_python_requirement(
+    source: &str,
+    scope: &str,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    let declaration = source.split(';').next().unwrap_or("").trim();
+    let name_end = declaration
+        .char_indices()
+        .find(|(_, character)| matches!(character, '<' | '>' | '=' | '!' | '~' | '@' | '[' | ' '))
+        .map(|(index, _)| index)
+        .unwrap_or(declaration.len());
+    let name = declaration[..name_end].trim();
+    if name.is_empty()
+        || !name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+    {
+        warnings.push(format!("Python 依赖声明无效：{source}"));
+        return;
+    }
+    let requirement = declaration[name_end..].trim();
+    if !requirement.is_empty()
+        && !matches!(
+            requirement.as_bytes().first(),
+            Some(b'<' | b'>' | b'=' | b'!' | b'~' | b'@' | b'[')
+        )
+    {
+        warnings.push(format!("Python 依赖声明无效：{source}"));
+        return;
+    }
+    dependencies.push(project_dependency(
+        "Python",
+        name,
+        if requirement.is_empty() {
+            "未声明版本"
+        } else {
+            requirement
+        },
+        scope,
+    ));
+}
+
+fn collect_rust_dependencies(
+    value: &TomlValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    for (key, scope) in [
+        ("dependencies", "运行"),
+        ("dev-dependencies", "开发"),
+        ("build-dependencies", "构建"),
+    ] {
+        let Some(items) = value.get(key).and_then(TomlValue::as_table) else {
+            continue;
+        };
+        for (name, declaration) in items {
+            let requirement = match declaration {
+                TomlValue::String(value) => Some(value.as_str()),
+                TomlValue::Table(value) => value.get("version").and_then(TomlValue::as_str),
+                _ => None,
+            };
+            match requirement {
+                Some(requirement) => {
+                    dependencies.push(project_dependency("Rust", name, requirement, scope))
+                }
+                None => warnings.push(format!("Rust 依赖 {name} 未声明可识别的版本。")),
+            }
+        }
+    }
+}
+
+fn project_dependency(
+    ecosystem: &str,
+    name: &str,
+    version_requirement: &str,
+    scope: &str,
+) -> ProjectDependency {
+    ProjectDependency {
+        ecosystem: ecosystem.into(),
+        name: name.into(),
+        normalized_name: normalize_dependency_name(ecosystem, name),
+        version_requirement: version_requirement.into(),
+        scopes: vec![scope.into()],
+    }
+}
+
+fn normalize_dependency_name(ecosystem: &str, name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    if ecosystem == "Python" {
+        lower.replace(['_', '.'], "-")
+    } else {
+        lower
+    }
+}
+
+fn merge_project_dependencies(
+    dependencies: Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) -> Vec<ProjectDependency> {
+    let mut merged = BTreeMap::<(String, String), ProjectDependency>::new();
+    for dependency in dependencies {
+        let key = (
+            dependency.ecosystem.clone(),
+            dependency.normalized_name.clone(),
+        );
+        if let Some(existing) = merged.get_mut(&key) {
+            if existing.version_requirement != dependency.version_requirement {
+                warnings.push(format!(
+                    "{} 依赖 {} 存在冲突版本声明：{} 与 {}。",
+                    dependency.ecosystem,
+                    dependency.name,
+                    existing.version_requirement,
+                    dependency.version_requirement
+                ));
+            }
+            existing.scopes.extend(dependency.scopes);
+            existing.scopes.sort();
+            existing.scopes.dedup();
+        } else {
+            merged.insert(key, dependency);
+        }
+    }
+    merged.into_values().collect()
+}
+
+fn dependency_insights(projects: &[ProjectMetadata]) -> Vec<DependencyInsight> {
+    let mut insights = BTreeMap::<(String, String), DependencyInsight>::new();
+    for project in projects {
+        for dependency in &project.dependencies {
+            let entry = insights
+                .entry((
+                    dependency.ecosystem.clone(),
+                    dependency.normalized_name.clone(),
+                ))
+                .or_insert_with(|| DependencyInsight {
+                    ecosystem: dependency.ecosystem.clone(),
+                    name: dependency.name.clone(),
+                    project_count: 0,
+                    version_requirements: Vec::new(),
+                    projects: Vec::new(),
+                    has_version_divergence: false,
+                });
+            entry.project_count += 1;
+            if !entry
+                .version_requirements
+                .contains(&dependency.version_requirement)
+            {
+                entry
+                    .version_requirements
+                    .push(dependency.version_requirement.clone());
+            }
+            entry.projects.push(DependencyProjectUsage {
+                project_name: project.name.clone(),
+                project_path: project.path.clone(),
+                version_requirement: dependency.version_requirement.clone(),
+                scopes: dependency.scopes.clone(),
+            });
+        }
+    }
+    for insight in insights.values_mut() {
+        insight.version_requirements.sort();
+        insight.has_version_divergence = insight.version_requirements.len() > 1;
+        insight
+            .projects
+            .sort_by(|left, right| left.project_name.cmp(&right.project_name));
+    }
+    insights.into_values().collect()
 }
 
 fn project_log(status: LogStatus, message: &str) -> TaskLog {
@@ -366,5 +632,81 @@ mod tests {
 
         assert!(result.projects[0].package_manager.is_none());
         assert_eq!(result.projects[0].warnings.len(), 1);
+    }
+
+    #[test]
+    fn indexes_direct_dependencies_across_ecosystems_and_scopes() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("package.json"),
+            r#"{"dependencies":{"react":"^19"},"devDependencies":{"react":"^19","vitest":"^3"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("pyproject.toml"),
+            "[project]\ndependencies = [\"HTTPX>=0.28\", \"invalid requirement!\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("requirements.txt"),
+            "pydantic>=2\n-r nested.txt\nhttps://example.com/a.whl\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[dependencies]\nserde = \"1\"\n[dev-dependencies]\nserde = { version = \"1\" }\n",
+        )
+        .unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let dependencies = &result.projects[0].dependencies;
+        let react = dependencies
+            .iter()
+            .find(|item| item.name == "react")
+            .unwrap();
+        assert_eq!(react.scopes, vec!["开发", "运行"]);
+        assert!(dependencies
+            .iter()
+            .any(|item| item.ecosystem == "Python" && item.normalized_name == "httpx"));
+        assert!(dependencies
+            .iter()
+            .any(|item| item.ecosystem == "Rust" && item.name == "serde"));
+        assert!(!dependencies
+            .iter()
+            .any(|item| item.name.contains("invalid")));
+    }
+
+    #[test]
+    fn keeps_same_name_isolated_by_ecosystem_and_detects_versions() {
+        let root = tempdir().unwrap();
+        let first = root.path().join("first");
+        let second = root.path().join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(
+            first.join("package.json"),
+            r#"{"dependencies":{"shared":"^1"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            first.join("pyproject.toml"),
+            "[project]\ndependencies = [\"shared>=2\"]",
+        )
+        .unwrap();
+        fs::write(
+            second.join("package.json"),
+            r#"{"dependencies":{"shared":"^2"}}"#,
+        )
+        .unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        assert_eq!(result.dependency_insights.len(), 2);
+        let javascript = result
+            .dependency_insights
+            .iter()
+            .find(|item| item.ecosystem == "JavaScript")
+            .unwrap();
+        assert!(javascript.has_version_divergence);
+        assert_eq!(javascript.project_count, 2);
     }
 }

@@ -1,6 +1,6 @@
 # Easy Package
 
-Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip，以及用户明确选择目录中的 JavaScript / Python / Rust 项目元数据。
+Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip，以及用户明确选择目录中的 JavaScript / Python / Rust 项目元数据与直接依赖洞察。
 
 ## 当前边界
 
@@ -11,6 +11,7 @@ Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri
 - 不提供安装、升级、卸载、清理或任意 Shell 执行接口。
 - Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
 - 项目扫描只读取 manifest、锁文件和运行时声明，不解析完整依赖树。
+- “依赖”页面仅索引 JavaScript、Python 与 Rust 的直接声明依赖；跨生态同名包不会合并，并会标记跨项目的版本范围分歧。
 - 扫描快照、扫描根目录和诊断日志只保存在本机 SQLite 中。
 
 ## 本地开发
@@ -44,7 +45,7 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行同一
 
 - `src/`：React 页面、组件、Tauri API 封装和前端测试。
 - `src-tauri/src/adapters/`：包管理器发现、命令执行与输出解析。
-- `src-tauri/src/scan/`：项目扫描、PATH 检查和健康规则。
+- `src-tauri/src/scan/`：项目扫描、直接依赖索引、PATH 检查和健康规则。
 - `src-tauri/src/storage.rs`：SQLite 快照、根目录和日志存储。
 - `src-tauri/src/commands.rs`：对前端开放的七个受控 Tauri command。
 

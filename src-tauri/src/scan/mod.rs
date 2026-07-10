@@ -13,14 +13,14 @@ use crate::{
     adapters,
     error::AppError,
     models::{
-        EnvironmentScan, LogCategory, LogStatus, PathObservation, ProjectMetadata, ScanPhase,
+        EnvironmentScan, LogCategory, LogStatus, PathObservation, ProjectAnalysis, ScanPhase,
         ScanProgress, TaskLog,
     },
     storage::Storage,
 };
 
 use crate::adapters::runner::find_all_in_path;
-pub use projects::scan_projects;
+pub use projects::analyze_projects;
 
 const SCAN_STEPS: usize = 10;
 
@@ -119,6 +119,7 @@ pub fn scan_environment(
         managers,
         packages,
         projects: project_scan.projects,
+        dependency_insights: project_scan.dependency_insights,
         scan_roots,
         health_issues,
         logs,
@@ -149,8 +150,8 @@ fn scan_paths() -> Vec<PathObservation> {
         .collect()
 }
 
-pub fn projects_for_roots(storage: &Storage) -> Result<Vec<ProjectMetadata>, AppError> {
-    Ok(scan_projects(&storage.list_scan_roots()?, &AtomicBool::new(false))?.projects)
+pub fn projects_for_roots(storage: &Storage) -> Result<ProjectAnalysis, AppError> {
+    analyze_projects(&storage.list_scan_roots()?, &AtomicBool::new(false))
 }
 
 #[cfg(test)]

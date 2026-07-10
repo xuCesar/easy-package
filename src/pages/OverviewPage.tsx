@@ -24,6 +24,7 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
   const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
   const outdated = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
   const cacheSize = data.managers.reduce((total, manager) => total + (manager.cacheSizeBytes ?? 0), 0);
+  const divergentDependencies = data.dependencyInsights.filter((insight) => insight.hasVersionDivergence).length;
 
   return (
     <>
@@ -65,6 +66,10 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
             {data.healthIssues.length === 0 ? <p className="quiet-message">未发现需要关注的问题。</p> : null}
           </div>
           <button className="text-button panel__link" onClick={() => onNavigate("environment")}>查看完整报告 <Icon name="chevron" /></button>
+        </section>
+        <section className="panel panel--dependencies">
+          <div className="panel__header"><h2>依赖洞察</h2><button className="text-button" onClick={() => onNavigate("dependencies")}>查看全部 <Icon name="chevron" /></button></div>
+          <div className="dependency-preview"><strong>{data.dependencyInsights.length}</strong><span>项直接依赖</span><p>{divergentDependencies ? `${divergentDependencies} 项存在版本分歧` : "未发现跨项目版本分歧"}</p></div>
         </section>
         <section className="panel panel--updates">
           <div className="panel__header"><h2>软件包状态</h2><button className="text-button" onClick={() => onNavigate("packages")}>查看全部 <Icon name="chevron" /></button></div>

@@ -59,13 +59,13 @@ export const useDevPkg = () => {
   }, [refresh]);
 
   const addRoot = useCallback(async (path: string) => {
-    const projects = await api.addScanRoot(path);
-    setState((current) => current.data ? { ...current, data: { ...current.data, projects, scanRoots: current.data.scanRoots.includes(path) ? current.data.scanRoots : [...current.data.scanRoots, path] } } : current);
+    const analysis = await api.addScanRoot(path);
+    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.includes(path) ? current.data.scanRoots : [...current.data.scanRoots, path] } } : current);
   }, []);
 
   const removeRoot = useCallback(async (path: string) => {
-    const projects = await api.removeScanRoot(path);
-    setState((current) => current.data ? { ...current, data: { ...current.data, projects, scanRoots: current.data.scanRoots.filter((root) => root !== path) } } : current);
+    const analysis = await api.removeScanRoot(path);
+    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.filter((root) => root !== path) } } : current);
   }, []);
 
   const cancelScan = useCallback(async () => {

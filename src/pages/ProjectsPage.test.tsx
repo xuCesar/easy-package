@@ -10,6 +10,7 @@ const project: ProjectMetadata = {
   lockFiles: ["pnpm-lock.yaml"],
   runtimeRequirements: [{ runtime: "Node.js", requirement: ">=22" }],
   packageManager: "pnpm@11",
+  dependencies: [],
   warnings: [],
 };
 

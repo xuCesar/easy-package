@@ -12,7 +12,8 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     error::AppError,
     models::{
-        EnvironmentScan, HealthIssue, ManagedPackage, ProjectMetadata, ScanProgress, TaskLog,
+        EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata,
+        ScanProgress, TaskLog,
     },
     scan,
     storage::Storage,
@@ -94,14 +95,14 @@ pub fn list_packages(storage: State<'_, Storage>) -> Result<Vec<ManagedPackage>,
 
 #[tauri::command]
 pub fn list_projects(storage: State<'_, Storage>) -> Result<Vec<ProjectMetadata>, AppError> {
-    scan::projects_for_roots(storage.inner())
+    Ok(scan::projects_for_roots(storage.inner())?.projects)
 }
 
 #[tauri::command]
 pub async fn add_scan_root(
     path: String,
     storage: State<'_, Storage>,
-) -> Result<Vec<ProjectMetadata>, AppError> {
+) -> Result<ProjectAnalysis, AppError> {
     let path = PathBuf::from(path);
     if !path.is_dir() {
         return Err(AppError::InvalidScanRoot(
@@ -124,7 +125,7 @@ pub async fn add_scan_root(
 pub async fn remove_scan_root(
     path: String,
     storage: State<'_, Storage>,
-) -> Result<Vec<ProjectMetadata>, AppError> {
+) -> Result<ProjectAnalysis, AppError> {
     let path = PathBuf::from(path);
     let normalized = if path.exists() {
         path.canonicalize().unwrap_or(path)

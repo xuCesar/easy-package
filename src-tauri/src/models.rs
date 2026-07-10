@@ -112,7 +112,46 @@ pub struct ProjectMetadata {
     pub runtime_requirements: Vec<RuntimeRequirement>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub package_manager: Option<String>,
+    #[serde(default)]
+    pub dependencies: Vec<ProjectDependency>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDependency {
+    pub ecosystem: String,
+    pub name: String,
+    pub normalized_name: String,
+    pub version_requirement: String,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyProjectUsage {
+    pub project_name: String,
+    pub project_path: String,
+    pub version_requirement: String,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyInsight {
+    pub ecosystem: String,
+    pub name: String,
+    pub project_count: usize,
+    pub version_requirements: Vec<String>,
+    pub projects: Vec<DependencyProjectUsage>,
+    pub has_version_divergence: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAnalysis {
+    pub projects: Vec<ProjectMetadata>,
+    pub dependency_insights: Vec<DependencyInsight>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -187,6 +226,8 @@ pub struct EnvironmentScan {
     pub managers: Vec<PackageManager>,
     pub packages: Vec<ManagedPackage>,
     pub projects: Vec<ProjectMetadata>,
+    #[serde(default)]
+    pub dependency_insights: Vec<DependencyInsight>,
     pub scan_roots: Vec<String>,
     pub health_issues: Vec<HealthIssue>,
     pub logs: Vec<TaskLog>,
@@ -213,4 +254,36 @@ pub struct ScanProgress {
     pub total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manager_id: Option<PackageManagerId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{EnvironmentScan, ProjectMetadata};
+
+    #[test]
+    fn accepts_project_snapshots_without_dependencies() {
+        let project: ProjectMetadata = serde_json::from_value(json!({
+            "name": "legacy",
+            "path": "/tmp/legacy",
+            "ecosystems": [],
+            "lockFiles": [],
+            "runtimeRequirements": [],
+            "warnings": []
+        }))
+        .unwrap();
+        assert!(project.dependencies.is_empty());
+    }
+
+    #[test]
+    fn accepts_environment_snapshots_without_dependency_insights() {
+        let scan: EnvironmentScan = serde_json::from_value(json!({
+            "managers": [], "packages": [], "projects": [], "scanRoots": [],
+            "healthIssues": [], "logs": [], "pathObservations": [],
+            "scannedAt": "2026-01-01T00:00:00Z", "partialFailures": 0
+        }))
+        .unwrap();
+        assert!(scan.dependency_insights.is_empty());
+    }
 }

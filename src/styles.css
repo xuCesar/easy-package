@@ -80,6 +80,11 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .panel__header { min-height: 55px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border-soft); }
 .panel__header h2 { margin: 0; font-size: 14px; font-weight: 670; letter-spacing: -.01em; }
 .panel--updates { grid-column: 1 / -1; }
+.panel--dependencies { grid-column: 1 / -1; }
+.dependency-preview { min-height: 108px; padding: 20px; display: grid; grid-template-columns: auto 1fr; align-content: center; column-gap: 10px; row-gap: 4px; }
+.dependency-preview strong { grid-row: span 2; color: #7db9ff; font-size: 32px; letter-spacing: -.04em; }
+.dependency-preview span { align-self: end; color: var(--text); font-size: 12px; font-weight: 650; }
+.dependency-preview p { grid-column: 1 / -1; margin: 8px 0 0; color: var(--text-3); font-size: 11px; }
 .count-label { min-width: 24px; height: 24px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: 999px; color: #ffbbbb; background: #562d34; font-size: 11px; font-weight: 700; }
 .quiet-label { color: var(--text-3); font-size: 11px; }
 .manager-list { display: grid; }
@@ -135,6 +140,8 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .select-field { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 7px 0 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-3); background: #0b1723; font-size: 10px; }
 .select-field select { border: 0; outline: 0; color: var(--text); background: transparent; font-size: 11px; }
 .toolbar__count { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.checkbox-field { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 11px; white-space: nowrap; }
+.checkbox-field input { accent-color: var(--accent); }
 .package-panel { min-height: 350px; }
 .table-wrap--full th, .table-wrap--full td { padding-left: 24px; padding-right: 24px; }
 .table-wrap--full td { height: 56px; }
@@ -174,6 +181,22 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .runtime-list b { color: #75b4ff; }
 .project-warning { display: flex; align-items: center; gap: 6px; margin-top: 12px !important; color: #e7b957 !important; white-space: normal !important; }
 .project-warning svg { width: 13px; flex-shrink: 0; }
+
+.dependency-metrics { grid-template-columns: repeat(3, 1fr); }
+.dependency-metrics .metric:last-child { border-right: 0; }
+.dependency-panel { min-height: 360px; }
+.dependency-list { display: grid; }
+.dependency-item { padding: 18px 20px; border-bottom: 1px solid var(--border-soft); }
+.dependency-item:last-child { border-bottom: 0; }
+.dependency-item__summary { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.dependency-item__summary h2 { display: inline; margin: 0 0 0 9px; color: var(--text); font-size: 14px; }
+.dependency-item__summary p { margin: 8px 0 0; color: var(--text-3); font-size: 10px; }
+.divergence-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 23px; padding: 0 8px; border: 1px solid #604f20; border-radius: 999px; color: #f3c65b; background: rgba(118, 86, 13, .13); font-size: 10px; white-space: nowrap; }
+.divergence-badge svg { width: 12px; }
+.dependency-projects { display: grid; gap: 6px; margin-top: 14px; }
+.dependency-projects > div { display: grid; grid-template-columns: minmax(100px, .8fr) minmax(160px, 1.5fr) minmax(90px, .7fr) minmax(90px, .7fr); gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 6px; background: #09141f; color: var(--text-2); font-size: 10px; }
+.dependency-projects strong { color: var(--text); font-size: 11px; }
+.dependency-projects code { overflow: hidden; color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
 
 .environment-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; }
 .environment-managers { display: grid; }
@@ -222,6 +245,7 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
   .metric:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
   .overview-grid, .environment-layout { grid-template-columns: 1fr; }
   .panel--updates { grid-column: auto; }
+  .panel--dependencies { grid-column: auto; }
 }
 
 @media (max-width: 720px) {

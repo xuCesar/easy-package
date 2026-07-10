@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectMetadata, ScanProgress, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
@@ -13,6 +13,24 @@ const cancelledMockScans = new Set<string>();
 
 const emitMockProgress = (progress: ScanProgress) => {
   mockProgressListeners.forEach((listener) => listener(progress));
+};
+
+const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
+  const insights = new Map<string, DependencyInsight>();
+  for (const project of projects) {
+    for (const dependency of project.dependencies) {
+      const key = `${dependency.ecosystem}:${dependency.normalizedName}`;
+      const insight = insights.get(key) ?? { ecosystem: dependency.ecosystem, name: dependency.name, projectCount: 0, versionRequirements: [], projects: [], hasVersionDivergence: false };
+      insight.projectCount += 1;
+      if (!insight.versionRequirements.includes(dependency.versionRequirement)) insight.versionRequirements.push(dependency.versionRequirement);
+      insight.projects.push({ projectName: project.name, projectPath: project.path, versionRequirement: dependency.versionRequirement, scopes: dependency.scopes });
+      insights.set(key, insight);
+    }
+  }
+  return {
+    projects,
+    dependencyInsights: [...insights.values()].map((insight) => ({ ...insight, versionRequirements: [...insight.versionRequirements].sort(), hasVersionDivergence: insight.versionRequirements.length > 1 })),
+  };
 };
 
 const mockApi: DevPkgApi = {
@@ -29,7 +47,7 @@ const mockApi: DevPkgApi = {
       });
     }
     emitMockProgress({ scanId, phase: "complete", completed: total, total });
-    return { ...mockScan, projects: browserProjects, scanRoots: browserScanRoots, scannedAt: new Date().toISOString() };
+    return { ...mockScan, ...analyzeMockProjects(browserProjects), scanRoots: browserScanRoots, scannedAt: new Date().toISOString() };
   },
   async cancelEnvironmentScan(scanId) {
     cancelledMockScans.add(scanId);
@@ -47,15 +65,15 @@ const mockApi: DevPkgApi = {
   async addScanRoot(path) {
     const name = path.split("/").filter(Boolean).at(-1) ?? "project";
     if (!browserProjects.some((project) => project.path === path)) {
-      browserProjects = [...browserProjects, { name, path, ecosystems: [], lockFiles: [], runtimeRequirements: [], warnings: ["浏览器预览模式未读取本机文件"] }];
+      browserProjects = [...browserProjects, { name, path, ecosystems: [], lockFiles: [], runtimeRequirements: [], dependencies: [], warnings: ["浏览器预览模式未读取本机文件"] }];
     }
     if (!browserScanRoots.includes(path)) browserScanRoots = [...browserScanRoots, path];
-    return browserProjects;
+    return analyzeMockProjects(browserProjects);
   },
   async removeScanRoot(path) {
     browserProjects = browserProjects.filter((project) => project.path !== path && !project.path.startsWith(`${path}/`));
     browserScanRoots = browserScanRoots.filter((root) => root !== path);
-    return browserProjects;
+    return analyzeMockProjects(browserProjects);
   },
   async getHealthReport() {
     return mockScan.healthIssues;
@@ -73,8 +91,8 @@ const tauriApi: DevPkgApi = {
   },
   listPackages: () => invoke<ManagedPackage[]>("list_packages"),
   listProjects: () => invoke<ProjectMetadata[]>("list_projects"),
-  addScanRoot: (path) => invoke<ProjectMetadata[]>("add_scan_root", { path }),
-  removeScanRoot: (path) => invoke<ProjectMetadata[]>("remove_scan_root", { path }),
+  addScanRoot: (path) => invoke<ProjectAnalysis>("add_scan_root", { path }),
+  removeScanRoot: (path) => invoke<ProjectAnalysis>("remove_scan_root", { path }),
   getHealthReport: () => invoke<HealthIssue[]>("get_health_report"),
   getScanLogs: () => invoke<TaskLog[]>("get_scan_logs"),
 };

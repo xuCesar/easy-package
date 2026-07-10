@@ -1,4 +1,4 @@
-export type PageId = "overview" | "packages" | "projects" | "environment";
+export type PageId = "overview" | "packages" | "projects" | "dependencies" | "environment";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo";
 
@@ -48,7 +48,37 @@ export interface ProjectMetadata {
   lockFiles: string[];
   runtimeRequirements: RuntimeRequirement[];
   packageManager?: string;
+  dependencies: ProjectDependency[];
   warnings: string[];
+}
+
+export interface ProjectDependency {
+  ecosystem: string;
+  name: string;
+  normalizedName: string;
+  versionRequirement: string;
+  scopes: string[];
+}
+
+export interface DependencyProjectUsage {
+  projectName: string;
+  projectPath: string;
+  versionRequirement: string;
+  scopes: string[];
+}
+
+export interface DependencyInsight {
+  ecosystem: string;
+  name: string;
+  projectCount: number;
+  versionRequirements: string[];
+  projects: DependencyProjectUsage[];
+  hasVersionDivergence: boolean;
+}
+
+export interface ProjectAnalysis {
+  projects: ProjectMetadata[];
+  dependencyInsights: DependencyInsight[];
 }
 
 export type HealthSeverity = "info" | "warning" | "error";
@@ -85,6 +115,7 @@ export interface EnvironmentScan {
   managers: PackageManager[];
   packages: ManagedPackage[];
   projects: ProjectMetadata[];
+  dependencyInsights: DependencyInsight[];
   scanRoots: string[];
   healthIssues: HealthIssue[];
   logs: TaskLog[];
@@ -109,8 +140,8 @@ export interface DevPkgApi {
   listenToScanProgress(listener: (progress: ScanProgress) => void): Promise<() => void>;
   listPackages(): Promise<ManagedPackage[]>;
   listProjects(): Promise<ProjectMetadata[]>;
-  addScanRoot(path: string): Promise<ProjectMetadata[]>;
-  removeScanRoot(path: string): Promise<ProjectMetadata[]>;
+  addScanRoot(path: string): Promise<ProjectAnalysis>;
+  removeScanRoot(path: string): Promise<ProjectAnalysis>;
   getHealthReport(): Promise<HealthIssue[]>;
   getScanLogs(): Promise<TaskLog[]>;
 }
