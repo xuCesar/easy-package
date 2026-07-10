@@ -34,6 +34,30 @@ export const mockProjects: ProjectMetadata[] = [
     workspace: { name: "developer-tools", path: "~/Code", ecosystem: "JavaScript" },
     warnings: [],
   },
+  {
+    name: "poetry-app",
+    path: "~/Code/poetry-app",
+    ecosystems: ["Python"],
+    lockFiles: ["poetry.lock"],
+    runtimeRequirements: [{ runtime: "Python", requirement: ">=3.12" }],
+    packageManager: "poetry",
+    dependencies: [
+      { ecosystem: "Python", name: "pytest", normalizedName: "pytest", versionRequirement: "^8", scopes: ["开发:dev"], resolvedVersion: "8.3.4", resolutionSource: "poetry.lock", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
+  {
+    name: "example.com/tool",
+    path: "~/Code/go-tool",
+    ecosystems: ["Go"],
+    lockFiles: ["go.mod", "go.sum"],
+    runtimeRequirements: [{ runtime: "Go", requirement: "1.23" }],
+    packageManager: "go",
+    dependencies: [
+      { ecosystem: "Go", name: "github.com/spf13/cobra", normalizedName: "github.com/spf13/cobra", versionRequirement: "v1.8.1", scopes: ["运行"], resolvedVersion: "v1.8.1", resolutionSource: "go.mod", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
 ];
 
 export const mockScan: EnvironmentScan = {
@@ -64,6 +88,8 @@ export const mockScan: EnvironmentScan = {
     { ecosystem: "JavaScript", name: "vitest", projectCount: 1, versionRequirements: ["^3.2.0"], resolvedVersions: ["3.2.4"], projects: [{ projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: "^3.2.0", scopes: ["开发"], resolvedVersion: "3.2.4", resolutionSource: "pnpm-lock.yaml" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
     { ecosystem: "Python", name: "httpx", projectCount: 2, versionRequirements: [">=0.27", ">=0.28"], resolvedVersions: ["0.28.1"], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=0.27", scopes: ["requirements.txt"] }, { projectName: "easy-package", projectPath: "~/Code/easy-package", versionRequirement: ">=0.28", scopes: ["运行"], resolvedVersion: "0.28.1", resolutionSource: "uv.lock" }], hasVersionDivergence: true, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: true },
     { ecosystem: "Python", name: "pydantic", projectCount: 1, versionRequirements: [">=2.0"], resolvedVersions: [], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=2.0", scopes: ["requirements.txt"] }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "Python", name: "pytest", projectCount: 1, versionRequirements: ["^8"], resolvedVersions: ["8.3.4"], projects: [{ projectName: "poetry-app", projectPath: "~/Code/poetry-app", versionRequirement: "^8", scopes: ["开发:dev"], resolvedVersion: "8.3.4", resolutionSource: "poetry.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "Go", name: "github.com/spf13/cobra", projectCount: 1, versionRequirements: ["v1.8.1"], resolvedVersions: ["v1.8.1"], projects: [{ projectName: "example.com/tool", projectPath: "~/Code/go-tool", versionRequirement: "v1.8.1", scopes: ["运行"], resolvedVersion: "v1.8.1", resolutionSource: "go.mod" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
   ],
   workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
   scanRoots: ["~/Code"],

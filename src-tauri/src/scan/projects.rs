@@ -21,10 +21,13 @@ use crate::{
     },
 };
 
-const MARKERS: [&str; 12] = [
+const MARKERS: [&str; 17] = [
     "package.json",
     "pyproject.toml",
     "requirements.txt",
+    "Pipfile",
+    "Pipfile.lock",
+    "poetry.lock",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "package-lock.json",
@@ -34,6 +37,8 @@ const MARKERS: [&str; 12] = [
     "bun.lockb",
     "Cargo.toml",
     "Cargo.lock",
+    "go.mod",
+    "go.sum",
 ];
 const MAX_DEPTH: usize = 6;
 
@@ -373,7 +378,12 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
         }
     }
 
-    if markers.contains("pyproject.toml") || markers.contains("requirements.txt") {
+    if markers.contains("pyproject.toml")
+        || markers.contains("requirements.txt")
+        || markers.contains("Pipfile")
+        || markers.contains("Pipfile.lock")
+        || markers.contains("poetry.lock")
+    {
         ecosystems.push("Python".into());
         if let Ok(source) = fs::read_to_string(directory.join("pyproject.toml")) {
             if let Ok(value) = source.parse::<TomlValue>() {
@@ -381,6 +391,14 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                     if let Some(project_name) = value
                         .get("project")
                         .and_then(|value| value.get("name"))
+                        .and_then(TomlValue::as_str)
+                    {
+                        name = project_name.into();
+                    }
+                    if let Some(project_name) = value
+                        .get("tool")
+                        .and_then(|tool| tool.get("poetry"))
+                        .and_then(|poetry| poetry.get("name"))
                         .and_then(TomlValue::as_str)
                     {
                         name = project_name.into();
@@ -397,10 +415,43 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                     });
                 }
                 collect_python_project_dependencies(&value, &mut dependencies, &mut warnings);
+                collect_poetry_dependencies(&value, &mut dependencies, &mut warnings);
             }
         }
         if let Ok(source) = fs::read_to_string(directory.join("requirements.txt")) {
             collect_requirements_dependencies(&source, &mut dependencies);
+        }
+        if let Ok(source) = fs::read_to_string(directory.join("Pipfile")) {
+            if let Ok(value) = source.parse::<TomlValue>() {
+                collect_pipenv_dependencies(&value, &mut dependencies, &mut warnings);
+                if package_manager.is_none() {
+                    package_manager = Some("pipenv".into());
+                }
+            }
+        }
+        if markers.contains("poetry.lock") && package_manager.is_none() {
+            package_manager = Some("poetry".into());
+        }
+    }
+
+    if markers.contains("go.mod") {
+        ecosystems.push("Go".into());
+        if let Ok(source) = fs::read_to_string(directory.join("go.mod")) {
+            let go_project = collect_go_dependencies(&source, &mut dependencies);
+            if !markers.contains("package.json") && !markers.contains("Cargo.toml") {
+                if let Some(module) = go_project.module_name {
+                    name = module;
+                }
+            }
+            if let Some(version) = go_project.go_version {
+                runtime_requirements.push(RuntimeRequirement {
+                    runtime: "Go".into(),
+                    requirement: version,
+                });
+            }
+        }
+        if package_manager.is_none() {
+            package_manager = Some("go".into());
         }
     }
 
@@ -446,7 +497,8 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
             .filter(|marker| {
                 marker.ends_with("lock.yaml")
                     || marker.ends_with("lock.json")
-                    || marker.as_str() == "uv.lock"
+                    || marker.ends_with(".lock")
+                    || matches!(marker.as_str(), "go.mod" | "go.sum")
                     || marker.as_str() == "requirements.txt"
             })
             .cloned()
@@ -539,6 +591,132 @@ fn collect_python_project_dependencies(
             }
         }
     }
+}
+
+fn collect_poetry_dependencies(
+    value: &TomlValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    let Some(poetry) = value.get("tool").and_then(|tool| tool.get("poetry")) else {
+        return;
+    };
+    if let Some(items) = poetry.get("dependencies").and_then(TomlValue::as_table) {
+        collect_toml_dependencies(
+            items,
+            "Python",
+            "运行",
+            dependencies,
+            warnings,
+            Some("python"),
+        );
+    }
+    if let Some(groups) = poetry.get("group").and_then(TomlValue::as_table) {
+        for (group, definition) in groups {
+            if let Some(items) = definition.get("dependencies").and_then(TomlValue::as_table) {
+                collect_toml_dependencies(
+                    items,
+                    "Python",
+                    &format!("开发:{group}"),
+                    dependencies,
+                    warnings,
+                    None,
+                );
+            }
+        }
+    }
+}
+
+fn collect_pipenv_dependencies(
+    value: &TomlValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    for (table, scope) in [("packages", "运行"), ("dev-packages", "开发")] {
+        if let Some(items) = value.get(table).and_then(TomlValue::as_table) {
+            collect_toml_dependencies(items, "Python", scope, dependencies, warnings, None);
+        }
+    }
+}
+
+fn collect_toml_dependencies(
+    items: &toml::map::Map<String, TomlValue>,
+    ecosystem: &str,
+    scope: &str,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+    ignored_name: Option<&str>,
+) {
+    for (name, declaration) in items {
+        if ignored_name.is_some_and(|ignored| name.eq_ignore_ascii_case(ignored)) {
+            continue;
+        }
+        let requirement = match declaration {
+            TomlValue::String(value) if value != "*" => Some(value.as_str()),
+            TomlValue::String(_) => Some("未声明版本"),
+            TomlValue::Table(value) => value
+                .get("version")
+                .and_then(TomlValue::as_str)
+                .filter(|value| *value != "*")
+                .or(Some("未声明版本")),
+            _ => None,
+        };
+        match requirement {
+            Some(requirement) => {
+                dependencies.push(project_dependency(ecosystem, name, requirement, scope))
+            }
+            None => warnings.push(format!("{ecosystem} 依赖 {name} 的版本声明无效。")),
+        }
+    }
+}
+
+#[derive(Default)]
+struct GoProjectMetadata {
+    module_name: Option<String>,
+    go_version: Option<String>,
+}
+
+fn collect_go_dependencies(
+    source: &str,
+    dependencies: &mut Vec<ProjectDependency>,
+) -> GoProjectMetadata {
+    let mut metadata = GoProjectMetadata::default();
+    let mut in_require_block = false;
+    for line in source.lines() {
+        if line.contains("// indirect") {
+            continue;
+        }
+        let line = line.split("//").next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(module) = line.strip_prefix("module ") {
+            metadata.module_name = Some(module.trim().into());
+            continue;
+        }
+        if let Some(version) = line.strip_prefix("go ") {
+            metadata.go_version = Some(version.trim().into());
+            continue;
+        }
+        if line == "require (" {
+            in_require_block = true;
+            continue;
+        }
+        if in_require_block && line == ")" {
+            in_require_block = false;
+            continue;
+        }
+        let declaration = line.strip_prefix("require ").unwrap_or(line);
+        if !in_require_block && !line.starts_with("require ") {
+            continue;
+        }
+        let mut parts = declaration.split_whitespace();
+        let (Some(name), Some(version)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        dependencies.push(project_dependency("Go", name, version, "运行"));
+    }
+    metadata
 }
 
 fn collect_requirements_dependencies(source: &str, dependencies: &mut Vec<ProjectDependency>) {
@@ -680,10 +858,34 @@ fn resolve_project_dependencies(
     apply_resolutions(
         &mut dependencies,
         "Python",
+        find_lock_file(directory, "poetry.lock")
+            .as_deref()
+            .map(resolve_poetry_lock),
+        "poetry.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Python",
+        find_lock_file(directory, "Pipfile.lock")
+            .as_deref()
+            .map(resolve_pipfile_lock),
+        "Pipfile.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Python",
         find_lock_file(directory, "uv.lock")
             .as_deref()
             .map(|path| resolve_uv_lock(path, project_name)),
         "uv.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Go",
+        find_lock_file(directory, "go.mod")
+            .as_deref()
+            .map(resolve_go_mod),
+        "go.mod",
     );
     dependencies
 }
@@ -873,6 +1075,74 @@ fn resolve_uv_lock(path: &Path, project_name: &str) -> BTreeMap<String, String> 
     direct
         .into_iter()
         .filter_map(|name| versions.get(&name).cloned().map(|version| (name, version)))
+        .collect()
+}
+
+fn resolve_poetry_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = source.parse::<TomlValue>() else {
+        return BTreeMap::new();
+    };
+    value
+        .get("package")
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|package| {
+            Some((
+                package.get("name")?.as_str()?,
+                package.get("version")?.as_str()?,
+            ))
+        })
+        .map(|(name, version)| {
+            (
+                normalize_dependency_name("Python", name),
+                version.to_string(),
+            )
+        })
+        .collect()
+}
+
+fn resolve_pipfile_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<JsonValue>(&source) else {
+        return BTreeMap::new();
+    };
+    ["default", "develop"]
+        .into_iter()
+        .flat_map(|scope| {
+            value
+                .get(scope)
+                .and_then(JsonValue::as_object)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|(name, declaration)| {
+            let version = declaration
+                .get("version")?
+                .as_str()?
+                .trim_start_matches("==");
+            Some((
+                normalize_dependency_name("Python", name),
+                version.to_string(),
+            ))
+        })
+        .collect()
+}
+
+fn resolve_go_mod(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let mut dependencies = Vec::new();
+    collect_go_dependencies(&source, &mut dependencies);
+    dependencies
+        .into_iter()
+        .map(|dependency| (dependency.normalized_name, dependency.version_requirement))
         .collect()
 }
 
@@ -1356,6 +1626,108 @@ mod tests {
                 .find(|insight| insight.name == "missing")
                 .unwrap()
                 .has_resolution_risk
+        );
+    }
+
+    #[test]
+    fn resolves_poetry_pipenv_and_go_project_dependencies() {
+        let root = tempdir().unwrap();
+        let poetry = root.path().join("poetry");
+        let pipenv = root.path().join("pipenv");
+        let go = root.path().join("go");
+        for directory in [&poetry, &pipenv, &go] {
+            fs::create_dir_all(directory).unwrap();
+        }
+        fs::write(
+            poetry.join("pyproject.toml"),
+            "[tool.poetry]\nname = \"poetry-app\"\n[tool.poetry.dependencies]\npython = \">=3.12\"\nhttpx = \"^0.28\"\n[tool.poetry.group.dev.dependencies]\npytest = \"^8\"\n",
+        )
+        .unwrap();
+        fs::write(
+            poetry.join("poetry.lock"),
+            "[[package]]\nname = \"httpx\"\nversion = \"0.28.1\"\n\n[[package]]\nname = \"pytest\"\nversion = \"8.3.4\"\n",
+        )
+        .unwrap();
+        fs::write(
+            pipenv.join("Pipfile"),
+            "[packages]\nrequests = \"==2.32.3\"\n[dev-packages]\nblack = \"*\"\n",
+        )
+        .unwrap();
+        fs::write(
+            pipenv.join("Pipfile.lock"),
+            r#"{"default":{"requests":{"version":"==2.32.3"}},"develop":{"black":{"version":"==24.10.0"}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            go.join("go.mod"),
+            "module example.com/tool\ngo 1.23\nrequire (\n  github.com/spf13/cobra v1.8.1\n  golang.org/x/text v0.20.0 // indirect\n)\n",
+        )
+        .unwrap();
+        fs::write(go.join("go.sum"), "").unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let poetry_project = result
+            .projects
+            .iter()
+            .find(|project| project.name == "poetry-app")
+            .unwrap();
+        assert_eq!(
+            poetry_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "httpx")
+                .unwrap()
+                .resolved_version
+                .as_deref(),
+            Some("0.28.1")
+        );
+        assert_eq!(
+            poetry_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "pytest")
+                .unwrap()
+                .scopes,
+            vec!["开发:dev"]
+        );
+        let pipenv_project = result
+            .projects
+            .iter()
+            .find(|project| project.path == pipenv.to_string_lossy())
+            .unwrap();
+        assert_eq!(
+            pipenv_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "black")
+                .unwrap()
+                .resolved_version
+                .as_deref(),
+            Some("24.10.0")
+        );
+        let go_project = result
+            .projects
+            .iter()
+            .find(|project| project.name == "example.com/tool")
+            .unwrap();
+        assert_eq!(
+            go_project
+                .runtime_requirements
+                .iter()
+                .find(|item| item.runtime == "Go")
+                .unwrap()
+                .requirement,
+            "1.23"
+        );
+        assert_eq!(
+            go_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "github.com/spf13/cobra")
+                .unwrap()
+                .resolution_source
+                .as_deref(),
+            Some("go.mod")
         );
     }
 }

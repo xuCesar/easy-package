@@ -1,6 +1,6 @@
 # Easy Package
 
-Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip，以及用户明确选择目录中的 JavaScript / Python / Rust 项目元数据与直接依赖洞察。
+Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip，以及用户明确选择目录中的 JavaScript / Python / Rust / Go 项目元数据与直接依赖洞察。
 
 ## 当前边界
 
@@ -13,6 +13,7 @@ Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri
 - 项目扫描只读取 manifest、锁文件和运行时声明，不解析完整依赖树。
 - “依赖”页面仅索引 JavaScript、Python 与 Rust 的直接声明依赖；跨生态同名包不会合并，并会标记跨项目的版本范围分歧。
 - 对 package-lock、pnpm-lock、Cargo.lock 与 uv.lock，应用会只读关联直接依赖的已解析版本；无法匹配时明确显示“未解析”，不推测版本。
+- 项目扫描支持 Poetry、Pipenv 与 Go modules；Poetry/Pipenv 分别读取其锁文件，Go 以 go.mod 的模块选择版本作为已解析版本来源，不执行模块下载。
 - 项目扫描会识别 JavaScript 与 Cargo 工作区，并提示工作区内版本分歧、未声明版本及本地依赖引用；不解析完整依赖树。
 - 扫描快照、扫描根目录和诊断日志只保存在本机 SQLite 中。
 
