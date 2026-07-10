@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-const MARKERS: [&str; 17] = [
+const MARKERS: [&str; 21] = [
     "package.json",
     "pyproject.toml",
     "requirements.txt",
@@ -39,6 +39,10 @@ const MARKERS: [&str; 17] = [
     "Cargo.lock",
     "go.mod",
     "go.sum",
+    "Gemfile",
+    "Gemfile.lock",
+    "composer.json",
+    "composer.lock",
 ];
 const MAX_DEPTH: usize = 6;
 
@@ -455,6 +459,48 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
         }
     }
 
+    if markers.contains("Gemfile") || markers.contains("Gemfile.lock") {
+        ecosystems.push("Ruby".into());
+        if let Ok(source) = fs::read_to_string(directory.join("Gemfile")) {
+            collect_ruby_dependencies(&source, &mut dependencies, &mut warnings);
+        }
+        if let Ok(version) = fs::read_to_string(directory.join(".ruby-version")) {
+            let version = version.trim();
+            if !version.is_empty() {
+                runtime_requirements.push(RuntimeRequirement {
+                    runtime: "Ruby".into(),
+                    requirement: version.into(),
+                });
+            }
+        }
+        if package_manager.is_none() {
+            package_manager = Some("bundler".into());
+        }
+    }
+
+    if markers.contains("composer.json") || markers.contains("composer.lock") {
+        ecosystems.push("PHP".into());
+        if let Ok(value) = fs::read_to_string(directory.join("composer.json")).and_then(|value| {
+            serde_json::from_str::<JsonValue>(&value).map_err(std::io::Error::other)
+        }) {
+            if !markers.contains("package.json") && !markers.contains("Cargo.toml") {
+                if let Some(project_name) = value.get("name").and_then(JsonValue::as_str) {
+                    name = project_name.into();
+                }
+            }
+            if let Some(requirement) = value.pointer("/require/php").and_then(JsonValue::as_str) {
+                runtime_requirements.push(RuntimeRequirement {
+                    runtime: "PHP".into(),
+                    requirement: requirement.into(),
+                });
+            }
+            collect_composer_dependencies(&value, &mut dependencies, &mut warnings);
+        }
+        if package_manager.is_none() {
+            package_manager = Some("composer".into());
+        }
+    }
+
     if let Some(declared) = package_manager.as_deref() {
         let expected_lock = [
             ("pnpm", "pnpm-lock.yaml"),
@@ -808,6 +854,87 @@ fn collect_rust_dependencies(
     }
 }
 
+fn collect_ruby_dependencies(
+    source: &str,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    for line in source.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let Some(declaration) = line.strip_prefix("gem") else {
+            continue;
+        };
+        if !declaration
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_whitespace() || character == '(')
+        {
+            continue;
+        }
+        let declaration = declaration
+            .trim_start()
+            .trim_start_matches('(')
+            .trim_start();
+        let Some((name, remainder)) = take_quoted_value(declaration) else {
+            warnings.push(format!("Ruby 依赖声明无效：{line}"));
+            continue;
+        };
+        let remainder = remainder.trim_start();
+        let requirement = remainder
+            .strip_prefix(',')
+            .and_then(|value| take_quoted_value(value.trim_start()).map(|(value, _)| value))
+            .unwrap_or("未声明版本");
+        let scope =
+            if remainder.contains("group: :development") || remainder.contains("group: :test") {
+                "开发"
+            } else {
+                "运行"
+            };
+        dependencies.push(project_dependency("Ruby", name, requirement, scope));
+    }
+}
+
+fn take_quoted_value(source: &str) -> Option<(&str, &str)> {
+    let quote = source.chars().next()?;
+    if !matches!(quote, '\'' | '"') {
+        return None;
+    }
+    let rest = &source[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    Some((&rest[..end], &rest[end + quote.len_utf8()..]))
+}
+
+fn collect_composer_dependencies(
+    value: &JsonValue,
+    dependencies: &mut Vec<ProjectDependency>,
+    warnings: &mut Vec<String>,
+) {
+    for (key, scope) in [("require", "运行"), ("require-dev", "开发")] {
+        let Some(items) = value.get(key).and_then(JsonValue::as_object) else {
+            continue;
+        };
+        for (name, declaration) in items {
+            if name == "php" || name.starts_with("ext-") || name.starts_with("lib-") {
+                continue;
+            }
+            let Some(requirement) = declaration.as_str() else {
+                warnings.push(format!("PHP 依赖 {name} 的版本声明无效。"));
+                continue;
+            };
+            dependencies.push(project_dependency(
+                "PHP",
+                name,
+                if requirement == "*" {
+                    "未声明版本"
+                } else {
+                    requirement
+                },
+                scope,
+            ));
+        }
+    }
+}
+
 fn project_dependency(
     ecosystem: &str,
     name: &str,
@@ -886,6 +1013,22 @@ fn resolve_project_dependencies(
             .as_deref()
             .map(resolve_go_mod),
         "go.mod",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "Ruby",
+        find_lock_file(directory, "Gemfile.lock")
+            .as_deref()
+            .map(resolve_gemfile_lock),
+        "Gemfile.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "PHP",
+        find_lock_file(directory, "composer.lock")
+            .as_deref()
+            .map(resolve_composer_lock),
+        "composer.lock",
     );
     dependencies
 }
@@ -1143,6 +1286,79 @@ fn resolve_go_mod(path: &Path) -> BTreeMap<String, String> {
     dependencies
         .into_iter()
         .map(|dependency| (dependency.normalized_name, dependency.version_requirement))
+        .collect()
+}
+
+fn resolve_gemfile_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let mut versions = BTreeMap::new();
+    let mut direct = BTreeSet::new();
+    let mut section = "";
+    let mut in_specs = false;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !line.starts_with(' ') && !trimmed.is_empty() {
+            section = trimmed;
+            in_specs = false;
+            continue;
+        }
+        if section == "GEM" && trimmed == "specs:" {
+            in_specs = true;
+            continue;
+        }
+        if section == "GEM" && in_specs && line.starts_with("    ") {
+            if let Some((name, version)) = parse_lockfile_package(trimmed) {
+                versions.insert(normalize_dependency_name("Ruby", name), version.into());
+            }
+        }
+        if section == "DEPENDENCIES" && line.starts_with("  ") {
+            if let Some(name) = trimmed.split_whitespace().next() {
+                direct.insert(normalize_dependency_name(
+                    "Ruby",
+                    name.trim_end_matches('!'),
+                ));
+            }
+        }
+    }
+
+    direct
+        .into_iter()
+        .filter_map(|name| versions.get(&name).cloned().map(|version| (name, version)))
+        .collect()
+}
+
+fn parse_lockfile_package(entry: &str) -> Option<(&str, &str)> {
+    let (name, version) = entry.split_once(" (")?;
+    Some((name, version.strip_suffix(')')?))
+}
+
+fn resolve_composer_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<JsonValue>(&source) else {
+        return BTreeMap::new();
+    };
+    ["packages", "packages-dev"]
+        .into_iter()
+        .flat_map(|key| {
+            value
+                .get(key)
+                .and_then(JsonValue::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|package| {
+            let name = package.get("name")?.as_str()?;
+            let version = package
+                .get("pretty_version")
+                .or_else(|| package.get("version"))
+                .and_then(JsonValue::as_str)?;
+            Some((normalize_dependency_name("PHP", name), version.into()))
+        })
         .collect()
 }
 
@@ -1728,6 +1944,116 @@ mod tests {
                 .resolution_source
                 .as_deref(),
             Some("go.mod")
+        );
+    }
+
+    #[test]
+    fn resolves_ruby_and_php_direct_dependencies_from_lockfiles() {
+        let root = tempdir().unwrap();
+        let ruby = root.path().join("ruby");
+        let php = root.path().join("php");
+        fs::create_dir_all(&ruby).unwrap();
+        fs::create_dir_all(&php).unwrap();
+        fs::write(
+            ruby.join("Gemfile"),
+            "gem \"rails\", \"~> 8.0\"\ngem \"rspec-rails\", \"~> 7.1\", group: :development\ngem \"missing-gem\", \"~> 1.0\"\n",
+        )
+        .unwrap();
+        fs::write(ruby.join(".ruby-version"), "3.4.1\n").unwrap();
+        fs::write(
+            ruby.join("Gemfile.lock"),
+            "GEM\n  specs:\n    rails (8.0.1)\n    rspec-rails (7.1.1)\n\nDEPENDENCIES\n  rails (~> 8.0)\n  rspec-rails (~> 7.1)\n",
+        )
+        .unwrap();
+        fs::write(
+            php.join("composer.json"),
+            r#"{"name":"acme/api","require":{"php":"^8.3","symfony/http-foundation":"^7.2","ext-json":"*"},"require-dev":{"phpunit/phpunit":"^11.5","lib-icu":"*"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            php.join("composer.lock"),
+            r#"{"packages":[{"name":"symfony/http-foundation","version":"v7.2.1"}],"packages-dev":[{"name":"phpunit/phpunit","version":"11.5.3"}]}"#,
+        )
+        .unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let ruby_project = result
+            .projects
+            .iter()
+            .find(|project| project.path == ruby.to_string_lossy())
+            .unwrap();
+        assert_eq!(ruby_project.package_manager.as_deref(), Some("bundler"));
+        assert_eq!(
+            ruby_project
+                .runtime_requirements
+                .iter()
+                .find(|item| item.runtime == "Ruby")
+                .unwrap()
+                .requirement,
+            "3.4.1"
+        );
+        assert_eq!(
+            ruby_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "rails")
+                .unwrap()
+                .resolved_version
+                .as_deref(),
+            Some("8.0.1")
+        );
+        assert_eq!(
+            ruby_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "rspec-rails")
+                .unwrap()
+                .scopes,
+            vec!["开发"]
+        );
+        assert!(
+            ruby_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "missing-gem")
+                .unwrap()
+                .resolution_checked
+        );
+
+        let php_project = result
+            .projects
+            .iter()
+            .find(|project| project.name == "acme/api")
+            .unwrap();
+        assert_eq!(php_project.package_manager.as_deref(), Some("composer"));
+        assert_eq!(
+            php_project
+                .runtime_requirements
+                .iter()
+                .find(|item| item.runtime == "PHP")
+                .unwrap()
+                .requirement,
+            "^8.3"
+        );
+        assert_eq!(php_project.dependencies.len(), 2);
+        assert_eq!(
+            php_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "symfony/http-foundation")
+                .unwrap()
+                .resolution_source
+                .as_deref(),
+            Some("composer.lock")
+        );
+        assert_eq!(
+            php_project
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == "phpunit/phpunit")
+                .unwrap()
+                .scopes,
+            vec!["开发"]
         );
     }
 }

@@ -58,6 +58,32 @@ export const mockProjects: ProjectMetadata[] = [
     ],
     warnings: [],
   },
+  {
+    name: "rails-service",
+    path: "~/Code/rails-service",
+    ecosystems: ["Ruby"],
+    lockFiles: ["Gemfile.lock"],
+    runtimeRequirements: [{ runtime: "Ruby", requirement: "3.4.1" }],
+    packageManager: "bundler",
+    dependencies: [
+      { ecosystem: "Ruby", name: "rails", normalizedName: "rails", versionRequirement: "~> 8.0", scopes: ["运行"], resolvedVersion: "8.0.1", resolutionSource: "Gemfile.lock", resolutionChecked: true },
+      { ecosystem: "Ruby", name: "rspec-rails", normalizedName: "rspec-rails", versionRequirement: "~> 7.1", scopes: ["开发"], resolvedVersion: "7.1.1", resolutionSource: "Gemfile.lock", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
+  {
+    name: "acme/api",
+    path: "~/Code/php-api",
+    ecosystems: ["PHP"],
+    lockFiles: ["composer.lock"],
+    runtimeRequirements: [{ runtime: "PHP", requirement: "^8.3" }],
+    packageManager: "composer",
+    dependencies: [
+      { ecosystem: "PHP", name: "symfony/http-foundation", normalizedName: "symfony/http-foundation", versionRequirement: "^7.2", scopes: ["运行"], resolvedVersion: "v7.2.1", resolutionSource: "composer.lock", resolutionChecked: true },
+      { ecosystem: "PHP", name: "phpunit/phpunit", normalizedName: "phpunit/phpunit", versionRequirement: "^11.5", scopes: ["开发"], resolvedVersion: "11.5.3", resolutionSource: "composer.lock", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
 ];
 
 export const mockScan: EnvironmentScan = {
@@ -94,6 +120,10 @@ export const mockScan: EnvironmentScan = {
     { ecosystem: "Python", name: "pydantic", projectCount: 1, versionRequirements: [">=2.0"], resolvedVersions: [], projects: [{ projectName: "api-lab", projectPath: "~/Code/api-lab", versionRequirement: ">=2.0", scopes: ["requirements.txt"] }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
     { ecosystem: "Python", name: "pytest", projectCount: 1, versionRequirements: ["^8"], resolvedVersions: ["8.3.4"], projects: [{ projectName: "poetry-app", projectPath: "~/Code/poetry-app", versionRequirement: "^8", scopes: ["开发:dev"], resolvedVersion: "8.3.4", resolutionSource: "poetry.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
     { ecosystem: "Go", name: "github.com/spf13/cobra", projectCount: 1, versionRequirements: ["v1.8.1"], resolvedVersions: ["v1.8.1"], projects: [{ projectName: "example.com/tool", projectPath: "~/Code/go-tool", versionRequirement: "v1.8.1", scopes: ["运行"], resolvedVersion: "v1.8.1", resolutionSource: "go.mod" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "Ruby", name: "rails", projectCount: 1, versionRequirements: ["~> 8.0"], resolvedVersions: ["8.0.1"], projects: [{ projectName: "rails-service", projectPath: "~/Code/rails-service", versionRequirement: "~> 8.0", scopes: ["运行"], resolvedVersion: "8.0.1", resolutionSource: "Gemfile.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "Ruby", name: "rspec-rails", projectCount: 1, versionRequirements: ["~> 7.1"], resolvedVersions: ["7.1.1"], projects: [{ projectName: "rails-service", projectPath: "~/Code/rails-service", versionRequirement: "~> 7.1", scopes: ["开发"], resolvedVersion: "7.1.1", resolutionSource: "Gemfile.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "PHP", name: "symfony/http-foundation", projectCount: 1, versionRequirements: ["^7.2"], resolvedVersions: ["v7.2.1"], projects: [{ projectName: "acme/api", projectPath: "~/Code/php-api", versionRequirement: "^7.2", scopes: ["运行"], resolvedVersion: "v7.2.1", resolutionSource: "composer.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "PHP", name: "phpunit/phpunit", projectCount: 1, versionRequirements: ["^11.5"], resolvedVersions: ["11.5.3"], projects: [{ projectName: "acme/api", projectPath: "~/Code/php-api", versionRequirement: "^11.5", scopes: ["开发"], resolvedVersion: "11.5.3", resolutionSource: "composer.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
   ],
   workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
   scanRoots: ["~/Code"],

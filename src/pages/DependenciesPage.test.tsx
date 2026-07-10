@@ -30,10 +30,12 @@ describe("DependenciesPage", () => {
     expect(screen.getByText("^18 → 18.3.1")).toBeInTheDocument();
   });
 
-  it("展示 Go 与 Poetry 锁文件解析来源", () => {
+  it("展示 Go、Ruby、PHP 与 Poetry 锁文件解析来源", () => {
     const ecosystemInsights: DependencyInsight[] = [
       { ecosystem: "Go", name: "github.com/spf13/cobra", projectCount: 1, versionRequirements: ["v1.8.1"], resolvedVersions: ["v1.8.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "tool", projectPath: "/tmp/tool", versionRequirement: "v1.8.1", scopes: ["运行"], resolvedVersion: "v1.8.1", resolutionSource: "go.mod" }] },
       { ecosystem: "Python", name: "pytest", projectCount: 1, versionRequirements: ["^8"], resolvedVersions: ["8.3.4"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "poetry", projectPath: "/tmp/poetry", versionRequirement: "^8", scopes: ["开发:dev"], resolvedVersion: "8.3.4", resolutionSource: "poetry.lock" }] },
+      { ecosystem: "Ruby", name: "rails", projectCount: 1, versionRequirements: ["~> 8.0"], resolvedVersions: ["8.0.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "rails", projectPath: "/tmp/rails", versionRequirement: "~> 8.0", scopes: ["运行"], resolvedVersion: "8.0.1", resolutionSource: "Gemfile.lock" }] },
+      { ecosystem: "PHP", name: "symfony/http-foundation", projectCount: 1, versionRequirements: ["^7.2"], resolvedVersions: ["v7.2.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "api", projectPath: "/tmp/api", versionRequirement: "^7.2", scopes: ["运行"], resolvedVersion: "v7.2.1", resolutionSource: "composer.lock" }] },
     ];
     render(<DependenciesPage insights={ecosystemInsights} />);
     fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "Go" } });
@@ -41,5 +43,9 @@ describe("DependenciesPage", () => {
     expect(screen.getByText("go.mod")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "Python" } });
     expect(screen.getByText("poetry.lock")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "Ruby" } });
+    expect(screen.getByText("Gemfile.lock")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "PHP" } });
+    expect(screen.getByText("composer.lock")).toBeInTheDocument();
   });
 });
