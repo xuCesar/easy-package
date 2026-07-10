@@ -77,6 +77,51 @@ pub fn parse_cargo_packages(output: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn parse_rubygems_packages(output: &str) -> Vec<(String, String)> {
+    let mut packages = output
+        .lines()
+        .filter_map(|line| {
+            let (name, versions) = line.trim().split_once(" (")?;
+            let versions = versions.strip_suffix(')')?;
+            Some(
+                versions
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|version| !version.is_empty())
+                    .map(|version| (name.to_string(), version.to_string()))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+    packages.sort();
+    packages
+}
+
+pub fn parse_composer_packages(output: &str) -> Vec<(String, String)> {
+    let Ok(value) = serde_json::from_str::<Value>(output) else {
+        return Vec::new();
+    };
+    let packages = value
+        .get("packages")
+        .and_then(Value::as_array)
+        .or_else(|| value.as_array());
+    packages
+        .into_iter()
+        .flatten()
+        .filter_map(|package| {
+            Some((
+                package.get("name")?.as_str()?.to_string(),
+                package
+                    .get("version")
+                    .or_else(|| package.get("pretty_version"))
+                    .and_then(Value::as_str)?
+                    .to_string(),
+            ))
+        })
+        .collect()
+}
+
 fn dependencies(value: &Value) -> Option<&Map<String, Value>> {
     value.get("dependencies").and_then(Value::as_object)
 }
@@ -131,6 +176,29 @@ mod tests {
         assert_eq!(
             parse_cargo_packages("ripgrep v14.1.1:\n    rg\n"),
             vec![("ripgrep".into(), "14.1.1".into())]
+        );
+    }
+
+    #[test]
+    fn parses_rubygems_local_list_with_multiple_versions() {
+        assert_eq!(
+            parse_rubygems_packages("*** LOCAL GEMS ***\nrake (13.2.1, 13.1.0)\n"),
+            vec![
+                ("rake".into(), "13.1.0".into()),
+                ("rake".into(), "13.2.1".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_composer_installed_json_shapes() {
+        assert_eq!(
+            parse_composer_packages(r#"{"packages":[{"name":"psr/log","version":"3.0.2"}]}"#),
+            vec![("psr/log".into(), "3.0.2".into())]
+        );
+        assert_eq!(
+            parse_composer_packages(r#"[{"name":"monolog/monolog","pretty_version":"3.8.1"}]"#),
+            vec![("monolog/monolog".into(), "3.8.1".into())]
         );
     }
 }

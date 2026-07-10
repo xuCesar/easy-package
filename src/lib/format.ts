@@ -42,4 +42,6 @@ export const managerLabel: Record<PackageManagerId, string> = {
   yarn: "Yarn",
   bun: "Bun",
   cargo: "Cargo",
+  rubygems: "RubyGems",
+  composer: "Composer",
 };

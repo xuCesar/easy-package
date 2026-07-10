@@ -22,7 +22,7 @@ use crate::models::{
 };
 use parsers::{
     parse_brew_packages, parse_cargo_packages, parse_npm_packages, parse_pip_packages,
-    parse_pnpm_packages, parse_uv_packages,
+    parse_pnpm_packages, parse_rubygems_packages, parse_uv_packages,
 };
 use runner::{find_executable, readable_path, CommandOutput, CommandRunner};
 
@@ -42,6 +42,8 @@ enum ParserKind {
     Uv,
     Pip,
     Cargo,
+    Rubygems,
+    Composer,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +51,7 @@ enum PackageSource {
     Command(&'static [&'static str]),
     YarnGlobalDirectory,
     BunGlobalDirectory,
+    ComposerInstalledJson,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +76,7 @@ struct ManagerSpec {
     parser: ParserKind,
 }
 
-const SPECS: [ManagerSpec; 8] = [
+const SPECS: [ManagerSpec; 10] = [
     ManagerSpec {
         id: PackageManagerId::Homebrew,
         display_name: "Homebrew",
@@ -178,6 +181,30 @@ const SPECS: [ManagerSpec; 8] = [
         cache_source: CacheSource::Cargo,
         scope: PackageScope::Tool,
         parser: ParserKind::Cargo,
+    },
+    ManagerSpec {
+        id: PackageManagerId::Rubygems,
+        display_name: "RubyGems",
+        executable_names: &["gem"],
+        common_paths: &["/opt/homebrew/bin/gem", "/usr/local/bin/gem"],
+        version_args: &["--version"],
+        package_source: PackageSource::Command(&["list", "--local"]),
+        outdated_args: None,
+        cache_source: CacheSource::None,
+        scope: PackageScope::Global,
+        parser: ParserKind::Rubygems,
+    },
+    ManagerSpec {
+        id: PackageManagerId::Composer,
+        display_name: "Composer",
+        executable_names: &["composer"],
+        common_paths: &["/opt/homebrew/bin/composer", "/usr/local/bin/composer"],
+        version_args: &["--version"],
+        package_source: PackageSource::ComposerInstalledJson,
+        outdated_args: None,
+        cache_source: CacheSource::Command(&["config", "--global", "cache-dir"]),
+        scope: PackageScope::Global,
+        parser: ParserKind::Composer,
     },
 ];
 
@@ -462,6 +489,7 @@ fn read_packages(
             let root = bun_install_dir().join("install/global/node_modules");
             Some(packages_from_node_modules(spec, &root)?)
         }
+        PackageSource::ComposerInstalledJson => Some(composer_global_packages(spec)?),
     };
     Ok((values.unwrap_or_default(), true))
 }
@@ -530,6 +558,59 @@ fn cargo_home() -> PathBuf {
         .unwrap_or_default()
 }
 
+fn composer_global_packages(
+    spec: &ManagerSpec,
+) -> Result<Vec<ManagedPackage>, crate::error::AppError> {
+    let installed = composer_home_candidates()
+        .into_iter()
+        .map(|home| home.join("vendor/composer/installed.json"))
+        .find(|path| path.is_file());
+    let Some(installed) = installed else {
+        return Ok(Vec::new());
+    };
+    composer_packages_from_installed(spec, &installed)
+}
+
+fn composer_packages_from_installed(
+    spec: &ManagerSpec,
+    installed: &Path,
+) -> Result<Vec<ManagedPackage>, crate::error::AppError> {
+    let source = fs::read_to_string(installed)
+        .map_err(|error| crate::error::AppError::Command(error.to_string()))?;
+    let mut packages = parsers::parse_composer_packages(&source)
+        .into_iter()
+        .map(|(name, version)| ManagedPackage {
+            id: format!("{}:{name}", spec.id.as_str()),
+            manager_id: spec.id,
+            name,
+            version,
+            latest_version: None,
+            scope: spec.scope,
+            update_status: UpdateStatus::Unknown,
+        })
+        .collect::<Vec<_>>();
+    packages.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(packages)
+}
+
+fn composer_home_candidates() -> Vec<PathBuf> {
+    let mut homes = Vec::new();
+    if let Some(home) = std::env::var_os("COMPOSER_HOME").map(PathBuf::from) {
+        homes.push(home);
+    }
+    if let Some(config) = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+        homes.push(config.join("composer"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        homes.extend([
+            home.join(".config/composer"),
+            home.join("Library/Application Support/Composer"),
+            home.join(".composer"),
+        ]);
+    }
+    homes
+}
+
 fn read_cache_size(
     spec: &ManagerSpec,
     runner: &CommandRunner,
@@ -586,7 +667,11 @@ fn parse_version(kind: ParserKind, output: &str) -> Option<String> {
         ParserKind::Brew | ParserKind::Cargo => line.split_whitespace().nth(1),
         ParserKind::Uv => line.split_whitespace().nth(1),
         ParserKind::Pip => line.split_whitespace().nth(1),
-        ParserKind::Npm | ParserKind::Pnpm => line.split_whitespace().next(),
+        ParserKind::Npm | ParserKind::Pnpm | ParserKind::Rubygems => line.split_whitespace().next(),
+        ParserKind::Composer => line
+            .split_whitespace()
+            .nth(2)
+            .map(|value| value.trim_start_matches('v')),
     }
     .map(str::to_string)
 }
@@ -599,6 +684,8 @@ fn parse_installed(spec: &ManagerSpec, output: &str) -> Vec<ManagedPackage> {
         ParserKind::Uv => parse_uv_packages(output),
         ParserKind::Pip => parse_pip_packages(output),
         ParserKind::Cargo => parse_cargo_packages(output),
+        ParserKind::Rubygems => parse_rubygems_packages(output),
+        ParserKind::Composer => Vec::new(),
     };
     values
         .into_iter()
@@ -658,7 +745,9 @@ fn parse_outdated(kind: ParserKind, output: &str) -> HashMap<String, Option<Stri
                 })
                 .collect()
         }
-        ParserKind::Uv | ParserKind::Cargo => HashMap::new(),
+        ParserKind::Uv | ParserKind::Cargo | ParserKind::Rubygems | ParserKind::Composer => {
+            HashMap::new()
+        }
     }
 }
 
@@ -750,6 +839,10 @@ mod tests {
             parse_version(ParserKind::Uv, "uv 0.8.13"),
             Some("0.8.13".into())
         );
+        assert_eq!(
+            parse_version(ParserKind::Composer, "Composer version 2.8.6 2025-02-01"),
+            Some("2.8.6".into())
+        );
     }
 
     #[test]
@@ -781,10 +874,41 @@ mod tests {
 
     #[test]
     fn bun_and_cargo_do_not_report_outdated_capability() {
-        for id in [PackageManagerId::Bun, PackageManagerId::Cargo] {
+        for id in [
+            PackageManagerId::Bun,
+            PackageManagerId::Cargo,
+            PackageManagerId::Rubygems,
+            PackageManagerId::Composer,
+        ] {
             let spec = SPECS.iter().find(|spec| spec.id == id).unwrap();
             assert!(spec.outdated_args.is_none());
         }
+    }
+
+    #[test]
+    fn rubygems_and_composer_use_only_read_only_package_sources() {
+        let rubygems = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Rubygems)
+            .unwrap();
+        assert!(matches!(
+            rubygems.package_source,
+            PackageSource::Command(&["list", "--local"])
+        ));
+        assert!(matches!(rubygems.cache_source, CacheSource::None));
+
+        let composer = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Composer)
+            .unwrap();
+        assert!(matches!(
+            composer.package_source,
+            PackageSource::ComposerInstalledJson
+        ));
+        assert!(matches!(
+            composer.cache_source,
+            CacheSource::Command(&["config", "--global", "cache-dir"])
+        ));
     }
 
     #[test]
@@ -807,5 +931,26 @@ mod tests {
 
         assert_eq!(packages[0].id, "bun:@scope/tool");
         assert_eq!(packages[0].version, "1.2.3");
+    }
+
+    #[test]
+    fn reads_composer_global_installed_metadata_without_running_composer() {
+        let directory = tempfile::tempdir().unwrap();
+        let installed = directory.path().join("installed.json");
+        std::fs::write(
+            &installed,
+            r#"{"packages":[{"name":"psr/log","version":"3.0.2"}]}"#,
+        )
+        .unwrap();
+        let composer = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Composer)
+            .unwrap();
+
+        let packages = composer_packages_from_installed(composer, &installed).unwrap();
+
+        assert_eq!(packages[0].id, "composer:psr/log");
+        assert_eq!(packages[0].version, "3.0.2");
+        assert_eq!(packages[0].update_status, UpdateStatus::Unknown);
     }
 }

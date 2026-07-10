@@ -70,6 +70,8 @@ export const mockScan: EnvironmentScan = {
     { id: "yarn", displayName: "Yarn", version: "1.22.19", executablePath: "/opt/homebrew/bin/yarn", status: "available", capabilities: ["packages"], scannedAt: now },
     { id: "bun", displayName: "Bun", version: "1.3.14", executablePath: "~/.bun/bin/bun", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 512_000_000, scannedAt: now },
     { id: "cargo", displayName: "Cargo", version: "1.84.0", executablePath: "/opt/homebrew/bin/cargo", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 840_000_000, scannedAt: now },
+    { id: "rubygems", displayName: "RubyGems", version: "3.6.3", executablePath: "/opt/homebrew/bin/gem", status: "available", capabilities: ["packages"], scannedAt: now },
+    { id: "composer", displayName: "Composer", version: "2.8.6", executablePath: "/opt/homebrew/bin/composer", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 74_000_000, scannedAt: now },
   ],
   packages: [
     { id: "homebrew:git", managerId: "homebrew", name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system", updateStatus: "available" },
@@ -81,6 +83,8 @@ export const mockScan: EnvironmentScan = {
     { id: "yarn:eslint", managerId: "yarn", name: "eslint", version: "9.39.1", scope: "global", updateStatus: "unknown" },
     { id: "bun:typescript", managerId: "bun", name: "typescript", version: "5.9.3", scope: "global", updateStatus: "unknown" },
     { id: "cargo:ripgrep", managerId: "cargo", name: "ripgrep", version: "14.1.1", scope: "tool", updateStatus: "unknown" },
+    { id: "rubygems:rake", managerId: "rubygems", name: "rake", version: "13.2.1", scope: "global", updateStatus: "unknown" },
+    { id: "composer:psr/log", managerId: "composer", name: "psr/log", version: "3.0.2", scope: "global", updateStatus: "unknown" },
   ],
   projects: mockProjects,
   dependencyInsights: [

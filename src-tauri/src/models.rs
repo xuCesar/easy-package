@@ -11,6 +11,8 @@ pub enum PackageManagerId {
     Yarn,
     Bun,
     Cargo,
+    Rubygems,
+    Composer,
 }
 
 impl PackageManagerId {
@@ -24,6 +26,8 @@ impl PackageManagerId {
             Self::Yarn => "yarn",
             Self::Bun => "bun",
             Self::Cargo => "cargo",
+            Self::Rubygems => "rubygems",
+            Self::Composer => "composer",
         }
     }
 }

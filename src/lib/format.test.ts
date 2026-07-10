@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterPackages, formatBytes } from "./format";
+import { filterPackages, formatBytes, managerLabel } from "./format";
 import { mockScan } from "../mock-data";
 
 describe("filterPackages", () => {
@@ -16,5 +16,12 @@ describe("formatBytes", () => {
   it("格式化存储空间", () => {
     expect(formatBytes(3 * 1024 ** 3)).toBe("3.0 GB");
     expect(formatBytes(undefined)).toBe("—");
+  });
+});
+
+describe("managerLabel", () => {
+  it("提供 RubyGems 与 Composer 的显示名称", () => {
+    expect(managerLabel.rubygems).toBe("RubyGems");
+    expect(managerLabel.composer).toBe("Composer");
   });
 });

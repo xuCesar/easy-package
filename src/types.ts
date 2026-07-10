@@ -1,6 +1,6 @@
 export type PageId = "overview" | "packages" | "projects" | "dependencies" | "environment";
 
-export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo";
+export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
 export type ManagerStatus = "available" | "unavailable" | "error" | "unsupported";
 

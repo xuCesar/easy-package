@@ -34,6 +34,20 @@ describe("App", () => {
     expect(screen.queryByText("git")).not.toBeInTheDocument();
   });
 
+  it("可按 RubyGems 和 Composer 筛选只读全局包", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+
+    fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "rubygems" } });
+    expect(screen.getByText("rake")).toBeInTheDocument();
+    expect(screen.getByText("RubyGems", { selector: ".manager-chip" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "composer" } });
+    expect(screen.getByText("psr/log")).toBeInTheDocument();
+    expect(screen.getByText("Composer", { selector: ".manager-chip" })).toBeInTheDocument();
+  });
+
   it("取消刷新后保留已有扫描结果", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
