@@ -56,9 +56,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # Linux Tauri 的目标依赖会解析 Rust 2024 edition 的 manifest；Cargo 1.84 无法读取它。
+      # Linux Tauri 的目标依赖使用 Rust 2024 manifest 与 Rust 1.88 才稳定的 let-chains。
       # macOS 的 check 与原生构建仍固定在 1.84，以持续验证项目声明的最低 Rust 版本。
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: rustfmt
       - run: |
