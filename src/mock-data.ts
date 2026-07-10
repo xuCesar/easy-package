@@ -84,6 +84,30 @@ export const mockProjects: ProjectMetadata[] = [
     ],
     warnings: [],
   },
+  {
+    name: "yarn-portal",
+    path: "~/Code/yarn-portal",
+    ecosystems: ["JavaScript"],
+    lockFiles: ["yarn.lock"],
+    runtimeRequirements: [{ runtime: "Node.js", requirement: ">=22" }],
+    packageManager: "yarn@4.6.0",
+    dependencies: [
+      { ecosystem: "JavaScript", name: "zod", normalizedName: "zod", versionRequirement: "^3.24.0", scopes: ["运行"], resolvedVersion: "3.24.1", resolutionSource: "yarn.lock", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
+  {
+    name: "bun-api",
+    path: "~/Code/bun-api",
+    ecosystems: ["JavaScript"],
+    lockFiles: ["bun.lock"],
+    runtimeRequirements: [{ runtime: "Bun", requirement: "1.3.0" }],
+    packageManager: "bun@1.3.0",
+    dependencies: [
+      { ecosystem: "JavaScript", name: "hono", normalizedName: "hono", versionRequirement: "^4.6.0", scopes: ["运行"], resolvedVersion: "4.6.14", resolutionSource: "bun.lock", resolutionChecked: true },
+    ],
+    warnings: [],
+  },
 ];
 
 export const mockScan: EnvironmentScan = {
@@ -124,6 +148,8 @@ export const mockScan: EnvironmentScan = {
     { ecosystem: "Ruby", name: "rspec-rails", projectCount: 1, versionRequirements: ["~> 7.1"], resolvedVersions: ["7.1.1"], projects: [{ projectName: "rails-service", projectPath: "~/Code/rails-service", versionRequirement: "~> 7.1", scopes: ["开发"], resolvedVersion: "7.1.1", resolutionSource: "Gemfile.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
     { ecosystem: "PHP", name: "symfony/http-foundation", projectCount: 1, versionRequirements: ["^7.2"], resolvedVersions: ["v7.2.1"], projects: [{ projectName: "acme/api", projectPath: "~/Code/php-api", versionRequirement: "^7.2", scopes: ["运行"], resolvedVersion: "v7.2.1", resolutionSource: "composer.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
     { ecosystem: "PHP", name: "phpunit/phpunit", projectCount: 1, versionRequirements: ["^11.5"], resolvedVersions: ["11.5.3"], projects: [{ projectName: "acme/api", projectPath: "~/Code/php-api", versionRequirement: "^11.5", scopes: ["开发"], resolvedVersion: "11.5.3", resolutionSource: "composer.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "JavaScript", name: "zod", projectCount: 1, versionRequirements: ["^3.24.0"], resolvedVersions: ["3.24.1"], projects: [{ projectName: "yarn-portal", projectPath: "~/Code/yarn-portal", versionRequirement: "^3.24.0", scopes: ["运行"], resolvedVersion: "3.24.1", resolutionSource: "yarn.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
+    { ecosystem: "JavaScript", name: "hono", projectCount: 1, versionRequirements: ["^4.6.0"], resolvedVersions: ["4.6.14"], projects: [{ projectName: "bun-api", projectPath: "~/Code/bun-api", versionRequirement: "^4.6.0", scopes: ["运行"], resolvedVersion: "4.6.14", resolutionSource: "bun.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
   ],
   workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
   scanRoots: ["~/Code"],

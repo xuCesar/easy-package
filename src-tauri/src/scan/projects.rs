@@ -532,6 +532,12 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
     if markers.contains("pnpm-lock.yaml") && markers.contains("package-lock.json") {
         warnings.push("同时发现 pnpm 与 npm 锁文件，请确认实际使用的包管理器。".into());
     }
+    if markers.contains("bun.lockb") && !markers.contains("bun.lock") {
+        warnings.push(
+            "检测到 bun.lockb 二进制锁文件；当前仅识别该文件，无法关联直接依赖的已解析版本。"
+                .into(),
+        );
+    }
 
     let project_name = name.clone();
     ProjectMetadata {
@@ -544,6 +550,7 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
                 marker.ends_with("lock.yaml")
                     || marker.ends_with("lock.json")
                     || marker.ends_with(".lock")
+                    || marker.as_str() == "bun.lockb"
                     || matches!(marker.as_str(), "go.mod" | "go.sum")
                     || marker.as_str() == "requirements.txt"
             })
@@ -976,6 +983,22 @@ fn resolve_project_dependencies(
     );
     apply_resolutions(
         &mut dependencies,
+        "JavaScript",
+        find_lock_file(directory, "yarn.lock")
+            .as_deref()
+            .map(resolve_yarn_lock),
+        "yarn.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
+        "JavaScript",
+        find_lock_file(directory, "bun.lock")
+            .as_deref()
+            .map(resolve_bun_lock),
+        "bun.lock",
+    );
+    apply_resolutions(
+        &mut dependencies,
         "Rust",
         find_lock_file(directory, "Cargo.lock")
             .as_deref()
@@ -1137,6 +1160,101 @@ fn resolve_pnpm_lock(path: &Path, project_directory: &Path) -> BTreeMap<String, 
             ))
         })
         .collect()
+}
+
+fn resolve_yarn_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let mut resolutions = BTreeMap::new();
+    let mut selectors = Vec::new();
+
+    for line in source.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line
+            .chars()
+            .next()
+            .is_some_and(|character| !character.is_whitespace())
+            && line.ends_with(':')
+        {
+            selectors = line[..line.len() - 1]
+                .split(',')
+                .filter_map(yarn_selector_name)
+                .collect();
+            continue;
+        }
+        let trimmed = line.trim();
+        let version = trimmed
+            .strip_prefix("version ")
+            .or_else(|| trimmed.strip_prefix("version:"))
+            .map(|value| value.trim().trim_matches(['\'', '"']));
+        let Some(version) = version.filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        for name in &selectors {
+            resolutions.insert(name.clone(), version.into());
+        }
+    }
+    resolutions
+}
+
+fn yarn_selector_name(selector: &str) -> Option<String> {
+    let selector = selector.trim().trim_matches(['\'', '"']);
+    if selector.starts_with('@') {
+        let slash = selector.find('/')?;
+        let version = selector[slash + 1..].find('@')? + slash + 1;
+        Some(normalize_dependency_name(
+            "JavaScript",
+            &selector[..version],
+        ))
+    } else {
+        let version = selector.find('@')?;
+        Some(normalize_dependency_name(
+            "JavaScript",
+            &selector[..version],
+        ))
+    }
+}
+
+fn resolve_bun_lock(path: &Path) -> BTreeMap<String, String> {
+    let Ok(source) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<JsonValue>(&source) else {
+        return BTreeMap::new();
+    };
+    value
+        .get("packages")
+        .and_then(JsonValue::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, package)| {
+            let source = package
+                .get("version")
+                .and_then(JsonValue::as_str)
+                .or_else(|| {
+                    package
+                        .as_array()
+                        .and_then(|items| items.first())
+                        .and_then(JsonValue::as_str)
+                })
+                .or_else(|| package.as_str())?;
+            let version = bun_package_version(name, source)?;
+            Some((
+                normalize_dependency_name("JavaScript", name),
+                version.into(),
+            ))
+        })
+        .collect()
+}
+
+fn bun_package_version<'a>(name: &str, source: &'a str) -> Option<&'a str> {
+    source
+        .strip_prefix(name)
+        .and_then(|value| value.strip_prefix('@'))
+        .filter(|version| !version.is_empty() && !version.contains(':'))
 }
 
 fn resolve_cargo_lock(path: &Path, project_name: &str) -> BTreeMap<String, String> {
@@ -1794,6 +1912,104 @@ mod tests {
             assert_eq!(dependency.resolved_version.as_deref(), Some(version));
             assert_eq!(dependency.resolution_source.as_deref(), Some(source));
         }
+    }
+
+    #[test]
+    fn resolves_yarn_and_bun_text_lockfiles_without_parsing_bun_lockb() {
+        let root = tempdir().unwrap();
+        let yarn_classic = root.path().join("yarn-classic");
+        let yarn_berry = root.path().join("yarn-berry");
+        let yarn_workspace = root.path().join("yarn-workspace");
+        let yarn_member = yarn_workspace.join("packages/web");
+        let bun = root.path().join("bun");
+        let bun_binary = root.path().join("bun-binary");
+        for directory in [&yarn_classic, &yarn_berry, &yarn_member, &bun, &bun_binary] {
+            fs::create_dir_all(directory).unwrap();
+        }
+        fs::write(
+            yarn_classic.join("package.json"),
+            r#"{"name":"classic","dependencies":{"lodash":"^4.17.0"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            yarn_classic.join("yarn.lock"),
+            "# yarn lockfile v1\n\nlodash@^4.17.0:\n  version \"4.17.21\"\n",
+        )
+        .unwrap();
+        fs::write(
+            yarn_berry.join("package.json"),
+            r#"{"name":"berry","packageManager":"yarn@4.6.0","dependencies":{"react":"^19.0.0"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            yarn_berry.join("yarn.lock"),
+            "__metadata:\n  version: 8\n\n\"react@npm:^19.0.0\":\n  version: 19.1.1\n",
+        )
+        .unwrap();
+        fs::write(
+            yarn_workspace.join("package.json"),
+            r#"{"name":"suite","packageManager":"yarn@4.6.0","workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+        fs::write(
+            yarn_workspace.join("yarn.lock"),
+            "\"zod@npm:^3.0.0\":\n  version: 3.24.1\n",
+        )
+        .unwrap();
+        fs::write(
+            yarn_member.join("package.json"),
+            r#"{"name":"web","dependencies":{"zod":"^3.0.0"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            bun.join("package.json"),
+            r#"{"name":"bun-app","packageManager":"bun@1.3.0","dependencies":{"hono":"^4.6.0"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            bun.join("bun.lock"),
+            r#"{"lockfileVersion":0,"packages":{"hono":["hono@4.6.14","",{},""]}}"#,
+        )
+        .unwrap();
+        fs::write(
+            bun_binary.join("package.json"),
+            r#"{"name":"bun-binary","packageManager":"bun@1.0.0","dependencies":{"zod":"^3.0.0"}}"#,
+        )
+        .unwrap();
+        fs::write(bun_binary.join("bun.lockb"), [0_u8, 1, 2, 3]).unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+        let resolved = [
+            ("classic", "lodash", "4.17.21", "yarn.lock"),
+            ("berry", "react", "19.1.1", "yarn.lock"),
+            ("web", "zod", "3.24.1", "yarn.lock"),
+            ("bun-app", "hono", "4.6.14", "bun.lock"),
+        ];
+        for (project_name, dependency_name, version, source) in resolved {
+            let dependency = result
+                .projects
+                .iter()
+                .find(|project| project.name == project_name)
+                .unwrap()
+                .dependencies
+                .iter()
+                .find(|dependency| dependency.name == dependency_name)
+                .unwrap();
+            assert_eq!(dependency.resolved_version.as_deref(), Some(version));
+            assert_eq!(dependency.resolution_source.as_deref(), Some(source));
+        }
+
+        let binary = result
+            .projects
+            .iter()
+            .find(|project| project.name == "bun-binary")
+            .unwrap();
+        assert!(binary.lock_files.contains(&"bun.lockb".into()));
+        assert!(binary
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("bun.lockb 二进制")));
+        assert!(!binary.dependencies[0].resolution_checked);
     }
 
     #[test]
