@@ -27,6 +27,7 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
   const divergentDependencies = data.dependencyInsights.filter((insight) => insight.hasVersionDivergence).length;
   const dependencyRisks = data.dependencyInsights.filter((insight) => insight.hasHealthRisk).length;
   const resolutionRisks = data.dependencyInsights.filter((insight) => insight.hasResolutionRisk).length;
+  const commandConflicts = data.pathObservations.filter((observation) => observation.hasConflict).length;
 
   return (
     <>
@@ -39,7 +40,7 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
         <div className="metric"><span className="metric__icon"><Icon name="packages" /></span><div><strong>{availableManagers}</strong><span>已发现管理器</span></div></div>
         <div className="metric"><span className="metric__icon"><Icon name="refresh" /></span><div><strong>{outdated}</strong><span>可更新软件包</span></div></div>
         <div className="metric"><span className="metric__icon"><Icon name="environment" /></span><div><strong>{formatBytes(cacheSize)}</strong><span>缓存占用</span></div></div>
-        <div className="metric"><span className="metric__icon"><Icon name="info" /></span><div><strong>{data.healthIssues.length}</strong><span>健康提示</span></div></div>
+        <button className="metric metric--action" onClick={() => onNavigate("environment")}><span className="metric__icon"><Icon name="info" /></span><div><strong>{commandConflicts}</strong><span>命令路径冲突</span></div></button>
       </section>
       <div className="overview-grid">
         <section className="panel panel--managers">

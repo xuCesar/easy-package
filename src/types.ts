@@ -115,6 +115,7 @@ export interface HealthIssue {
   description: string;
   managerId?: PackageManagerId;
   path?: string;
+  command?: string;
 }
 
 export interface TaskLog {
@@ -133,6 +134,14 @@ export interface PathObservation {
   activePath?: string;
   alternatives: string[];
   hasConflict: boolean;
+  candidates?: PathCandidate[];
+}
+
+export interface PathCandidate {
+  path: string;
+  pathIndex: number;
+  managerId?: PackageManagerId;
+  version?: string;
 }
 
 export interface EnvironmentScan {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { mockScan } from "../mock-data";
 import { EnvironmentPage } from "./EnvironmentPage";
@@ -7,7 +7,7 @@ describe("EnvironmentPage", () => {
   it("展示 PATH 冲突、健康提示和扫描日志", () => {
     render(<EnvironmentPage data={mockScan} onNavigate={() => undefined} />);
 
-    expect(screen.getByRole("heading", { name: "PATH 解析" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "命令解析" })).toBeInTheDocument();
     expect(screen.getAllByText("多个来源")).toHaveLength(3);
     expect(screen.getByText("发现多个 Python 路径")).toBeInTheDocument();
     expect(screen.getByText("环境扫描完成")).toBeInTheDocument();
@@ -35,5 +35,14 @@ describe("EnvironmentPage", () => {
     render(<EnvironmentPage data={data} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: "查看相关项目" }));
     expect(onNavigate).toHaveBeenCalledWith("projects");
+  });
+
+  it("可只显示命令冲突并展示候选来源", () => {
+    const view = render(<EnvironmentPage data={mockScan} onNavigate={() => undefined} />);
+    const commands = within(view.container);
+
+    expect(commands.getAllByText("Homebrew").length).toBeGreaterThan(1);
+    fireEvent.click(commands.getByRole("checkbox", { name: "仅看冲突" }));
+    expect(commands.queryByText("npm", { selector: ".path-item > div > code" })).not.toBeInTheDocument();
   });
 });

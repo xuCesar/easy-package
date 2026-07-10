@@ -151,12 +151,16 @@ pub fn find_executable(names: &[&str], common_paths: &[&str]) -> Option<PathBuf>
 }
 
 pub fn find_all_in_path(command: &str) -> Vec<PathBuf> {
+    find_all_in_path_for_names(&[command])
+}
+
+pub fn find_all_in_path_for_names(names: &[&str]) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     env::var_os("PATH")
         .into_iter()
         .flat_map(|value| env::split_paths(&value).collect::<Vec<_>>())
-        .filter_map(|directory| {
-            let path = directory.join(command);
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+        .filter_map(|path| {
             if path.is_file() && seen.insert(path.clone()) {
                 Some(path)
             } else {

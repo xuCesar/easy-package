@@ -19,7 +19,7 @@ use crate::{
     storage::Storage,
 };
 
-use crate::adapters::runner::find_all_in_path;
+use crate::adapters::runner::find_all_in_path_for_names;
 pub use projects::analyze_projects;
 
 const SCAN_STEPS: usize = 10;
@@ -87,7 +87,7 @@ pub fn scan_environment(
     }
     partial_failures += project_scan.failures;
     logs.extend(project_scan.logs);
-    let path_observations = scan_paths();
+    let path_observations = scan_paths(&managers);
     emit_progress(ScanPhase::Health, manager_count + 1, None);
     let health_issues = health::build_health_report(
         &managers,
@@ -131,25 +131,82 @@ pub fn scan_environment(
     })
 }
 
-fn scan_paths() -> Vec<PathObservation> {
-    ["node", "npm", "python3", "pip3"]
+const PATH_COMMANDS: [(&str, &[&str]); 9] = [
+    ("node", &["node"]),
+    ("npm", &["npm"]),
+    ("pnpm", &["pnpm"]),
+    ("python", &["python", "python3"]),
+    ("pip", &["pip", "pip3"]),
+    ("ruby", &["ruby"]),
+    ("gem", &["gem"]),
+    ("php", &["php"]),
+    ("composer", &["composer"]),
+];
+
+fn scan_paths(managers: &[crate::models::PackageManager]) -> Vec<PathObservation> {
+    PATH_COMMANDS
         .into_iter()
-        .map(|command| {
-            let paths = find_all_in_path(command);
-            PathObservation {
-                command: command.into(),
-                active_path: paths
-                    .first()
-                    .map(|path| path.to_string_lossy().into_owned()),
-                alternatives: paths
-                    .iter()
-                    .skip(1)
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .collect(),
-                has_conflict: paths.len() > 1,
-            }
+        .map(|(command, names)| {
+            build_path_observation(command, find_all_in_path_for_names(names), managers)
         })
         .collect()
+}
+
+fn build_path_observation(
+    command: &str,
+    paths: Vec<std::path::PathBuf>,
+    managers: &[crate::models::PackageManager],
+) -> PathObservation {
+    let candidates = paths
+        .iter()
+        .enumerate()
+        .map(|(path_index, path)| {
+            let (manager_id, version) = source_for_path(path, managers);
+            crate::models::PathCandidate {
+                path: path.to_string_lossy().into_owned(),
+                path_index,
+                manager_id,
+                version,
+            }
+        })
+        .collect();
+    PathObservation {
+        command: command.into(),
+        active_path: paths
+            .first()
+            .map(|path| path.to_string_lossy().into_owned()),
+        alternatives: paths
+            .iter()
+            .skip(1)
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        has_conflict: paths.len() > 1,
+        candidates,
+    }
+}
+
+fn source_for_path(
+    path: &std::path::Path,
+    managers: &[crate::models::PackageManager],
+) -> (Option<crate::models::PackageManagerId>, Option<String>) {
+    if let Some(manager) = managers.iter().find(|manager| {
+        manager
+            .executable_path
+            .as_deref()
+            .is_some_and(|executable| path == std::path::Path::new(executable))
+    }) {
+        return (Some(manager.id), manager.version.clone());
+    }
+    let homebrew_path = managers
+        .iter()
+        .find(|manager| manager.id == crate::models::PackageManagerId::Homebrew)
+        .and_then(|manager| manager.executable_path.as_deref())
+        .map(std::path::Path::new)
+        .and_then(std::path::Path::parent);
+    if homebrew_path.is_some_and(|directory| path.parent() == Some(directory)) {
+        return (Some(crate::models::PackageManagerId::Homebrew), None);
+    }
+    (None, None)
 }
 
 pub fn projects_for_roots(storage: &Storage) -> Result<ProjectAnalysis, AppError> {
@@ -162,13 +219,47 @@ mod tests {
 
     #[test]
     fn path_scan_has_expected_commands() {
-        let observations = scan_paths();
+        let observations = scan_paths(&[]);
         assert_eq!(
             observations
                 .iter()
                 .map(|item| item.command.as_str())
                 .collect::<Vec<_>>(),
-            vec!["node", "npm", "python3", "pip3"]
+            vec!["node", "npm", "pnpm", "python", "pip", "ruby", "gem", "php", "composer"]
         );
+    }
+
+    #[test]
+    fn keeps_path_order_and_attributes_known_sources() {
+        let managers = vec![crate::models::PackageManager {
+            id: crate::models::PackageManagerId::Homebrew,
+            display_name: "Homebrew".into(),
+            version: Some("4.6.0".into()),
+            executable_path: Some("/opt/homebrew/bin/brew".into()),
+            status: crate::models::ManagerStatus::Available,
+            capabilities: vec![],
+            error: None,
+            cache_size_bytes: None,
+            scanned_at: String::new(),
+        }];
+        let observation = build_path_observation(
+            "node",
+            vec![
+                std::path::PathBuf::from("/opt/homebrew/bin/node"),
+                std::path::PathBuf::from("/usr/bin/node"),
+            ],
+            &managers,
+        );
+        assert_eq!(
+            observation.active_path.as_deref(),
+            Some("/opt/homebrew/bin/node")
+        );
+        assert!(observation.has_conflict);
+        assert_eq!(observation.candidates[0].path_index, 0);
+        assert_eq!(
+            observation.candidates[0].manager_id,
+            Some(crate::models::PackageManagerId::Homebrew)
+        );
+        assert!(observation.candidates[1].manager_id.is_none());
     }
 }

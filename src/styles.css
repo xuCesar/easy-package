@@ -70,6 +70,8 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .metric { min-height: 84px; padding: 7px 28px; display: flex; align-items: center; gap: 18px; border-right: 1px solid var(--border); }
 .metric:first-child { padding-left: 13px; }
 .metric:last-child { border-right: 0; }
+.metric--action { width: 100%; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.metric--action:hover { background: var(--surface-hover); }
 .metric__icon { width: 42px; height: 42px; display: grid; place-items: center; color: var(--accent); }
 .metric__icon svg { width: 36px; height: 36px; stroke-width: 1.5; }
 .metric div { display: grid; gap: 5px; }
@@ -230,6 +232,10 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .path-item > div code { color: #7db9ff; font-weight: 700; }
 .path-item strong { display: block; margin-top: 8px; overflow: hidden; font: 10px "SFMono-Regular", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .path-item p { margin: 6px 0 0; overflow: hidden; color: var(--text-3); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.path-candidates { display: grid; gap: 5px; margin-top: 9px; }
+.path-candidates > div { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 7px; border: 1px solid var(--border-soft); border-radius: 5px; background: #09141f; }
+.path-candidates span, .path-candidates small { color: var(--text-3); font-size: 9px; }
+.path-candidates code { overflow: hidden; color: var(--text-2); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .conflict-label { color: #ebbd58; font-size: 9px; }
 .environment-health, .environment-logs { min-height: 260px; }
 .log-list { display: grid; }

@@ -8,6 +8,7 @@ Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri
 - 桌面窗口最小宽度为 880px，不提供移动端 Web 适配。
 - 只执行版本、列表、更新检查、缓存路径等只读命令。
 - 扫描按管理器、项目、健康报告阶段显示进度，可随时取消；取消不会覆盖上一次成功快照。
+- 环境页会解析 node、npm、pnpm、Python/pip、Ruby/gem、PHP、Composer 的 PATH 优先级与候选来源，并只读标记命令冲突、运行时路径不一致和重复 Node 全局工具。
 - 不提供安装、升级、卸载、清理或任意 Shell 执行接口。
 - Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
 - 项目扫描会从 Yarn Classic、Yarn Berry 与文本 `bun.lock` 关联 JavaScript 直接依赖的锁定版本；`bun.lockb` 仅展示受控限制提示，不尝试解析二进制内容。

@@ -1,6 +1,8 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::models::{
-    HealthIssue, HealthSeverity, ManagedPackage, ManagerStatus, PackageManager, PathObservation,
-    ProjectMetadata, ProjectWorkspace, UpdateStatus,
+    HealthIssue, HealthSeverity, ManagedPackage, ManagerStatus, PackageManager, PackageManagerId,
+    PackageScope, PathObservation, ProjectMetadata, ProjectWorkspace, UpdateStatus,
 };
 
 const LARGE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -27,6 +29,7 @@ pub fn build_health_report(
                     .unwrap_or_else(|| "版本检查失败".into()),
                 manager_id: Some(manager.id),
                 path: manager.executable_path.clone(),
+                command: None,
             });
         }
         if manager
@@ -41,6 +44,7 @@ pub fn build_health_report(
                 description: "缓存已超过 2 GB。当前版本只展示空间信息，不会自动清理。".into(),
                 manager_id: Some(manager.id),
                 path: None,
+                command: None,
             });
         }
     }
@@ -58,6 +62,7 @@ pub fn build_health_report(
             description: "当前版本仅展示更新状态，不会执行升级操作。".into(),
             manager_id: None,
             path: None,
+            command: None,
         });
     }
 
@@ -71,6 +76,7 @@ pub fn build_health_report(
                 description: warning.clone(),
                 manager_id: None,
                 path: Some(project.path.clone()),
+                command: None,
             });
         }
         for dependency in &project.dependencies {
@@ -86,6 +92,7 @@ pub fn build_health_report(
                     description: "已找到对应锁文件，但没有匹配的直接依赖已解析版本。".into(),
                     manager_id: None,
                     path: Some(project.path.clone()),
+                    command: None,
                 });
             }
             if dependency.version_requirement == "未声明版本" {
@@ -100,6 +107,7 @@ pub fn build_health_report(
                     description: "无法可靠比较该依赖在项目间的版本范围。".into(),
                     manager_id: None,
                     path: Some(project.path.clone()),
+                    command: None,
                 });
             }
             if is_local_dependency(&dependency.version_requirement) {
@@ -117,6 +125,7 @@ pub fn build_health_report(
                     ),
                     manager_id: None,
                     path: Some(project.path.clone()),
+                    command: None,
                 });
             }
         }
@@ -158,6 +167,7 @@ pub fn build_health_report(
                 ),
                 manager_id: None,
                 path: Some(workspace.path.clone()),
+                command: None,
             });
         }
     }
@@ -192,17 +202,15 @@ pub fn build_health_report(
             ),
             manager_id: None,
             path: None,
+            command: None,
         });
     }
 
-    for path in paths
-        .iter()
-        .filter(|path| path.has_conflict && matches!(path.command.as_str(), "node" | "python3"))
-    {
+    for path in paths.iter().filter(|path| path.has_conflict) {
         issues.push(HealthIssue {
-            id: format!("path-conflict-{}", path.command),
-            severity: HealthSeverity::Info,
-            code: "PATH_CONFLICT".into(),
+            id: format!("command-path-conflict-{}", path.command),
+            severity: HealthSeverity::Warning,
+            code: "COMMAND_PATH_CONFLICT".into(),
             title: format!("发现多个 {} 路径", path.command),
             description: format!(
                 "当前优先使用 {}，另有 {} 个候选路径。",
@@ -211,6 +219,76 @@ pub fn build_health_report(
             ),
             manager_id: None,
             path: path.active_path.clone(),
+            command: Some(path.command.clone()),
+        });
+    }
+    for (runtime, manager) in [("node", "npm"), ("python", "pip")] {
+        let runtime_path = paths
+            .iter()
+            .find(|path| path.command == runtime)
+            .and_then(|path| path.active_path.as_deref());
+        let manager_path = paths
+            .iter()
+            .find(|path| path.command == manager)
+            .and_then(|path| path.active_path.as_deref());
+        if runtime_path.is_some_and(|runtime_path| {
+            manager_path.is_some_and(|manager_path| {
+                std::path::Path::new(runtime_path).parent()
+                    != std::path::Path::new(manager_path).parent()
+            })
+        }) {
+            issues.push(HealthIssue {
+                id: format!("runtime-manager-mismatch-{runtime}-{manager}"),
+                severity: HealthSeverity::Warning,
+                code: "RUNTIME_MANAGER_MISMATCH".into(),
+                title: format!("{runtime} 与 {manager} 的生效路径不一致"),
+                description: format!(
+                    "{runtime} 优先使用 {}，{manager} 优先使用 {}。请确认 PATH 顺序符合预期。",
+                    runtime_path.unwrap_or_default(),
+                    manager_path.unwrap_or_default()
+                ),
+                manager_id: None,
+                path: runtime_path.map(str::to_owned),
+                command: Some(runtime.into()),
+            });
+        }
+    }
+    let node_managers = [
+        PackageManagerId::Npm,
+        PackageManagerId::Pnpm,
+        PackageManagerId::Yarn,
+        PackageManagerId::Bun,
+    ];
+    let mut global_tools = HashMap::<String, HashSet<PackageManagerId>>::new();
+    for package in packages.iter().filter(|package| {
+        package.scope == PackageScope::Global && node_managers.contains(&package.manager_id)
+    }) {
+        global_tools
+            .entry(package.name.to_lowercase())
+            .or_default()
+            .insert(package.manager_id);
+    }
+    for (name, managers) in global_tools
+        .into_iter()
+        .filter(|(_, managers)| managers.len() > 1)
+    {
+        let mut sources = managers
+            .iter()
+            .map(|manager| manager.as_str())
+            .collect::<Vec<_>>();
+        sources.sort_unstable();
+        issues.push(HealthIssue {
+            id: format!("global-tool-duplicate-{name}"),
+            severity: HealthSeverity::Info,
+            code: "GLOBAL_TOOL_DUPLICATE".into(),
+            title: format!("全局工具 {name} 在多个管理器中重复安装"),
+            description: format!(
+                "检测到来源：{}。当前版本仅展示信息，不会卸载或修改环境。",
+                sources.join("、")
+            ),
+            manager_id: None,
+            path: None,
+            command: None,
         });
     }
     issues
@@ -227,7 +305,8 @@ fn is_local_dependency(requirement: &str) -> bool {
 mod tests {
     use super::*;
     use crate::models::{
-        ManagerStatus, PackageManagerId, ProjectDependency, ProjectMetadata, ProjectWorkspace,
+        ManagerStatus, PackageManagerId, PackageScope, PathObservation, ProjectDependency,
+        ProjectMetadata, ProjectWorkspace,
     };
 
     #[test]
@@ -307,5 +386,56 @@ mod tests {
         assert!(issues
             .iter()
             .any(|issue| issue.code == "DEPENDENCY_VERSION_UNSPECIFIED"));
+    }
+
+    #[test]
+    fn reports_command_conflicts_runtime_mismatches_and_duplicate_global_tools() {
+        let paths = vec![
+            PathObservation {
+                command: "node".into(),
+                active_path: Some("/Users/example/.nvm/bin/node".into()),
+                alternatives: vec!["/opt/homebrew/bin/node".into()],
+                has_conflict: true,
+                candidates: vec![],
+            },
+            PathObservation {
+                command: "npm".into(),
+                active_path: Some("/opt/homebrew/bin/npm".into()),
+                alternatives: vec![],
+                has_conflict: false,
+                candidates: vec![],
+            },
+        ];
+        let packages = vec![
+            ManagedPackage {
+                id: "npm:typescript".into(),
+                manager_id: PackageManagerId::Npm,
+                name: "typescript".into(),
+                version: "5.9.3".into(),
+                latest_version: None,
+                scope: PackageScope::Global,
+                update_status: UpdateStatus::Unknown,
+            },
+            ManagedPackage {
+                id: "pnpm:typescript".into(),
+                manager_id: PackageManagerId::Pnpm,
+                name: "typescript".into(),
+                version: "5.9.3".into(),
+                latest_version: None,
+                scope: PackageScope::Global,
+                update_status: UpdateStatus::Unknown,
+            },
+        ];
+        let issues = build_health_report(&[], &packages, &[], &[], &paths);
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "COMMAND_PATH_CONFLICT"
+                && issue.command.as_deref() == Some("node")));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "RUNTIME_MANAGER_MISMATCH"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "GLOBAL_TOOL_DUPLICATE"));
     }
 }

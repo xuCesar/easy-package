@@ -216,6 +216,8 @@ pub struct HealthIssue {
     pub manager_id: Option<PackageManagerId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -260,6 +262,19 @@ pub struct PathObservation {
     pub active_path: Option<String>,
     pub alternatives: Vec<String>,
     pub has_conflict: bool,
+    #[serde(default)]
+    pub candidates: Vec<PathCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathCandidate {
+    pub path: String,
+    pub path_index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager_id: Option<PackageManagerId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,11 +339,14 @@ mod tests {
     fn accepts_environment_snapshots_without_dependency_insights() {
         let scan: EnvironmentScan = serde_json::from_value(json!({
             "managers": [], "packages": [], "projects": [], "scanRoots": [],
-            "healthIssues": [], "logs": [], "pathObservations": [],
+            "healthIssues": [], "logs": [], "pathObservations": [{
+                "command": "node", "alternatives": [], "hasConflict": false
+            }],
             "scannedAt": "2026-01-01T00:00:00Z", "partialFailures": 0
         }))
         .unwrap();
         assert!(scan.dependency_insights.is_empty());
+        assert!(scan.path_observations[0].candidates.is_empty());
     }
 
     #[test]
