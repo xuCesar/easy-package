@@ -68,6 +68,15 @@ pub fn parse_pip_packages(output: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn parse_cargo_packages(output: &str) -> Vec<(String, String)> {
+    output
+        .lines()
+        .filter_map(|line| line.trim().strip_suffix(':'))
+        .filter_map(|line| line.rsplit_once(" v"))
+        .map(|(name, version)| (name.to_string(), version.to_string()))
+        .collect()
+}
+
 fn dependencies(value: &Value) -> Option<&Map<String, Value>> {
     value.get("dependencies").and_then(Value::as_object)
 }
@@ -114,6 +123,14 @@ mod tests {
                 ("black".into(), "25.1.0".into()),
                 ("httpx".into(), "0.28.1".into())
             ]
+        );
+    }
+
+    #[test]
+    fn parses_cargo_install_list() {
+        assert_eq!(
+            parse_cargo_packages("ripgrep v14.1.1:\n    rg\n"),
+            vec![("ripgrep".into(), "14.1.1".into())]
         );
     }
 }

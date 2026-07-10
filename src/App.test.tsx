@@ -33,4 +33,15 @@ describe("App", () => {
     expect(screen.getByText("typescript")).toBeInTheDocument();
     expect(screen.queryByText("git")).not.toBeInTheDocument();
   });
+
+  it("取消刷新后保留已有扫描结果", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新扫描" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消扫描" }));
+
+    expect(await screen.findByText("本次扫描已取消，保留上次成功结果。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
+  });
 });

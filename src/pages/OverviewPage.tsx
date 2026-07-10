@@ -2,16 +2,25 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityMark, StatusDot, UpdateBadge } from "../components/Status";
 import { formatBytes, formatRelativeTime } from "../lib/format";
-import type { EnvironmentScan, PageId } from "../types";
+import type { EnvironmentScan, PageId, ScanProgress } from "../types";
 
 interface OverviewPageProps {
   data: EnvironmentScan;
   isLoading: boolean;
+  scanProgress?: ScanProgress;
   onRefresh: () => void;
+  onCancel: () => void;
   onNavigate: (page: PageId) => void;
 }
 
-export function OverviewPage({ data, isLoading, onRefresh, onNavigate }: OverviewPageProps) {
+const phaseLabel: Record<ScanProgress["phase"], string> = {
+  managers: "正在扫描包管理器",
+  projects: "正在扫描项目",
+  health: "正在生成健康报告",
+  complete: "扫描完成",
+};
+
+export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCancel, onNavigate }: OverviewPageProps) {
   const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
   const outdated = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
   const cacheSize = data.managers.reduce((total, manager) => total + (manager.cacheSizeBytes ?? 0), 0);
@@ -21,7 +30,7 @@ export function OverviewPage({ data, isLoading, onRefresh, onNavigate }: Overvie
       <PageHeader
         title="本机开发环境"
         description={`上次扫描：${formatRelativeTime(data.scannedAt)} · 所有数据仅保存在本机`}
-        actions={<button className="button button--primary" onClick={onRefresh} disabled={isLoading}><Icon name="refresh" />{isLoading ? "扫描中…" : "刷新扫描"}</button>}
+        actions={<>{isLoading ? <button className="button button--secondary" onClick={onCancel}>取消扫描</button> : null}<button className="button button--primary" onClick={onRefresh} disabled={isLoading}><Icon name="refresh" />{isLoading && scanProgress ? `${phaseLabel[scanProgress.phase]} ${scanProgress.completed}/${scanProgress.total}` : isLoading ? "扫描中…" : "刷新扫描"}</button></>}
       />
       <section className="metrics" aria-label="环境摘要">
         <div className="metric"><span className="metric__icon"><Icon name="packages" /></span><div><strong>{availableManagers}</strong><span>已发现管理器</span></div></div>

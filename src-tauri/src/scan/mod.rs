@@ -1,23 +1,68 @@
 mod health;
 mod projects;
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
     adapters,
     error::AppError,
-    models::{EnvironmentScan, LogCategory, LogStatus, PathObservation, ProjectMetadata, TaskLog},
+    models::{
+        EnvironmentScan, LogCategory, LogStatus, PathObservation, ProjectMetadata, ScanPhase,
+        ScanProgress, TaskLog,
+    },
     storage::Storage,
 };
 
 use crate::adapters::runner::find_all_in_path;
 pub use projects::scan_projects;
 
-pub fn scan_environment(storage: &Storage) -> Result<EnvironmentScan, AppError> {
+const SCAN_STEPS: usize = 10;
+
+pub fn scan_environment(
+    storage: &Storage,
+    cancelled: &AtomicBool,
+    scan_id: &str,
+    on_progress: Arc<dyn Fn(ScanProgress) + Send + Sync>,
+) -> Result<EnvironmentScan, AppError> {
     let scanned_at = Utc::now().to_rfc3339();
-    let adapter_scans = adapters::scan_all();
-    let mut managers = Vec::with_capacity(adapter_scans.len());
+    let emit_progress = |phase, completed, manager_id| {
+        on_progress(ScanProgress {
+            scan_id: scan_id.into(),
+            phase,
+            completed,
+            total: SCAN_STEPS,
+            manager_id,
+        })
+    };
+    emit_progress(ScanPhase::Managers, 0, None);
+    let completed_managers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let callback = {
+        let completed_managers = completed_managers.clone();
+        let scan_id = scan_id.to_string();
+        let on_progress = on_progress.clone();
+        Arc::new(move |manager_id| {
+            let completed = completed_managers.fetch_add(1, Ordering::SeqCst) + 1;
+            on_progress(ScanProgress {
+                scan_id: scan_id.clone(),
+                phase: ScanPhase::Managers,
+                completed,
+                total: SCAN_STEPS,
+                manager_id: Some(manager_id),
+            });
+        })
+    };
+    let adapter_scans = adapters::scan_all(cancelled, callback)?;
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(AppError::ScanCancelled);
+    }
+    let manager_count = adapter_scans.len();
+    let mut managers = Vec::with_capacity(manager_count);
     let mut packages = Vec::new();
     let mut logs = Vec::new();
     let mut partial_failures = 0;
@@ -35,10 +80,15 @@ pub fn scan_environment(storage: &Storage) -> Result<EnvironmentScan, AppError> 
         .iter()
         .map(|root| root.to_string_lossy().into_owned())
         .collect();
-    let project_scan = projects::scan_projects(&roots);
+    emit_progress(ScanPhase::Projects, manager_count, None);
+    let project_scan = projects::scan_projects(&roots, cancelled)?;
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(AppError::ScanCancelled);
+    }
     partial_failures += project_scan.failures;
     logs.extend(project_scan.logs);
     let path_observations = scan_paths();
+    emit_progress(ScanPhase::Health, manager_count + 1, None);
     let health_issues = health::build_health_report(
         &managers,
         &packages,
@@ -64,6 +114,7 @@ pub fn scan_environment(storage: &Storage) -> Result<EnvironmentScan, AppError> 
         timestamp: Utc::now().to_rfc3339(),
     });
 
+    emit_progress(ScanPhase::Complete, SCAN_STEPS, None);
     Ok(EnvironmentScan {
         managers,
         packages,
@@ -99,7 +150,7 @@ fn scan_paths() -> Vec<PathObservation> {
 }
 
 pub fn projects_for_roots(storage: &Storage) -> Result<Vec<ProjectMetadata>, AppError> {
-    Ok(scan_projects(&storage.list_scan_roots()?).projects)
+    Ok(scan_projects(&storage.list_scan_roots()?, &AtomicBool::new(false))?.projects)
 }
 
 #[cfg(test)]

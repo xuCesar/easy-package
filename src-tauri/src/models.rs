@@ -8,6 +8,9 @@ pub enum PackageManagerId {
     Pnpm,
     Uv,
     Pip,
+    Yarn,
+    Bun,
+    Cargo,
 }
 
 impl PackageManagerId {
@@ -18,6 +21,9 @@ impl PackageManagerId {
             Self::Pnpm => "pnpm",
             Self::Uv => "uv",
             Self::Pip => "pip",
+            Self::Yarn => "yarn",
+            Self::Bun => "bun",
+            Self::Cargo => "cargo",
         }
     }
 }
@@ -187,4 +193,24 @@ pub struct EnvironmentScan {
     pub path_observations: Vec<PathObservation>,
     pub scanned_at: String,
     pub partial_failures: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScanPhase {
+    Managers,
+    Projects,
+    Health,
+    Complete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanProgress {
+    pub scan_id: String,
+    pub phase: ScanPhase,
+    pub completed: usize,
+    pub total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager_id: Option<PackageManagerId>,
 }

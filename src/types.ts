@@ -1,6 +1,6 @@
 export type PageId = "overview" | "packages" | "projects" | "environment";
 
-export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip";
+export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo";
 
 export type ManagerStatus = "available" | "unavailable" | "error" | "unsupported";
 
@@ -93,8 +93,20 @@ export interface EnvironmentScan {
   partialFailures: number;
 }
 
+export type ScanPhase = "managers" | "projects" | "health" | "complete";
+
+export interface ScanProgress {
+  scanId: string;
+  phase: ScanPhase;
+  completed: number;
+  total: number;
+  managerId?: PackageManagerId;
+}
+
 export interface DevPkgApi {
-  scanEnvironment(): Promise<EnvironmentScan>;
+  scanEnvironment(scanId: string): Promise<EnvironmentScan>;
+  cancelEnvironmentScan(scanId: string): Promise<void>;
+  listenToScanProgress(listener: (progress: ScanProgress) => void): Promise<() => void>;
   listPackages(): Promise<ManagedPackage[]>;
   listProjects(): Promise<ProjectMetadata[]>;
   addScanRoot(path: string): Promise<ProjectMetadata[]>;

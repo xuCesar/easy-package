@@ -11,6 +11,8 @@ pub enum AppError {
     Serialization(String),
     #[error("本机命令执行失败：{0}")]
     Command(String),
+    #[error("扫描已取消")]
+    ScanCancelled,
 }
 
 impl Serialize for AppError {

@@ -3,7 +3,13 @@ pub(crate) mod runner;
 
 use std::{
     collections::HashMap,
+    fs,
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    thread,
 };
 
 use chrono::Utc;
@@ -15,8 +21,8 @@ use crate::models::{
     PackageManagerId, PackageScope, TaskLog, UpdateStatus,
 };
 use parsers::{
-    parse_brew_packages, parse_npm_packages, parse_pip_packages, parse_pnpm_packages,
-    parse_uv_packages,
+    parse_brew_packages, parse_cargo_packages, parse_npm_packages, parse_pip_packages,
+    parse_pnpm_packages, parse_uv_packages,
 };
 use runner::{find_executable, readable_path, CommandOutput, CommandRunner};
 
@@ -35,6 +41,22 @@ enum ParserKind {
     Pnpm,
     Uv,
     Pip,
+    Cargo,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PackageSource {
+    Command(&'static [&'static str]),
+    YarnGlobalDirectory,
+    BunGlobalDirectory,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CacheSource {
+    Command(&'static [&'static str]),
+    Bun,
+    Cargo,
+    None,
 }
 
 #[derive(Debug, Clone)]
@@ -44,23 +66,23 @@ struct ManagerSpec {
     executable_names: &'static [&'static str],
     common_paths: &'static [&'static str],
     version_args: &'static [&'static str],
-    list_args: &'static [&'static str],
+    package_source: PackageSource,
     outdated_args: Option<&'static [&'static str]>,
-    cache_args: &'static [&'static str],
+    cache_source: CacheSource,
     scope: PackageScope,
     parser: ParserKind,
 }
 
-const SPECS: [ManagerSpec; 5] = [
+const SPECS: [ManagerSpec; 8] = [
     ManagerSpec {
         id: PackageManagerId::Homebrew,
         display_name: "Homebrew",
         executable_names: &["brew"],
         common_paths: &["/opt/homebrew/bin/brew", "/usr/local/bin/brew"],
         version_args: &["--version"],
-        list_args: &["list", "--versions"],
+        package_source: PackageSource::Command(&["list", "--versions"]),
         outdated_args: Some(&["outdated"]),
-        cache_args: &["--cache"],
+        cache_source: CacheSource::Command(&["--cache"]),
         scope: PackageScope::System,
         parser: ParserKind::Brew,
     },
@@ -70,9 +92,9 @@ const SPECS: [ManagerSpec; 5] = [
         executable_names: &["npm"],
         common_paths: &[],
         version_args: &["--version"],
-        list_args: &["list", "--global", "--depth=0", "--json"],
+        package_source: PackageSource::Command(&["list", "--global", "--depth=0", "--json"]),
         outdated_args: Some(&["outdated", "--global", "--json"]),
-        cache_args: &["config", "get", "cache"],
+        cache_source: CacheSource::Command(&["config", "get", "cache"]),
         scope: PackageScope::Global,
         parser: ParserKind::Npm,
     },
@@ -82,9 +104,9 @@ const SPECS: [ManagerSpec; 5] = [
         executable_names: &["pnpm"],
         common_paths: &[],
         version_args: &["--version"],
-        list_args: &["list", "--global", "--depth=0", "--json"],
+        package_source: PackageSource::Command(&["list", "--global", "--depth=0", "--json"]),
         outdated_args: Some(&["outdated", "--global", "--format", "json"]),
-        cache_args: &["store", "path"],
+        cache_source: CacheSource::Command(&["store", "path"]),
         scope: PackageScope::Global,
         parser: ParserKind::Pnpm,
     },
@@ -94,9 +116,9 @@ const SPECS: [ManagerSpec; 5] = [
         executable_names: &["uv"],
         common_paths: &[],
         version_args: &["--version"],
-        list_args: &["tool", "list"],
+        package_source: PackageSource::Command(&["tool", "list"]),
         outdated_args: None,
-        cache_args: &["cache", "dir"],
+        cache_source: CacheSource::Command(&["cache", "dir"]),
         scope: PackageScope::Tool,
         parser: ParserKind::Uv,
     },
@@ -106,28 +128,103 @@ const SPECS: [ManagerSpec; 5] = [
         executable_names: &["pip3", "pip"],
         common_paths: &["/opt/homebrew/bin/pip3", "/usr/local/bin/pip3"],
         version_args: &["--version"],
-        list_args: &["list", "--format=json", "--disable-pip-version-check"],
+        package_source: PackageSource::Command(&[
+            "list",
+            "--format=json",
+            "--disable-pip-version-check",
+        ]),
         outdated_args: Some(&[
             "list",
             "--outdated",
             "--format=json",
             "--disable-pip-version-check",
         ]),
-        cache_args: &["cache", "dir"],
+        cache_source: CacheSource::Command(&["cache", "dir"]),
         scope: PackageScope::Global,
         parser: ParserKind::Pip,
     },
+    ManagerSpec {
+        id: PackageManagerId::Yarn,
+        display_name: "Yarn",
+        executable_names: &["yarn"],
+        common_paths: &[],
+        version_args: &["--version"],
+        package_source: PackageSource::YarnGlobalDirectory,
+        outdated_args: None,
+        cache_source: CacheSource::None,
+        scope: PackageScope::Global,
+        parser: ParserKind::Npm,
+    },
+    ManagerSpec {
+        id: PackageManagerId::Bun,
+        display_name: "Bun",
+        executable_names: &["bun"],
+        common_paths: &[],
+        version_args: &["--version"],
+        package_source: PackageSource::BunGlobalDirectory,
+        outdated_args: None,
+        cache_source: CacheSource::Bun,
+        scope: PackageScope::Global,
+        parser: ParserKind::Npm,
+    },
+    ManagerSpec {
+        id: PackageManagerId::Cargo,
+        display_name: "Cargo",
+        executable_names: &["cargo"],
+        common_paths: &[],
+        version_args: &["--version"],
+        package_source: PackageSource::Command(&["install", "--list"]),
+        outdated_args: None,
+        cache_source: CacheSource::Cargo,
+        scope: PackageScope::Tool,
+        parser: ParserKind::Cargo,
+    },
 ];
 
-pub fn scan_all() -> Vec<AdapterScan> {
+const MAX_PARALLEL_MANAGER_SCANS: usize = 3;
+
+pub fn scan_all(
+    cancelled: &AtomicBool,
+    on_complete: Arc<dyn Fn(PackageManagerId) + Send + Sync>,
+) -> Result<Vec<AdapterScan>, crate::error::AppError> {
     if !cfg!(target_os = "macos") {
-        return SPECS.iter().map(unsupported_scan).collect();
+        return Ok(SPECS.iter().map(unsupported_scan).collect());
     }
-    let runner = CommandRunner::default();
-    SPECS
-        .iter()
-        .map(|spec| scan_manager(spec, &runner))
-        .collect()
+    let workers = MAX_PARALLEL_MANAGER_SCANS.min(SPECS.len());
+    let completed = Arc::new(AtomicUsize::new(0));
+    let scans = thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for worker in 0..workers {
+            let on_complete = on_complete.clone();
+            let completed = completed.clone();
+            handles.push(scope.spawn(move || {
+                let runner = CommandRunner::default();
+                SPECS
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| index % workers == worker)
+                    .map(|(index, spec)| {
+                        let scan = scan_manager(spec, &runner, cancelled)?;
+                        let _ = completed.fetch_add(1, Ordering::SeqCst);
+                        on_complete(spec.id);
+                        Ok((index, scan))
+                    })
+                    .collect::<Result<Vec<_>, crate::error::AppError>>()
+            }));
+        }
+        let mut scans = Vec::new();
+        for handle in handles {
+            scans.extend(
+                handle
+                    .join()
+                    .map_err(|_| crate::error::AppError::Command("扫描线程异常退出".into()))??,
+            );
+        }
+        Ok::<_, crate::error::AppError>(scans)
+    })?;
+    let mut scans = scans;
+    scans.sort_by_key(|(index, _)| *index);
+    Ok(scans.into_iter().map(|(_, scan)| scan).collect())
 }
 
 fn unsupported_scan(spec: &ManagerSpec) -> AdapterScan {
@@ -159,10 +256,17 @@ fn unsupported_scan(spec: &ManagerSpec) -> AdapterScan {
     }
 }
 
-fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
+fn scan_manager(
+    spec: &ManagerSpec,
+    runner: &CommandRunner,
+    cancelled: &AtomicBool,
+) -> Result<AdapterScan, crate::error::AppError> {
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(crate::error::AppError::ScanCancelled);
+    }
     let scanned_at = Utc::now().to_rfc3339();
     let Some(executable) = find_executable(spec.executable_names, spec.common_paths) else {
-        return AdapterScan {
+        return Ok(AdapterScan {
             manager: PackageManager {
                 id: spec.id,
                 display_name: spec.display_name.into(),
@@ -182,17 +286,20 @@ fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
                 None,
             )],
             partial_failures: 0,
-        };
+        });
     };
 
-    let version_output = runner.run(&executable, spec.version_args);
+    let version_output = runner.run_cancellable(&executable, spec.version_args, cancelled);
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(crate::error::AppError::ScanCancelled);
+    }
     if !version_output.success {
         let error = diagnostic(
             "VERSION_COMMAND_FAILED",
             "版本命令执行失败",
             &version_output,
         );
-        return AdapterScan {
+        return Ok(AdapterScan {
             manager: PackageManager {
                 id: spec.id,
                 display_name: spec.display_name.into(),
@@ -212,29 +319,27 @@ fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
                 Some(error),
             )],
             partial_failures: 1,
-        };
+        });
     }
 
     let version = parse_version(spec.parser, &version_output.stdout);
     let mut logs = Vec::new();
     let mut partial_failures = 0;
-    let list_output = runner.run(&executable, spec.list_args);
-    let mut packages = if list_output.success {
-        parse_installed(spec, &list_output.stdout)
-    } else {
-        partial_failures += 1;
-        let error = diagnostic("LIST_COMMAND_FAILED", "读取已安装软件包失败", &list_output);
-        logs.push(log(
-            spec.id,
-            LogStatus::Error,
-            "读取已安装软件包失败",
-            Some(error),
-        ));
-        Vec::new()
-    };
+    let (mut packages, supports_packages) = read_packages(
+        spec,
+        runner,
+        &executable,
+        version.as_deref(),
+        cancelled,
+        &mut logs,
+        &mut partial_failures,
+    )?;
 
     if let Some(args) = spec.outdated_args {
-        let output = runner.run(&executable, args);
+        let output = runner.run_cancellable(&executable, args, cancelled);
+        if cancelled.load(Ordering::SeqCst) {
+            return Err(crate::error::AppError::ScanCancelled);
+        }
         // npm/pnpm 在发现过期包时可能返回非零退出码，只要输出能解析就继续使用。
         if output.success || !output.stdout.trim().is_empty() {
             apply_outdated(spec.parser, &output.stdout, &mut packages);
@@ -257,28 +362,7 @@ fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
         ));
     }
 
-    let cache_output = runner.run(&executable, spec.cache_args);
-    let cache_size_bytes = if cache_output.success {
-        cache_output
-            .stdout
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            .map(str::trim)
-            .map(PathBuf::from)
-            .and_then(|path| directory_size(&path))
-    } else {
-        logs.push(log(
-            spec.id,
-            LogStatus::Warning,
-            "无法读取缓存目录",
-            Some(diagnostic(
-                "CACHE_PATH_FAILED",
-                "无法读取缓存目录",
-                &cache_output,
-            )),
-        ));
-        None
-    };
+    let cache_size_bytes = read_cache_size(spec, runner, &executable, cancelled, &mut logs)?;
 
     logs.push(log(
         spec.id,
@@ -290,18 +374,14 @@ fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
         ),
         None,
     ));
-    AdapterScan {
+    Ok(AdapterScan {
         manager: PackageManager {
             id: spec.id,
             display_name: spec.display_name.into(),
             version,
             executable_path: Some(readable_path(&executable)),
             status: ManagerStatus::Available,
-            capabilities: if spec.outdated_args.is_some() {
-                vec!["packages".into(), "outdated".into(), "cache".into()]
-            } else {
-                vec!["packages".into(), "cache".into()]
-            },
+            capabilities: manager_capabilities(spec, supports_packages, cache_size_bytes.is_some()),
             error: None,
             cache_size_bytes,
             scanned_at,
@@ -309,13 +389,201 @@ fn scan_manager(spec: &ManagerSpec, runner: &CommandRunner) -> AdapterScan {
         packages,
         logs,
         partial_failures,
+    })
+}
+
+fn read_packages(
+    spec: &ManagerSpec,
+    runner: &CommandRunner,
+    executable: &Path,
+    version: Option<&str>,
+    cancelled: &AtomicBool,
+    logs: &mut Vec<TaskLog>,
+    partial_failures: &mut usize,
+) -> Result<(Vec<ManagedPackage>, bool), crate::error::AppError> {
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(crate::error::AppError::ScanCancelled);
     }
+    let values = match spec.package_source {
+        PackageSource::Command(args) => {
+            let output = runner.run_cancellable(executable, args, cancelled);
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(crate::error::AppError::ScanCancelled);
+            }
+            if output.success {
+                Some(parse_installed(spec, &output.stdout))
+            } else {
+                *partial_failures += 1;
+                let error = diagnostic("LIST_COMMAND_FAILED", "读取已安装软件包失败", &output);
+                logs.push(log(
+                    spec.id,
+                    LogStatus::Error,
+                    "读取已安装软件包失败",
+                    Some(error),
+                ));
+                Some(Vec::new())
+            }
+        }
+        PackageSource::YarnGlobalDirectory => {
+            if !version.is_some_and(|value| value.starts_with("1.")) {
+                logs.push(log(
+                    spec.id,
+                    LogStatus::Info,
+                    "Yarn Berry 不支持全局包扫描",
+                    None,
+                ));
+                return Ok((Vec::new(), false));
+            }
+            let output = runner.run_cancellable(executable, &["global", "dir"], cancelled);
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(crate::error::AppError::ScanCancelled);
+            }
+            if !output.success {
+                *partial_failures += 1;
+                let error = diagnostic("YARN_GLOBAL_DIR_FAILED", "无法读取 Yarn 全局目录", &output);
+                logs.push(log(
+                    spec.id,
+                    LogStatus::Warning,
+                    "无法读取 Yarn 全局目录",
+                    Some(error),
+                ));
+                Some(Vec::new())
+            } else {
+                output
+                    .stdout
+                    .lines()
+                    .map(|line| PathBuf::from(line.trim()))
+                    .find(|path| path.is_dir())
+                    .map(|path| packages_from_node_modules(spec, &path.join("node_modules")))
+                    .transpose()?
+            }
+        }
+        PackageSource::BunGlobalDirectory => {
+            let root = bun_install_dir().join("install/global/node_modules");
+            Some(packages_from_node_modules(spec, &root)?)
+        }
+    };
+    Ok((values.unwrap_or_default(), true))
+}
+
+fn packages_from_node_modules(
+    spec: &ManagerSpec,
+    directory: &Path,
+) -> Result<Vec<ManagedPackage>, crate::error::AppError> {
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut package_dirs = Vec::new();
+    for entry in fs::read_dir(directory)
+        .map_err(|error| crate::error::AppError::Command(error.to_string()))?
+    {
+        let entry = entry.map_err(|error| crate::error::AppError::Command(error.to_string()))?;
+        let path = entry.path();
+        if entry.file_name().to_string_lossy().starts_with('@') {
+            if let Ok(children) = fs::read_dir(&path) {
+                package_dirs.extend(children.filter_map(Result::ok).map(|child| child.path()));
+            }
+        } else {
+            package_dirs.push(path);
+        }
+    }
+    let mut packages = Vec::new();
+    for package_dir in package_dirs {
+        let manifest = package_dir.join("package.json");
+        let Ok(source) = fs::read_to_string(manifest) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&source) else {
+            continue;
+        };
+        let Some(name) = value.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(version) = value.get("version").and_then(Value::as_str) else {
+            continue;
+        };
+        packages.push(ManagedPackage {
+            id: format!("{}:{name}", spec.id.as_str()),
+            manager_id: spec.id,
+            name: name.into(),
+            version: version.into(),
+            latest_version: None,
+            scope: spec.scope,
+            update_status: UpdateStatus::Unknown,
+        });
+    }
+    packages.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(packages)
+}
+
+fn bun_install_dir() -> PathBuf {
+    std::env::var_os("BUN_INSTALL")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".bun")))
+        .unwrap_or_default()
+}
+
+fn cargo_home() -> PathBuf {
+    std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".cargo")))
+        .unwrap_or_default()
+}
+
+fn read_cache_size(
+    spec: &ManagerSpec,
+    runner: &CommandRunner,
+    executable: &Path,
+    cancelled: &AtomicBool,
+    logs: &mut Vec<TaskLog>,
+) -> Result<Option<u64>, crate::error::AppError> {
+    let path = match spec.cache_source {
+        CacheSource::None => return Ok(None),
+        CacheSource::Bun => Some(bun_install_dir().join("install/cache")),
+        CacheSource::Cargo => Some(cargo_home().join("registry/cache")),
+        CacheSource::Command(args) => {
+            let output = runner.run_cancellable(executable, args, cancelled);
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(crate::error::AppError::ScanCancelled);
+            }
+            if output.success {
+                output
+                    .stdout
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(|line| PathBuf::from(line.trim()))
+            } else {
+                logs.push(log(
+                    spec.id,
+                    LogStatus::Warning,
+                    "无法读取缓存目录",
+                    Some(diagnostic("CACHE_PATH_FAILED", "无法读取缓存目录", &output)),
+                ));
+                None
+            }
+        }
+    };
+    Ok(path.and_then(|path| directory_size(&path)))
+}
+
+fn manager_capabilities(spec: &ManagerSpec, packages: bool, cache: bool) -> Vec<String> {
+    let mut capabilities = Vec::new();
+    if packages {
+        capabilities.push("packages".into());
+    }
+    if spec.outdated_args.is_some() {
+        capabilities.push("outdated".into());
+    }
+    if cache {
+        capabilities.push("cache".into());
+    }
+    capabilities
 }
 
 fn parse_version(kind: ParserKind, output: &str) -> Option<String> {
     let line = output.lines().find(|line| !line.trim().is_empty())?.trim();
     match kind {
-        ParserKind::Brew => line.split_whitespace().nth(1),
+        ParserKind::Brew | ParserKind::Cargo => line.split_whitespace().nth(1),
         ParserKind::Uv => line.split_whitespace().nth(1),
         ParserKind::Pip => line.split_whitespace().nth(1),
         ParserKind::Npm | ParserKind::Pnpm => line.split_whitespace().next(),
@@ -330,6 +598,7 @@ fn parse_installed(spec: &ManagerSpec, output: &str) -> Vec<ManagedPackage> {
         ParserKind::Pnpm => parse_pnpm_packages(output),
         ParserKind::Uv => parse_uv_packages(output),
         ParserKind::Pip => parse_pip_packages(output),
+        ParserKind::Cargo => parse_cargo_packages(output),
     };
     values
         .into_iter()
@@ -389,7 +658,7 @@ fn parse_outdated(kind: ParserKind, output: &str) -> HashMap<String, Option<Stri
                 })
                 .collect()
         }
-        ParserKind::Uv => HashMap::new(),
+        ParserKind::Uv | ParserKind::Cargo => HashMap::new(),
     }
 }
 
@@ -495,5 +764,48 @@ mod tests {
         assert_eq!(packages[0].version, "24.10.0");
         assert_eq!(packages[0].latest_version.as_deref(), Some("25.1.0"));
         assert_eq!(packages[0].update_status, UpdateStatus::Available);
+    }
+
+    #[test]
+    fn yarn_uses_global_directory_instead_of_networked_list_command() {
+        let yarn = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Yarn)
+            .expect("Yarn spec should exist");
+        assert!(matches!(
+            yarn.package_source,
+            PackageSource::YarnGlobalDirectory
+        ));
+        assert!(yarn.outdated_args.is_none());
+    }
+
+    #[test]
+    fn bun_and_cargo_do_not_report_outdated_capability() {
+        for id in [PackageManagerId::Bun, PackageManagerId::Cargo] {
+            let spec = SPECS.iter().find(|spec| spec.id == id).unwrap();
+            assert!(spec.outdated_args.is_none());
+        }
+    }
+
+    #[test]
+    fn reads_bun_style_global_node_modules_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let modules = directory.path().join("node_modules/@scope/tool");
+        std::fs::create_dir_all(&modules).unwrap();
+        std::fs::write(
+            modules.join("package.json"),
+            r#"{"name":"@scope/tool","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        let bun = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Bun)
+            .unwrap();
+
+        let packages =
+            packages_from_node_modules(bun, &directory.path().join("node_modules")).unwrap();
+
+        assert_eq!(packages[0].id, "bun:@scope/tool");
+        assert_eq!(packages[0].version, "1.2.3");
     }
 }

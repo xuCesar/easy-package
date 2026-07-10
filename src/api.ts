@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectMetadata, TaskLog } from "./types";
+import { listen } from "@tauri-apps/api/event";
+import type { DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectMetadata, ScanProgress, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
@@ -7,11 +8,35 @@ let browserProjects = [...mockProjects];
 let browserScanRoots = [...mockScan.scanRoots];
 
 const wait = (duration = 180) => new Promise((resolve) => window.setTimeout(resolve, duration));
+const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
+const cancelledMockScans = new Set<string>();
+
+const emitMockProgress = (progress: ScanProgress) => {
+  mockProgressListeners.forEach((listener) => listener(progress));
+};
 
 const mockApi: DevPkgApi = {
-  async scanEnvironment() {
-    await wait();
+  async scanEnvironment(scanId) {
+    const total = 10;
+    for (let completed = 0; completed < total; completed += 1) {
+      await wait(45);
+      if (cancelledMockScans.delete(scanId)) throw new Error("扫描已取消");
+      emitMockProgress({
+        scanId,
+        phase: completed < 8 ? "managers" : completed === 8 ? "projects" : "health",
+        completed,
+        total,
+      });
+    }
+    emitMockProgress({ scanId, phase: "complete", completed: total, total });
     return { ...mockScan, projects: browserProjects, scanRoots: browserScanRoots, scannedAt: new Date().toISOString() };
+  },
+  async cancelEnvironmentScan(scanId) {
+    cancelledMockScans.add(scanId);
+  },
+  async listenToScanProgress(listener) {
+    mockProgressListeners.add(listener);
+    return () => mockProgressListeners.delete(listener);
   },
   async listPackages() {
     return mockScan.packages;
@@ -41,7 +66,11 @@ const mockApi: DevPkgApi = {
 };
 
 const tauriApi: DevPkgApi = {
-  scanEnvironment: () => invoke<EnvironmentScan>("scan_environment"),
+  scanEnvironment: (scanId) => invoke<EnvironmentScan>("scan_environment", { scanId }),
+  cancelEnvironmentScan: (scanId) => invoke<void>("cancel_environment_scan", { scanId }),
+  async listenToScanProgress(listener) {
+    return listen<ScanProgress>("scan-progress", (event) => listener(event.payload));
+  },
   listPackages: () => invoke<ManagedPackage[]>("list_packages"),
   listProjects: () => invoke<ProjectMetadata[]>("list_projects"),
   addScanRoot: (path) => invoke<ProjectMetadata[]>("add_scan_root", { path }),

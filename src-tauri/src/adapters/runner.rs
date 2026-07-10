@@ -4,8 +4,9 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use wait_timeout::ChildExt;
@@ -43,7 +44,12 @@ impl CommandRunner {
         }
     }
 
-    pub fn run(&self, executable: &Path, args: &[&str]) -> CommandOutput {
+    pub fn run_cancellable(
+        &self,
+        executable: &Path,
+        args: &[&str],
+        cancelled: &AtomicBool,
+    ) -> CommandOutput {
         let mut child = match Command::new(executable)
             .args(args)
             .env("NO_COLOR", "1")
@@ -66,24 +72,34 @@ impl CommandRunner {
         // 持续读取两个管道，避免大量输出填满 OS 缓冲区后子进程与父进程互相等待。
         let stdout_reader = child.stdout.take().map(read_in_background);
         let stderr_reader = child.stderr.take().map(read_in_background);
-        let (success, exit_code, fallback_error) = match child.wait_timeout(self.timeout) {
-            Ok(Some(status)) => (status.success(), status.code(), None),
-            Ok(None) => {
+        let started_at = Instant::now();
+        let (success, exit_code, fallback_error) = loop {
+            if cancelled.load(Ordering::SeqCst) {
                 let _ = child.kill();
                 let _ = child.wait();
-                (
+                break (false, None, Some("扫描已取消，命令已终止".into()));
+            }
+            let remaining = self.timeout.saturating_sub(started_at.elapsed());
+            if remaining.is_zero() {
+                let _ = child.kill();
+                let _ = child.wait();
+                break (
                     false,
                     None,
                     Some(format!(
                         "命令执行超过 {} 秒，已终止",
                         self.timeout.as_secs()
                     )),
-                )
+                );
             }
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                (false, None, Some(error.to_string()))
+            match child.wait_timeout(remaining.min(Duration::from_millis(200))) {
+                Ok(Some(status)) => break (status.success(), status.code(), None),
+                Ok(None) => continue,
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break (false, None, Some(error.to_string()));
+                }
             }
         };
 
@@ -205,7 +221,11 @@ mod tests {
         let output = CommandRunner {
             timeout: Duration::from_secs(2),
         }
-        .run(Path::new("/bin/echo"), &["$(touch /tmp/should-not-exist)"]);
+        .run_cancellable(
+            Path::new("/bin/echo"),
+            &["$(touch /tmp/should-not-exist)"],
+            &AtomicBool::new(false),
+        );
         assert!(output.success);
         assert!(output.stdout.contains("$(touch"));
     }

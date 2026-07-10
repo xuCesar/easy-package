@@ -39,4 +39,7 @@ export const managerLabel: Record<PackageManagerId, string> = {
   pnpm: "pnpm",
   uv: "uv",
   pip: "pip",
+  yarn: "Yarn",
+  bun: "Bun",
+  cargo: "Cargo",
 };

@@ -1,13 +1,15 @@
 # Easy Package
 
-Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、uv、pip，以及用户明确选择目录中的 JavaScript / Python 项目元数据。
+Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip，以及用户明确选择目录中的 JavaScript / Python / Rust 项目元数据。
 
 ## 当前边界
 
 - 首发支持 macOS；其他平台返回受控的“不支持”状态。
 - 桌面窗口最小宽度为 880px，不提供移动端 Web 适配。
 - 只执行版本、列表、更新检查、缓存路径等只读命令。
+- 扫描按管理器、项目、健康报告阶段显示进度，可随时取消；取消不会覆盖上一次成功快照。
 - 不提供安装、升级、卸载、清理或任意 Shell 执行接口。
+- Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
 - 项目扫描只读取 manifest、锁文件和运行时声明，不解析完整依赖树。
 - 扫描快照、扫描根目录和诊断日志只保存在本机 SQLite 中。
 
@@ -36,6 +38,7 @@ pnpm check
 ```
 
 `pnpm check` 会依次执行前端测试、前端构建、Rust 单元测试与 Rust 格式检查。
+GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行同一质量门禁。
 
 ## 结构
 

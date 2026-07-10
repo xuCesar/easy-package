@@ -93,6 +93,9 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .manager-logo--pnpm { color: #f5c44e; background: #423b23; }
 .manager-logo--uv { color: #b398ff; background: #312a4a; }
 .manager-logo--pip { color: #6db6ee; background: #193a54; }
+.manager-logo--yarn { color: #9fb6ff; background: #26335c; }
+.manager-logo--bun { color: #f3b578; background: #413125; }
+.manager-logo--cargo { color: #f49b68; background: #442d22; }
 .manager-row__name { min-width: 0; display: grid; gap: 3px; }
 .manager-row__name strong { font-size: 13px; }
 .manager-row__name small { overflow: hidden; color: var(--text-3); font: 10px/1.2 "SFMono-Regular", monospace; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,6 +144,9 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .manager-chip--pnpm { color: #f4d47d; background: #393321; }
 .manager-chip--uv { color: #c7b8ff; background: #302949; }
 .manager-chip--pip { color: #92cdf5; background: #193347; }
+.manager-chip--yarn { color: #b6c7ff; background: #29345d; }
+.manager-chip--bun { color: #f5bd8e; background: #493326; }
+.manager-chip--cargo { color: #f2a978; background: #4b3024; }
 .empty-state { min-height: 330px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .empty-state > svg { width: 30px; margin-bottom: 16px; color: #50718e; }
 .empty-state strong { font-size: 14px; }
