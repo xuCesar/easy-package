@@ -49,9 +49,9 @@ pnpm test:e2e
 
 `pnpm check` 会依次执行前端测试、前端构建、Rust 单元测试与 Rust 格式检查。
 `pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
-GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建，并在 Linux 上执行固定 fixture 的原生 E2E。
+GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建。
 
-`pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。先执行一次 `cargo install tauri-driver --locked`，或通过 `TAURI_DRIVER` 指定该可执行文件路径。`tauri-driver` 当前不支持 macOS，因此该命令由 Linux CI 在 Xvfb 中执行；本地 macOS 会给出明确提示。该模式不读取本机包管理器、扫描目录或 SQLite；正式开发和 release 构建不会启用它。
+`pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。它不属于常规 CI 门禁：`tauri-driver` 不支持 macOS，且 Linux WebKit 驱动与固定 fixture 的维护成本不适合当前 macOS-first MVP。需要发布级原生验证时，在受控 Linux 环境或后续稳定的 macOS 原生方案中手动运行；该模式不读取本机包管理器、扫描目录或 SQLite。
 
 ## 桌面烟测
 
