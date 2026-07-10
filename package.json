@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "build:desktop": "tauri build --no-bundle --ci",
-    "build:e2e": "pnpm build && cargo build --manifest-path src-tauri/Cargo.toml --features e2e",
+    "build:e2e": "tauri build --debug --no-bundle --features e2e --ci",
     "test:e2e": "pnpm build:e2e && node e2e/run.mjs",
     "check": "pnpm test && pnpm build && pnpm test:rust && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
   },
