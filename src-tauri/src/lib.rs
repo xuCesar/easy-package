@@ -1,5 +1,7 @@
 mod adapters;
 mod commands;
+#[cfg(feature = "e2e")]
+mod e2e;
 mod error;
 mod models;
 mod scan;

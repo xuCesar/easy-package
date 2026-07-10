@@ -1,0 +1,30 @@
+{
+  "managers": [
+    { "id": "homebrew", "displayName": "Homebrew", "version": "4.6.15", "executablePath": "/opt/homebrew/bin/brew", "status": "available", "capabilities": ["packages", "outdated"], "scannedAt": "2026-07-10T00:00:00Z" },
+    { "id": "npm", "displayName": "npm", "version": "11.5.1", "executablePath": "/opt/homebrew/bin/npm", "status": "available", "capabilities": ["packages", "outdated"], "scannedAt": "2026-07-10T00:00:00Z" },
+    { "id": "composer", "displayName": "Composer", "version": "2.8.6", "executablePath": "/opt/homebrew/bin/composer", "status": "available", "capabilities": ["packages"], "scannedAt": "2026-07-10T00:00:00Z" }
+  ],
+  "packages": [
+    { "id": "npm:typescript", "managerId": "npm", "name": "typescript", "version": "5.8.3", "latestVersion": "5.9.2", "scope": "global", "updateStatus": "available" },
+    { "id": "composer:psr/log", "managerId": "composer", "name": "psr/log", "version": "3.0.2", "scope": "global", "updateStatus": "unknown" }
+  ],
+  "projects": [
+    { "name": "e2e-web", "path": "/fixture/e2e-web", "ecosystems": ["JavaScript"], "lockFiles": ["pnpm-lock.yaml"], "runtimeRequirements": [{ "runtime": "Node.js", "requirement": ">=22" }], "packageManager": "pnpm@11.5.3", "dependencies": [{ "ecosystem": "JavaScript", "name": "react", "normalizedName": "react", "versionRequirement": "^19.0.0", "scopes": ["运行"], "resolvedVersion": "19.1.1", "resolutionSource": "pnpm-lock.yaml", "resolutionChecked": true }], "warnings": [] }
+  ],
+  "dependencyInsights": [
+    { "ecosystem": "JavaScript", "name": "react", "projectCount": 1, "versionRequirements": ["^19.0.0"], "resolvedVersions": ["19.1.1"], "projects": [{ "projectName": "e2e-web", "projectPath": "/fixture/e2e-web", "versionRequirement": "^19.0.0", "scopes": ["运行"], "resolvedVersion": "19.1.1", "resolutionSource": "pnpm-lock.yaml" }], "hasVersionDivergence": false, "hasResolvedVersionDivergence": false, "hasResolutionRisk": false, "hasHealthRisk": false }
+  ],
+  "workspaces": [],
+  "scanRoots": [],
+  "healthIssues": [
+    { "id": "path-node", "severity": "info", "code": "PATH_CONFLICT", "title": "发现多个 Node 路径", "description": "当前优先使用 /opt/homebrew/bin/node。" }
+  ],
+  "logs": [
+    { "id": "fixture-scan", "category": "scan", "status": "success", "message": "E2E 固定环境扫描完成", "timestamp": "2026-07-10T00:00:00Z" }
+  ],
+  "pathObservations": [
+    { "command": "node", "activePath": "/opt/homebrew/bin/node", "alternatives": ["~/.nvm/versions/node/v22/bin/node"], "hasConflict": true }
+  ],
+  "scannedAt": "2026-07-10T00:00:00Z",
+  "partialFailures": 0
+}

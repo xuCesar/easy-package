@@ -69,6 +69,10 @@ pub async fn scan_environment(
         let progress = Arc::new(move |progress: ScanProgress| {
             let _ = app.emit("scan-progress", progress);
         });
+        #[cfg(feature = "e2e")]
+        if crate::e2e::is_enabled() {
+            return crate::e2e::scan(&cancellation, &scan_id_for_progress, progress.as_ref());
+        }
         let scan =
             scan::scan_environment(&storage, &cancellation, &scan_id_for_progress, progress)?;
         storage.save_snapshot(&scan)?;

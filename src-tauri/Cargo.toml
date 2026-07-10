@@ -6,6 +6,9 @@ authors = ["Easy Package"]
 edition = "2021"
 rust-version = "1.84"
 
+[features]
+e2e = []
+
 [lib]
 name = "devpkg_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
