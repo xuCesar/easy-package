@@ -4,9 +4,9 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { UpdateBadge } from "../components/Status";
 import { filterPackages, managerLabel } from "../lib/format";
-import type { ManagedPackage, PackageManagerId, UpdateStatus } from "../types";
+import type { ManagedPackage, PackageManagerId, PageId, UpdateStatus } from "../types";
 
-export function PackagesPage({ packages }: { packages: ManagedPackage[] }) {
+export function PackagesPage({ packages, onNavigate }: { packages: ManagedPackage[]; onNavigate: (page: PageId) => void }) {
   const [query, setQuery] = useState("");
   const [manager, setManager] = useState<"all" | PackageManagerId>("all");
   const [status, setStatus] = useState<"all" | UpdateStatus>("all");
@@ -15,7 +15,7 @@ export function PackagesPage({ packages }: { packages: ManagedPackage[] }) {
 
   return (
     <>
-      <PageHeader title="软件包" description="统一查看系统软件、全局工具与更新状态；当前版本不会修改本机环境。" />
+      <PageHeader title="软件包" description="统一查看系统软件、全局工具与更新状态。" actions={<button className="button button--secondary" onClick={() => onNavigate("actions")}>管理操作</button>} />
       <section className="toolbar" aria-label="软件包筛选">
         <label className="search-field"><Icon name="search" /><span className="sr-only">搜索软件包</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索软件包" /></label>
         <label className="select-field"><span>管理器</span><select value={manager} onChange={(event) => setManager(event.target.value as typeof manager)}><option value="all">全部</option>{Object.entries(managerLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

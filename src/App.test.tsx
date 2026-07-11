@@ -6,28 +6,34 @@ afterEach(cleanup);
 
 describe("App", () => {
   it("加载后展示概览并支持页面导航", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    expect(container.querySelector(".window-controls")).not.toBeInTheDocument();
     expect(screen.getByText("正在扫描本机环境")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "运行时" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "诊断" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行时" }));
     expect(screen.getByRole("heading", { name: "运行时" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "供应链" }));
+    fireEvent.click(screen.getByRole("button", { name: "供应链" }));
     expect(screen.getByRole("heading", { name: "供应链" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "缓存清理" }));
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
     expect(await screen.findByText("/opt/homebrew/bin/brew cleanup")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "系统设置" }));
+    expect(screen.getByRole("heading", { name: "系统设置" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "系统扫描设置" })).toBeInTheDocument();
   });
 
   it("软件包筛选展示空态", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
     fireEvent.change(screen.getByPlaceholderText("搜索软件包"), { target: { value: "not-a-real-package" } });
     expect(await screen.findByText("没有匹配的软件包")).toBeInTheDocument();
@@ -35,7 +41,7 @@ describe("App", () => {
 
   it("按文本、管理器和更新状态组合筛选软件包", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
     fireEvent.change(screen.getByPlaceholderText("搜索软件包"), { target: { value: "type" } });
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "npm" } });
@@ -48,7 +54,7 @@ describe("App", () => {
 
   it("可按 RubyGems 和 Composer 筛选只读全局包", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
 
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "rubygems" } });
@@ -62,12 +68,12 @@ describe("App", () => {
 
   it("取消刷新后保留已有扫描结果", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "刷新扫描" }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     fireEvent.click(screen.getByRole("button", { name: "取消扫描" }));
 
     expect(await screen.findByText("本次扫描已取消，保留上次成功结果。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
   });
 });

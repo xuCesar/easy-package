@@ -5,14 +5,11 @@ import type { PageId } from "../types";
 const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "overview", label: "概览", icon: "overview" },
   { id: "packages", label: "软件包", icon: "packages" },
-  { id: "actions", label: "操作", icon: "terminal" },
   { id: "projects", label: "项目", icon: "projects" },
-  { id: "dependencies", label: "依赖", icon: "dependencies" },
-  { id: "supplyChain", label: "供应链", icon: "warning" },
-  { id: "runtimes", label: "运行时", icon: "runtimes" },
-  { id: "history", label: "历史", icon: "history" },
-  { id: "environment", label: "环境", icon: "environment" },
+  { id: "environment", label: "诊断", icon: "environment" },
 ];
+
+const diagnosticPages = new Set<PageId>(["environment", "dependencies", "supplyChain", "runtimes", "history"]);
 
 interface AppShellProps {
   page: PageId;
@@ -24,17 +21,16 @@ export function AppShell({ page, onNavigate, children }: AppShellProps) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="window-controls" aria-hidden="true"><i /><i /><i /></div>
-        <div className="brand"><span className="brand__mark"><Icon name="terminal" /></span><span>Easy Package</span></div>
+        <div className="brand"><span className="brand__mark"><Icon name="packages" /></span><span>Easy Package</span></div>
         <nav className="nav" aria-label="主要导航">
           {navItems.map((item) => (
-            <button key={item.id} className={`nav__item ${page === item.id ? "nav__item--active" : ""}`} onClick={() => onNavigate(item.id)} aria-current={page === item.id ? "page" : undefined}>
+            <button key={item.id} className={`nav__item ${(item.id === "environment" ? diagnosticPages.has(page) : page === item.id) ? "nav__item--active" : ""}`} onClick={() => onNavigate(item.id)} aria-current={(item.id === "environment" ? diagnosticPages.has(page) : page === item.id) ? "page" : undefined}>
               <Icon name={item.icon} />
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
-        <div className="sidebar__footer"><span>v0.1.0</span><span className="readonly-label">受控模式</span></div>
+        <div className="sidebar__footer"><button className={page === "settings" ? "sidebar-settings sidebar-settings--active" : "sidebar-settings"} onClick={() => onNavigate("settings")} aria-current={page === "settings" ? "page" : undefined}><Icon name="settings" /><span>系统设置</span></button><div><span>v0.1.0</span><span className="readonly-label">受控模式</span></div></div>
       </aside>
       <main className="main-content">{children}</main>
     </div>

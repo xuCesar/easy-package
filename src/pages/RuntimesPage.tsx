@@ -38,7 +38,7 @@ export function RuntimesPage({ installations, assessments }: { installations: Ru
       <div className="runtime-layout">
         <section className="panel">
           <div className="panel__header"><h2>本机安装</h2><span className="count-label">{filteredInstallations.length}</span></div>
-          {filteredInstallations.length ? <div className="runtime-installations">{filteredInstallations.map((item) => <article className="runtime-installation" key={item.id}><div><span className="manager-chip">{item.runtime}</span>{item.isActive ? <span className="runtime-active">当前</span> : null}<h3>{item.version}</h3><code title={item.path}>{item.path}</code></div><div><strong>{item.provider}</strong><span>{trustLabel[item.executionTrust]}</span></div></article>)}</div> : <EmptyState icon="runtimes" title="没有匹配的运行时" description="调整运行时或提供者筛选条件。" />}
+          {filteredInstallations.length ? <div className="runtime-installations">{filteredInstallations.map((item) => <article className="runtime-installation" key={item.id}><div><div className="runtime-installation__heading"><span className="manager-chip">{item.runtime}</span>{item.isActive ? <span className="runtime-active">当前</span> : null}<h3>{item.version}</h3></div><code title={item.path}>{item.path}</code></div><div><strong>{item.provider}</strong><span>{trustLabel[item.executionTrust]}</span></div></article>)}</div> : <EmptyState icon="runtimes" title="没有匹配的运行时" description="调整运行时或提供者筛选条件。" />}
         </section>
         <section className="panel">
           <div className="panel__header"><h2>项目关联</h2><span className="count-label">{filteredAssessments.length}</span></div>

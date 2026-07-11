@@ -1,4 +1,4 @@
-export type PageId = "overview" | "packages" | "actions" | "projects" | "dependencies" | "supplyChain" | "runtimes" | "history" | "environment";
+export type PageId = "overview" | "packages" | "actions" | "projects" | "dependencies" | "supplyChain" | "runtimes" | "history" | "environment" | "settings";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
