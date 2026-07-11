@@ -36,13 +36,13 @@ describe("HistoryPage", () => {
     await waitFor(() => expect(onCompare).toHaveBeenCalledWith(1, 2));
   });
 
-  it("拒绝相同快照并处理变化报告导出", async () => {
+  it("拒绝倒序快照并处理变化报告导出", async () => {
     const onExport = vi.fn().mockResolvedValue({ saved: true });
     render(<HistoryPage summaries={summaries} comparison={comparison} isLoading={false} onCompare={vi.fn()} onExport={onExport} />);
 
     fireEvent.change(screen.getByLabelText("当前快照"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "比较快照" }));
-    expect(screen.getByText("请选择两个不同的快照进行比较。")).toBeInTheDocument();
+    expect(screen.getByText("基线快照必须早于当前快照。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("变化报告格式"), { target: { value: "json" } });
     fireEvent.click(screen.getByRole("button", { name: "导出变化报告" }));

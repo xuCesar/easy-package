@@ -239,6 +239,9 @@ fn snapshot_comparison(
     if baseline_id == current_id {
         return Err(AppError::Command("请选择两个不同的快照进行比较".into()));
     }
+    if baseline_id > current_id {
+        return Err(AppError::Command("基线快照必须早于当前快照".into()));
+    }
     let baseline = storage
         .snapshot_by_id(baseline_id)?
         .ok_or_else(|| AppError::Command("基线快照不存在或已被清理".into()))?;
@@ -317,5 +320,9 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("基线快照不存在或已被清理"));
+        assert!(snapshot_comparison(&storage, 2, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("基线快照必须早于当前快照"));
     }
 }

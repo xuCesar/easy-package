@@ -177,7 +177,7 @@ fn compare_projects(
                 SnapshotChangeEntity::Project,
                 path,
                 format!("项目元数据已变化：{}", project.name),
-                "生态、锁文件、运行时或直接依赖声明已变化。",
+                &project_change_description(previous, project)?,
             )),
             _ => {}
         }
@@ -194,6 +194,50 @@ fn compare_projects(
         }
     }
     Ok(())
+}
+
+fn project_change_description(
+    previous: &crate::models::ProjectMetadata,
+    current: &crate::models::ProjectMetadata,
+) -> Result<String, AppError> {
+    let mut fields = Vec::new();
+    if previous.ecosystems != current.ecosystems {
+        fields.push("生态");
+    }
+    if previous.lock_files != current.lock_files {
+        fields.push("锁文件");
+    }
+    if previous.package_manager != current.package_manager {
+        fields.push("包管理器声明");
+    }
+    if differs(
+        &previous.runtime_requirements,
+        &current.runtime_requirements,
+    )? {
+        fields.push("运行时声明");
+    }
+    if previous.dependencies != current.dependencies {
+        fields.push("直接依赖声明");
+    }
+    if previous
+        .workspace
+        .as_ref()
+        .map(|workspace| (&workspace.name, &workspace.path, &workspace.ecosystem))
+        != current
+            .workspace
+            .as_ref()
+            .map(|workspace| (&workspace.name, &workspace.path, &workspace.ecosystem))
+    {
+        fields.push("工作区归属");
+    }
+    if previous.warnings != current.warnings {
+        fields.push("项目警告");
+    }
+    Ok(if fields.is_empty() {
+        "项目元数据已变化。".into()
+    } else {
+        format!("{} 已变化。", fields.join("、"))
+    })
 }
 
 fn compare_health_issues(
@@ -260,6 +304,20 @@ fn manager_differs(
     if let Some(value) = right.as_object_mut() {
         value.remove("scannedAt");
     }
+    let left_trust = left.get("executionTrust").cloned();
+    let right_trust = right.get("executionTrust").cloned();
+    if left_trust
+        .as_ref()
+        .is_some_and(|trust| trust == "notApplicable")
+    {
+        left["executionTrust"] = right_trust.clone().unwrap_or(serde_json::Value::Null);
+    }
+    if right_trust
+        .as_ref()
+        .is_some_and(|trust| trust == "notApplicable")
+    {
+        right["executionTrust"] = left_trust.unwrap_or(serde_json::Value::Null);
+    }
     Ok(left != right)
 }
 
@@ -313,6 +371,11 @@ mod tests {
             .iter()
             .any(|change| change.key == "npm:typescript"
                 && change.kind == SnapshotChangeKind::Changed));
+        assert!(comparison
+            .changes
+            .iter()
+            .any(|change| change.entity == SnapshotChangeEntity::Project
+                && change.description.contains("锁文件")));
     }
 
     #[test]
@@ -324,6 +387,23 @@ mod tests {
         let mut current = baseline.clone();
         current.scanned_at = "new".into();
         current.managers[0].scanned_at = "new".into();
+
+        assert!(compare_snapshots(1, &baseline, 2, &current)
+            .unwrap()
+            .changes
+            .is_empty());
+    }
+
+    #[test]
+    fn ignores_execution_trust_added_to_a_legacy_snapshot() {
+        let baseline = scan(json!({
+            "managers":[{"id":"npm","displayName":"npm","version":"11","status":"available","capabilities":[],"scannedAt":"old"}],
+            "packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"old","partialFailures":0
+        }));
+        let current = scan(json!({
+            "managers":[{"id":"npm","displayName":"npm","version":"11","status":"available","executionTrust":"managed","capabilities":[],"scannedAt":"new"}],
+            "packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"new","partialFailures":0
+        }));
 
         assert!(compare_snapshots(1, &baseline, 2, &current)
             .unwrap()

@@ -39,11 +39,13 @@ export function HistoryPage({ summaries, comparison, isLoading, error, onCompare
   const [isExporting, setIsExporting] = useState(false);
   const selectedBaselineId = baselineId ?? summaries[1]?.id;
   const selectedCurrentId = currentId ?? summaries[0]?.id;
+  const baselineOptions = summaries.filter((snapshot) => selectedCurrentId === undefined || snapshot.id < selectedCurrentId);
+  const currentOptions = summaries.filter((snapshot) => selectedBaselineId === undefined || snapshot.id > selectedBaselineId);
   const changes = useMemo(() => comparison?.changes.filter((change) => (entity === "all" || change.entity === entity) && (kind === "all" || change.kind === kind)) ?? [], [comparison, entity, kind]);
 
   const compare = async () => {
-    if (!selectedBaselineId || !selectedCurrentId || selectedBaselineId === selectedCurrentId) {
-      setActionError("请选择两个不同的快照进行比较。");
+    if (!selectedBaselineId || !selectedCurrentId || selectedBaselineId >= selectedCurrentId) {
+      setActionError("基线快照必须早于当前快照。");
       return;
     }
     setIsComparing(true);
@@ -89,8 +91,8 @@ export function HistoryPage({ summaries, comparison, isLoading, error, onCompare
         <section className="panel history-controls" aria-label="快照比较">
           <div className="panel__header"><h2>选择快照</h2><span className="quiet-label">快照 ID 仅在本机 SQLite 内部使用</span></div>
           <div className="history-controls__body">
-            <label className="select-field">基线快照<select aria-label="基线快照" value={selectedBaselineId ?? ""} onChange={(event) => setBaselineId(Number(event.target.value))}>{summaries.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>#{snapshot.id} · {formatRelativeTime(snapshot.scannedAt)}</option>)}</select></label>
-            <label className="select-field">当前快照<select aria-label="当前快照" value={selectedCurrentId ?? ""} onChange={(event) => setCurrentId(Number(event.target.value))}>{summaries.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>#{snapshot.id} · {formatRelativeTime(snapshot.scannedAt)}</option>)}</select></label>
+            <label className="select-field">基线快照<select aria-label="基线快照" value={selectedBaselineId ?? ""} onChange={(event) => { const nextBaselineId = Number(event.target.value); setBaselineId(nextBaselineId); if (selectedCurrentId !== undefined && nextBaselineId >= selectedCurrentId) setCurrentId(summaries.find((snapshot) => snapshot.id > nextBaselineId)?.id); }}>{baselineOptions.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>#{snapshot.id} · {formatRelativeTime(snapshot.scannedAt)}</option>)}</select></label>
+            <label className="select-field">当前快照<select aria-label="当前快照" value={selectedCurrentId ?? ""} onChange={(event) => { const nextCurrentId = Number(event.target.value); setCurrentId(nextCurrentId); if (selectedBaselineId !== undefined && nextCurrentId <= selectedBaselineId) setBaselineId(summaries.find((snapshot) => snapshot.id < nextCurrentId)?.id); }}>{currentOptions.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>#{snapshot.id} · {formatRelativeTime(snapshot.scannedAt)}</option>)}</select></label>
             <button className="button button--primary" onClick={() => void compare()} disabled={isComparing || summaries.length < 2}>{isComparing ? "比较中…" : "比较快照"}</button>
           </div>
         </section>
