@@ -7,6 +7,8 @@ pub enum AppError {
     Storage(String),
     #[error("扫描目录无效：{0}")]
     InvalidScanRoot(String),
+    #[error("扫描范围设置无效：{0}")]
+    InvalidScanSettings(String),
     #[error("数据序列化失败：{0}")]
     Serialization(String),
     #[error("本机命令执行失败：{0}")]

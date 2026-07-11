@@ -153,6 +153,7 @@ export const mockScan: EnvironmentScan = {
   ],
   workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
   scanRoots: ["~/Code"],
+  scanSettings: { ignoredPaths: ["~/Code/archive"], maxDepth: 6, defaultIgnoredDirectoryNames: ["node_modules", ".git", "target", "dist", "build", ".venv", "vendor"] },
   healthIssues: [
     { id: "updates", severity: "warning", code: "UPDATES_AVAILABLE", title: "3 个软件包可更新", description: "本版本仅展示更新状态，不会修改本机环境。" },
     { id: "python-path", severity: "info", code: "PATH_CONFLICT", title: "发现多个 Python 路径", description: "当前优先使用 /opt/homebrew/bin/python3，请确认这符合预期。" },

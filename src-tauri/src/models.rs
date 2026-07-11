@@ -140,6 +140,46 @@ pub struct ProjectWorkspace {
     pub member_paths: Vec<String>,
 }
 
+pub fn default_scan_max_depth() -> usize {
+    6
+}
+
+pub fn default_ignored_directory_names() -> Vec<String> {
+    [
+        "node_modules",
+        ".git",
+        "target",
+        "dist",
+        "build",
+        ".venv",
+        "vendor",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanSettings {
+    #[serde(default)]
+    pub ignored_paths: Vec<String>,
+    #[serde(default = "default_scan_max_depth")]
+    pub max_depth: usize,
+    #[serde(default = "default_ignored_directory_names")]
+    pub default_ignored_directory_names: Vec<String>,
+}
+
+impl Default for ScanSettings {
+    fn default() -> Self {
+        Self {
+            ignored_paths: Vec::new(),
+            max_depth: default_scan_max_depth(),
+            default_ignored_directory_names: default_ignored_directory_names(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDependency {
@@ -194,6 +234,8 @@ pub struct ProjectAnalysis {
     pub projects: Vec<ProjectMetadata>,
     pub dependency_insights: Vec<DependencyInsight>,
     pub workspaces: Vec<ProjectWorkspace>,
+    #[serde(default)]
+    pub scan_settings: ScanSettings,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -288,6 +330,8 @@ pub struct EnvironmentScan {
     #[serde(default)]
     pub workspaces: Vec<ProjectWorkspace>,
     pub scan_roots: Vec<String>,
+    #[serde(default)]
+    pub scan_settings: ScanSettings,
     pub health_issues: Vec<HealthIssue>,
     pub logs: Vec<TaskLog>,
     pub path_observations: Vec<PathObservation>,
@@ -319,7 +363,7 @@ pub struct ScanProgress {
 mod tests {
     use serde_json::json;
 
-    use super::{EnvironmentScan, ProjectDependency, ProjectMetadata};
+    use super::{EnvironmentScan, ProjectDependency, ProjectMetadata, ScanSettings};
 
     #[test]
     fn accepts_project_snapshots_without_dependencies() {
@@ -347,6 +391,7 @@ mod tests {
         .unwrap();
         assert!(scan.dependency_insights.is_empty());
         assert!(scan.path_observations[0].candidates.is_empty());
+        assert_eq!(scan.scan_settings, ScanSettings::default());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod health;
-mod projects;
+pub mod projects;
+pub mod report;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -76,12 +77,13 @@ pub fn scan_environment(
     packages.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
 
     let roots = storage.list_scan_roots()?;
+    let scan_settings = storage.scan_settings()?;
     let scan_roots = roots
         .iter()
         .map(|root| root.to_string_lossy().into_owned())
         .collect();
     emit_progress(ScanPhase::Projects, manager_count, None);
-    let project_scan = projects::scan_projects(&roots, cancelled)?;
+    let project_scan = projects::scan_projects_with_settings(&roots, &scan_settings, cancelled)?;
     if cancelled.load(Ordering::SeqCst) {
         return Err(AppError::ScanCancelled);
     }
@@ -123,6 +125,7 @@ pub fn scan_environment(
         dependency_insights: project_scan.dependency_insights,
         workspaces: project_scan.workspaces,
         scan_roots,
+        scan_settings,
         health_issues,
         logs,
         path_observations,
@@ -210,7 +213,9 @@ fn source_for_path(
 }
 
 pub fn projects_for_roots(storage: &Storage) -> Result<ProjectAnalysis, AppError> {
-    analyze_projects(&storage.list_scan_roots()?, &AtomicBool::new(false))
+    let roots = storage.list_scan_roots()?;
+    let settings = storage.scan_settings()?;
+    analyze_projects(&roots, &settings, &AtomicBool::new(false))
 }
 
 #[cfg(test)]

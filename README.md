@@ -8,6 +8,8 @@ Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri
 - 桌面窗口最小宽度为 880px，不提供移动端 Web 适配。
 - 只执行版本、列表、更新检查、缓存路径等只读命令。
 - 扫描按管理器、项目、健康报告阶段显示进度，可随时取消；取消不会覆盖上一次成功快照。
+- 项目扫描可设置最大遍历深度与用户忽略目录；默认跳过 `node_modules`、`.git`、`target`、`dist`、`build`、`.venv` 与 `vendor`，并在扫描日志中说明跳过原因。
+- 可通过系统保存对话框导出当前环境快照为 JSON 或 Markdown；报告会将用户主目录替换为 `~`，且不包含诊断原始输出。
 - 环境页会解析 node、npm、pnpm、Python/pip、Ruby/gem、PHP、Composer 的 PATH 优先级与候选来源，并只读标记命令冲突、运行时路径不一致和重复 Node 全局工具。
 - 不提供安装、升级、卸载、清理或任意 Shell 执行接口。
 - Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
@@ -61,14 +63,15 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量
 1. 确认概览页显示扫描结果，并验证软件包筛选与空态。
 2. 在系统临时目录创建测试项目目录，添加后检查项目和依赖解析来源，再从扫描根目录移除。
 3. 验证环境页的健康项与诊断日志，并在扫描中执行一次取消操作。
-4. 删除临时测试目录，确认不会遗留扫描根目录或修改任何包管理器状态。
+4. 调整扫描范围后确认项目与依赖洞察同步更新；导出一份报告，检查主目录已脱敏且不含诊断原始输出。
+5. 删除临时测试目录，确认不会遗留扫描根目录或修改任何包管理器状态。
 
 ## 结构
 
 - `src/`：React 页面、组件、Tauri API 封装和前端测试。
 - `src-tauri/src/adapters/`：包管理器发现、命令执行与输出解析。
 - `src-tauri/src/scan/`：项目扫描、直接依赖索引、PATH 检查和健康规则。
-- `src-tauri/src/storage.rs`：SQLite 快照、根目录和日志存储。
-- `src-tauri/src/commands.rs`：对前端开放的七个受控 Tauri command。
+- `src-tauri/src/storage.rs`：SQLite 快照、根目录、扫描设置和日志存储。
+- `src-tauri/src/commands.rs`：对前端开放的受控只读 Tauri command；报告写入仅可经系统保存对话框触发。
 
 命令执行统一使用可执行文件路径与参数数组，设置 20 秒超时，不经过 Shell。诊断输出会替换用户主目录并限制长度。

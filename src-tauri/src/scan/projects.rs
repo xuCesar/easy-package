@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
@@ -17,7 +18,7 @@ use crate::{
     models::{
         DependencyInsight, DependencyProjectUsage, LogCategory, LogStatus, ProjectAnalysis,
         ProjectDependency, ProjectMetadata, ProjectWorkspace, ProjectWorkspaceRef,
-        RuntimeRequirement, TaskLog,
+        RuntimeRequirement, ScanSettings, TaskLog,
     },
 };
 
@@ -44,7 +45,8 @@ const MARKERS: [&str; 21] = [
     "composer.json",
     "composer.lock",
 ];
-const MAX_DEPTH: usize = 6;
+const MIN_MAX_DEPTH: usize = 1;
+const MAX_MAX_DEPTH: usize = 12;
 
 #[derive(Debug)]
 pub struct ProjectScan {
@@ -55,7 +57,16 @@ pub struct ProjectScan {
     pub failures: usize,
 }
 
+#[cfg(test)]
 pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<ProjectScan, AppError> {
+    scan_projects_with_settings(roots, &ScanSettings::default(), cancelled)
+}
+
+pub fn scan_projects_with_settings(
+    roots: &[PathBuf],
+    settings: &ScanSettings,
+    cancelled: &AtomicBool,
+) -> Result<ProjectScan, AppError> {
     let mut directories: BTreeMap<PathBuf, BTreeSet<String>> = BTreeMap::new();
     let mut logs = Vec::new();
     let mut failures = 0;
@@ -69,11 +80,12 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
             ));
             continue;
         }
+        let skipped = RefCell::new(BTreeSet::new());
         for entry in WalkDir::new(root)
-            .max_depth(MAX_DEPTH)
+            .max_depth(settings.max_depth)
             .follow_links(false)
             .into_iter()
-            .filter_entry(should_visit)
+            .filter_entry(|entry| should_visit(entry, settings, &skipped))
         {
             if cancelled.load(Ordering::SeqCst) {
                 return Err(AppError::ScanCancelled);
@@ -100,6 +112,9 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
                 }
             }
         }
+        for message in skipped.into_inner() {
+            logs.push(project_log(LogStatus::Info, &message));
+        }
     }
 
     let mut projects = directories
@@ -125,13 +140,15 @@ pub fn scan_projects(roots: &[PathBuf], cancelled: &AtomicBool) -> Result<Projec
 
 pub fn analyze_projects(
     roots: &[PathBuf],
+    settings: &ScanSettings,
     cancelled: &AtomicBool,
 ) -> Result<ProjectAnalysis, AppError> {
-    let scan = scan_projects(roots, cancelled)?;
+    let scan = scan_projects_with_settings(roots, settings, cancelled)?;
     Ok(ProjectAnalysis {
         projects: scan.projects,
         dependency_insights: scan.dependency_insights,
         workspaces: scan.workspaces,
+        scan_settings: settings.clone(),
     })
 }
 
@@ -289,7 +306,11 @@ fn workspace_matches(candidate: &WorkspaceCandidate, root: &Path, project: &Path
     })
 }
 
-fn should_visit(entry: &DirEntry) -> bool {
+fn should_visit(
+    entry: &DirEntry,
+    settings: &ScanSettings,
+    skipped: &RefCell<BTreeSet<String>>,
+) -> bool {
     if entry.depth() == 0 {
         return true;
     }
@@ -297,20 +318,66 @@ fn should_visit(entry: &DirEntry) -> bool {
         return true;
     }
     let name = entry.file_name().to_string_lossy();
-    !name.starts_with('.')
-        && !matches!(
-            name.as_ref(),
-            "node_modules"
-                | "target"
-                | "dist"
-                | "build"
-                | ".next"
-                | "coverage"
-                | "vendor"
-                | "venv"
-                | ".venv"
-                | "__pycache__"
-        )
+    if settings
+        .default_ignored_directory_names
+        .iter()
+        .any(|ignored| ignored == name.as_ref())
+    {
+        skipped.borrow_mut().insert(format!(
+            "跳过默认忽略目录：{}（{}）",
+            name,
+            entry.path().display()
+        ));
+        return false;
+    }
+    if let Some(ignored) = settings
+        .ignored_paths
+        .iter()
+        .find(|ignored| entry.path().starts_with(Path::new(ignored)))
+    {
+        skipped
+            .borrow_mut()
+            .insert(format!("跳过用户忽略目录：{}", ignored));
+        return false;
+    }
+    true
+}
+
+pub fn normalize_scan_settings(
+    mut settings: ScanSettings,
+    roots: &[PathBuf],
+) -> Result<ScanSettings, AppError> {
+    if !(MIN_MAX_DEPTH..=MAX_MAX_DEPTH).contains(&settings.max_depth) {
+        return Err(AppError::InvalidScanSettings(format!(
+            "最大扫描深度需在 {MIN_MAX_DEPTH} 到 {MAX_MAX_DEPTH} 之间"
+        )));
+    }
+    settings.default_ignored_directory_names = crate::models::default_ignored_directory_names();
+    let mut ignored_paths = BTreeSet::new();
+    for raw_path in settings.ignored_paths {
+        let path = PathBuf::from(raw_path.trim());
+        if raw_path.trim().is_empty() || !path.is_absolute() || !path.is_dir() {
+            return Err(AppError::InvalidScanSettings(
+                "忽略目录必须是存在的绝对目录".into(),
+            ));
+        }
+        let canonical = path
+            .canonicalize()
+            .map_err(|error| AppError::InvalidScanSettings(error.to_string()))?;
+        if !roots.iter().any(|root| canonical.starts_with(root)) {
+            return Err(AppError::InvalidScanSettings(
+                "忽略目录必须位于已添加的扫描目录内".into(),
+            ));
+        }
+        if roots.iter().any(|root| canonical == *root) {
+            return Err(AppError::InvalidScanSettings(
+                "不能将扫描根目录本身设为忽略目录".into(),
+            ));
+        }
+        ignored_paths.insert(canonical.to_string_lossy().into_owned());
+    }
+    settings.ignored_paths = ignored_paths.into_iter().collect();
+    Ok(settings)
 }
 
 fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadata {
@@ -1635,6 +1702,97 @@ mod tests {
             result.projects[0].runtime_requirements[0].requirement,
             ">=22"
         );
+        assert!(result
+            .logs
+            .iter()
+            .any(|log| log.message.contains("跳过默认忽略目录：node_modules")));
+    }
+
+    #[test]
+    fn honors_user_ignored_paths_and_reports_them_in_logs() {
+        let root = tempdir().unwrap();
+        let ignored = root.path().join("generated");
+        fs::create_dir_all(&ignored).unwrap();
+        fs::write(ignored.join("package.json"), r#"{"name":"ignored"}"#).unwrap();
+        let settings = ScanSettings {
+            ignored_paths: vec![ignored.to_string_lossy().into_owned()],
+            ..ScanSettings::default()
+        };
+
+        let result = scan_projects_with_settings(
+            &[root.path().to_path_buf()],
+            &settings,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        assert!(result.projects.is_empty());
+        assert!(result
+            .logs
+            .iter()
+            .any(|log| log.message.contains("跳过用户忽略目录")));
+    }
+
+    #[test]
+    fn max_depth_limits_project_marker_discovery() {
+        let root = tempdir().unwrap();
+        let deep_project = root.path().join("one/two/three/four/five/six");
+        fs::create_dir_all(&deep_project).unwrap();
+        fs::write(deep_project.join("package.json"), r#"{"name":"deep"}"#).unwrap();
+
+        let shallow = ScanSettings {
+            max_depth: 6,
+            ..ScanSettings::default()
+        };
+        assert!(scan_projects_with_settings(
+            &[root.path().to_path_buf()],
+            &shallow,
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .projects
+        .is_empty());
+
+        let deeper = ScanSettings {
+            max_depth: 7,
+            ..ScanSettings::default()
+        };
+        assert_eq!(
+            scan_projects_with_settings(
+                &[root.path().to_path_buf()],
+                &deeper,
+                &AtomicBool::new(false),
+            )
+            .unwrap()
+            .projects
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn rejects_ignored_paths_outside_scan_roots_and_invalid_depth() {
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let error = normalize_scan_settings(
+            ScanSettings {
+                ignored_paths: vec![outside.path().to_string_lossy().into_owned()],
+                ..ScanSettings::default()
+            },
+            &[root.path().to_path_buf()],
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::InvalidScanSettings(_)));
+
+        let error = normalize_scan_settings(
+            ScanSettings {
+                max_depth: 0,
+                ..ScanSettings::default()
+            },
+            &[root.path().to_path_buf()],
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::InvalidScanSettings(_)));
     }
 
     #[test]

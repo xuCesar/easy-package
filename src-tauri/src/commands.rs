@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fs,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -8,12 +9,13 @@ use std::{
 };
 
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::{
     error::AppError,
     models::{
         EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata,
-        ScanProgress, TaskLog,
+        ScanProgress, ScanSettings, TaskLog,
     },
     scan,
     storage::Storage,
@@ -139,7 +141,72 @@ pub async fn remove_scan_root(
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         storage.remove_scan_root(&normalized)?;
+        let roots = storage.list_scan_roots()?;
+        let mut settings = storage.scan_settings()?;
+        settings.ignored_paths.retain(|ignored| {
+            let ignored = PathBuf::from(ignored);
+            roots.iter().any(|root| ignored.starts_with(root))
+        });
+        storage.save_scan_settings(&settings)?;
         scan::projects_for_roots(&storage)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub fn get_scan_settings(storage: State<'_, Storage>) -> Result<ScanSettings, AppError> {
+    storage.scan_settings()
+}
+
+#[tauri::command]
+pub async fn update_scan_settings(
+    settings: ScanSettings,
+    storage: State<'_, Storage>,
+) -> Result<ProjectAnalysis, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let roots = storage.list_scan_roots()?;
+        let settings = scan::projects::normalize_scan_settings(settings, &roots)?;
+        storage.save_scan_settings(&settings)?;
+        scan::projects_for_roots(&storage)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn export_environment_report(
+    format: scan::report::ReportFormat,
+    app: AppHandle,
+    storage: State<'_, Storage>,
+) -> Result<scan::report::ReportExportResult, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let scan = storage
+            .latest_snapshot()?
+            .ok_or_else(|| AppError::Command("尚无可导出的环境扫描结果".into()))?;
+        let content = scan::report::build_report(&scan, format)?;
+        let dialog = app
+            .dialog()
+            .file()
+            .set_title("导出环境报告")
+            .set_file_name(format.file_name())
+            .add_filter(format.filter_name(), &[format.extension()]);
+        let Some(file) = dialog.blocking_save_file() else {
+            return Ok(scan::report::ReportExportResult {
+                saved: false,
+                path: None,
+            });
+        };
+        let path = file
+            .into_path()
+            .map_err(|error| AppError::Command(error.to_string()))?;
+        fs::write(path, content).map_err(|error| AppError::Command(error.to_string()))?;
+        Ok(scan::report::ReportExportResult {
+            saved: true,
+            path: None,
+        })
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?

@@ -103,6 +103,19 @@ export interface ProjectAnalysis {
   projects: ProjectMetadata[];
   dependencyInsights: DependencyInsight[];
   workspaces: ProjectWorkspace[];
+  scanSettings: ScanSettings;
+}
+
+export interface ScanSettings {
+  ignoredPaths: string[];
+  maxDepth: number;
+  defaultIgnoredDirectoryNames: string[];
+}
+
+export type ReportFormat = "json" | "markdown";
+
+export interface ReportExportResult {
+  saved: boolean;
 }
 
 export type HealthSeverity = "info" | "warning" | "error";
@@ -151,6 +164,7 @@ export interface EnvironmentScan {
   dependencyInsights: DependencyInsight[];
   workspaces: ProjectWorkspace[];
   scanRoots: string[];
+  scanSettings: ScanSettings;
   healthIssues: HealthIssue[];
   logs: TaskLog[];
   pathObservations: PathObservation[];
@@ -176,6 +190,9 @@ export interface DevPkgApi {
   listProjects(): Promise<ProjectMetadata[]>;
   addScanRoot(path: string): Promise<ProjectAnalysis>;
   removeScanRoot(path: string): Promise<ProjectAnalysis>;
+  getScanSettings(): Promise<ScanSettings>;
+  updateScanSettings(settings: ScanSettings): Promise<ProjectAnalysis>;
+  exportEnvironmentReport(format: ReportFormat): Promise<ReportExportResult>;
   getHealthReport(): Promise<HealthIssue[]>;
   getScanLogs(): Promise<TaskLog[]>;
 }

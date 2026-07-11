@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, ScanSettings, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 let browserProjects = [...mockProjects];
 let browserScanRoots = [...mockScan.scanRoots];
+let browserScanSettings: ScanSettings = structuredClone(mockScan.scanSettings);
 
 const wait = (duration = 180) => new Promise((resolve) => window.setTimeout(resolve, duration));
 const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
@@ -33,6 +34,7 @@ const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
     projects,
     dependencyInsights: [...insights.values()].map((insight) => ({ ...insight, versionRequirements: [...insight.versionRequirements].sort(), resolvedVersions: [...insight.resolvedVersions].sort(), hasVersionDivergence: insight.versionRequirements.length > 1, hasResolvedVersionDivergence: insight.resolvedVersions.length > 1, hasHealthRisk: insight.versionRequirements.length > 1 || insight.resolvedVersions.length > 1 || insight.hasResolutionRisk || insight.versionRequirements.some((requirement) => requirement === "未声明版本" || requirement.startsWith("workspace:") || requirement.startsWith("file:")) })),
     workspaces: mockScan.workspaces.filter((workspace) => workspace.memberPaths.some((path) => projects.some((project) => project.path === path))),
+    scanSettings: browserScanSettings,
   };
 };
 
@@ -50,7 +52,7 @@ const mockApi: DevPkgApi = {
       });
     }
     emitMockProgress({ scanId, phase: "complete", completed: total, total });
-    return { ...mockScan, ...analyzeMockProjects(browserProjects), scanRoots: browserScanRoots, scannedAt: new Date().toISOString() };
+    return { ...mockScan, ...analyzeMockProjects(browserProjects), scanRoots: browserScanRoots, scanSettings: browserScanSettings, scannedAt: new Date().toISOString() };
   },
   async cancelEnvironmentScan(scanId) {
     cancelledMockScans.add(scanId);
@@ -78,6 +80,17 @@ const mockApi: DevPkgApi = {
     browserScanRoots = browserScanRoots.filter((root) => root !== path);
     return analyzeMockProjects(browserProjects);
   },
+  async getScanSettings() {
+    return browserScanSettings;
+  },
+  async updateScanSettings(settings) {
+    if (!Number.isInteger(settings.maxDepth) || settings.maxDepth < 1 || settings.maxDepth > 12) throw new Error("扫描范围设置无效：最大扫描深度需在 1 到 12 之间");
+    browserScanSettings = { ...settings, ignoredPaths: [...new Set(settings.ignoredPaths)].sort(), defaultIgnoredDirectoryNames: [...mockScan.scanSettings.defaultIgnoredDirectoryNames] };
+    return analyzeMockProjects(browserProjects);
+  },
+  async exportEnvironmentReport() {
+    return { saved: true };
+  },
   async getHealthReport() {
     return mockScan.healthIssues;
   },
@@ -96,6 +109,9 @@ const tauriApi: DevPkgApi = {
   listProjects: () => invoke<ProjectMetadata[]>("list_projects"),
   addScanRoot: (path) => invoke<ProjectAnalysis>("add_scan_root", { path }),
   removeScanRoot: (path) => invoke<ProjectAnalysis>("remove_scan_root", { path }),
+  getScanSettings: () => invoke<ScanSettings>("get_scan_settings"),
+  updateScanSettings: (settings) => invoke<ProjectAnalysis>("update_scan_settings", { settings }),
+  exportEnvironmentReport: (format) => invoke("export_environment_report", { format }),
   getHealthReport: () => invoke<HealthIssue[]>("get_health_report"),
   getScanLogs: () => invoke<TaskLog[]>("get_scan_logs"),
 };

@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     error::AppError,
-    models::{EnvironmentScan, TaskLog},
+    models::{EnvironmentScan, ScanSettings, TaskLog},
 };
 
 #[derive(Debug, Clone)]
@@ -57,6 +57,10 @@ impl Storage {
                id TEXT PRIMARY KEY,
                timestamp TEXT NOT NULL,
                payload TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS scan_settings (
+               key TEXT PRIMARY KEY,
+               payload TEXT NOT NULL
              );",
         )?;
         Ok(())
@@ -86,6 +90,26 @@ impl Storage {
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|row| row.map(PathBuf::from).map_err(AppError::from))
             .collect()
+    }
+
+    pub fn scan_settings(&self) -> Result<ScanSettings, AppError> {
+        let connection = self.connection()?;
+        let mut statement =
+            connection.prepare("SELECT payload FROM scan_settings WHERE key = ?1")?;
+        let mut rows = statement.query(["project-scan"])?;
+        match rows.next()? {
+            Some(row) => Ok(serde_json::from_str(&row.get::<_, String>(0)?)?),
+            None => Ok(ScanSettings::default()),
+        }
+    }
+
+    pub fn save_scan_settings(&self, settings: &ScanSettings) -> Result<(), AppError> {
+        self.connection()?.execute(
+            "INSERT INTO scan_settings(key, payload) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET payload = excluded.payload",
+            params!["project-scan", serde_json::to_string(settings)?],
+        )?;
+        Ok(())
     }
 
     pub fn save_snapshot(&self, scan: &EnvironmentScan) -> Result<(), AppError> {
@@ -163,5 +187,32 @@ mod tests {
         assert_eq!(storage.list_scan_roots().unwrap(), vec![directory.path()]);
         storage.remove_scan_root(directory.path()).unwrap();
         assert!(storage.list_scan_roots().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reads_default_settings_when_an_existing_database_has_no_settings_row() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        assert_eq!(storage.scan_settings().unwrap(), ScanSettings::default());
+    }
+
+    #[test]
+    fn reads_old_settings_payload_without_default_ignored_directory_names() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        storage
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO scan_settings(key, payload) VALUES (?1, ?2)",
+                params!["project-scan", r#"{"ignoredPaths":[],"maxDepth":4}"#],
+            )
+            .unwrap();
+
+        let settings = storage.scan_settings().unwrap();
+        assert_eq!(settings.max_depth, 4);
+        assert!(settings
+            .default_ignored_directory_names
+            .contains(&"node_modules".into()));
     }
 }

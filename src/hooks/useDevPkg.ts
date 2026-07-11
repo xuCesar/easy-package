@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { EnvironmentScan, ScanProgress } from "../types";
+import type { EnvironmentScan, ReportFormat, ScanProgress, ScanSettings } from "../types";
 
 interface DevPkgState {
   data?: EnvironmentScan;
@@ -68,9 +68,16 @@ export const useDevPkg = () => {
     setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.filter((root) => root !== path) } } : current);
   }, []);
 
+  const updateScanSettings = useCallback(async (settings: ScanSettings) => {
+    const analysis = await api.updateScanSettings(settings);
+    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis } } : current);
+  }, []);
+
+  const exportEnvironmentReport = useCallback((format: ReportFormat) => api.exportEnvironmentReport(format), []);
+
   const cancelScan = useCallback(async () => {
     if (activeScanId.current) await api.cancelEnvironmentScan(activeScanId.current);
   }, []);
 
-  return { ...state, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot };
+  return { ...state, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport };
 };
