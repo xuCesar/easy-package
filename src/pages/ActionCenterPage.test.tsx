@@ -12,18 +12,21 @@ const packages = [
 
 const plan: PackageActionPlan = {
   id: "plan-1", managerId: "homebrew", action: "install", targets: ["jq"], commandPreview: "/opt/homebrew/bin/brew install jq",
-  warnings: ["该操作会修改本机 Homebrew 环境，无法保证自动回滚。"], previewLines: ["Formula 名称已通过严格语法校验：jq；存在性由 Homebrew 执行时验证。"], requiresNetwork: true, createdAt: "2026-07-11T00:00:00Z",
+  warnings: ["该操作会修改本机 Homebrew 环境，无法保证自动回滚。"], previewLines: ["Formula 名称已通过严格语法校验：jq；存在性由 Homebrew 执行时验证。"], checks: [{ code: "READY" as const, status: "pass" as const, title: "基础条件已满足", detail: "仍需二次确认。" }], requiresNetwork: true, createdAt: "2026-07-11T00:00:00Z",
 };
 
 const baseProps = {
   packages,
+  capabilities: (["homebrew", "npm", "pnpm"] as const).flatMap((managerId) => (["install", "upgrade", "uninstall", "cleanup"] as const).map((action) => ({ managerId, action, ready: true, checks: [{ code: "READY" as const, status: "pass" as const, title: "基础条件已满足", detail: "仍需二次确认。" }] }))),
   audit: [],
   progress: [],
   isPlanning: false,
   isExecuting: false,
+  isReconciling: false,
   onCreatePlan: vi.fn().mockResolvedValue(plan),
   onExecute: vi.fn().mockResolvedValue(undefined),
   onCancel: vi.fn().mockResolvedValue(undefined),
+  onReconcile: vi.fn().mockResolvedValue(undefined),
   onClearPlan: vi.fn(),
 };
 
@@ -89,12 +92,22 @@ describe("ActionCenterPage", () => {
   });
 
   it("阻止中断操作恢复前生成新计划并支持审计筛选", () => {
-    const interrupted = { ...plan, actionId: "action-running", planId: plan.id, status: "running" as const, logs: [], startedAt: "2026-07-11T00:00:00Z", finishedAt: "2026-07-11T00:00:00Z" };
+    const interrupted = { ...plan, actionId: "action-running", planId: plan.id, status: "running" as const, logs: [], startedAt: "2026-07-11T00:00:00Z", finishedAt: "2026-07-11T00:00:00Z", evidence: [], rescanRequired: true };
     render(<ActionCenterPage {...baseProps} audit={[interrupted]} />);
-    expect(screen.getByText(/上次操作可能中断/)).toBeInTheDocument();
+    expect(screen.getByText(/存在尚未核对的写操作/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成操作计划" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "重新扫描并核对" }));
+    expect(baseProps.onReconcile).toHaveBeenCalledWith("action-running");
     fireEvent.change(screen.getByLabelText("审计管理器筛选"), { target: { value: "pnpm" } });
     expect(screen.getByText("没有匹配的写操作记录")).toBeInTheDocument();
+  });
+
+  it("展示稳定阻塞码并在计划前禁用不可用动作", () => {
+    const capabilities = baseProps.capabilities.map((capability) => capability.managerId === "homebrew" && capability.action === "install" ? { ...capability, ready: false, checks: [{ code: "UNTRUSTED_EXECUTABLE" as const, status: "blocked" as const, title: "可执行文件不受信任", detail: "路径不在允许目录。" }] } : capability);
+    render(<ActionCenterPage {...baseProps} capabilities={capabilities} />);
+    expect(screen.getByText("当前操作被阻止")).toBeInTheDocument();
+    expect(screen.getByText("UNTRUSTED_EXECUTABLE")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成操作计划" })).toBeDisabled();
   });
 
   it("展示清理预览、执行进度、状态未知结果和审计记录", () => {
@@ -104,12 +117,14 @@ describe("ActionCenterPage", () => {
       logs: ["cleanup running"], error: "操作已终止；包管理器状态未知，已强制重新扫描。", startedAt: "2026-07-11T00:00:00Z", finishedAt: "2026-07-11T00:00:02Z",
       comparison: { baseline: { id: 1, scannedAt: "old", managerCount: 1, packageCount: 2, projectCount: 0, healthIssueCount: 0 }, current: { id: 2, scannedAt: "new", managerCount: 1, packageCount: 2, projectCount: 0, healthIssueCount: 0 }, addedCount: 0, removedCount: 0, changedCount: 1, changes: [{ kind: "changed", entity: "manager", key: "homebrew", title: "Homebrew 缓存信息已变化", description: "缓存占用已更新。" }] },
     };
-    const audit = [{ actionId: result.actionId, planId: result.planId, managerId: result.managerId, action: result.action, targets: result.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, error: result.error, startedAt: result.startedAt, finishedAt: result.finishedAt }];
+    const audit = [{ actionId: result.actionId, planId: result.planId, managerId: result.managerId, action: result.action, targets: result.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, error: result.error, startedAt: result.startedAt, finishedAt: result.finishedAt, observedOutcome: "ambiguous" as const, evidence: ["缓存大小未知"], rescanRequired: false }];
     const { rerender } = render(<ActionCenterPage {...baseProps} plan={cleanupPlan} result={result} audit={audit} progress={[{ actionId: "action-1", status: "running", message: "cleanup running", cancellable: true, timestamp: "2026-07-11T00:00:01Z" }]} isExecuting />);
     expect(screen.getByText("Would remove: cache.tar.gz")).toBeInTheDocument();
     expect(screen.getByText("cleanup running")).toBeInTheDocument();
     expect(screen.getAllByText("状态未知").length).toBeGreaterThan(0);
     expect(screen.getByText("Homebrew 缓存信息已变化")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
+    expect(screen.getByText("缓存大小未知")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "终止操作" }));
     expect(baseProps.onCancel).toHaveBeenCalledOnce();
     rerender(<ActionCenterPage {...baseProps} plan={cleanupPlan} result={result} audit={audit} progress={[{ actionId: "action-1", status: "running", message: "正在重新扫描本机环境并计算变化", cancellable: false, timestamp: "2026-07-11T00:00:02Z" }]} isExecuting />);

@@ -255,6 +255,23 @@ export interface SnapshotComparison {
 export type PackageAction = "install" | "upgrade" | "uninstall" | "cleanup";
 export type PackageActionStatus = "planned" | "running" | "succeeded" | "failed" | "unknown";
 export type WritableManagerId = "homebrew" | "npm" | "pnpm";
+export type ActionCheckStatus = "pass" | "warning" | "blocked";
+export type ActionBlockerCode = "READY" | "UNSUPPORTED_PLATFORM" | "MISSING_SCAN" | "RECOVERY_REQUIRED" | "MANAGER_UNAVAILABLE" | "UNTRUSTED_EXECUTABLE" | "RUNTIME_CONFLICT" | "UNSAFE_DATA_PATH" | "PERMISSION_RISK" | "NETWORK_REQUIRED" | "SCRIPTS_DISABLED" | "CACHE_SEMANTICS";
+export type ObservedActionOutcome = "applied" | "notApplied" | "ambiguous";
+
+export interface ActionPreflightCheck {
+  code: ActionBlockerCode;
+  status: ActionCheckStatus;
+  title: string;
+  detail: string;
+}
+
+export interface ActionCapability {
+  managerId: WritableManagerId;
+  action: PackageAction;
+  ready: boolean;
+  checks: ActionPreflightCheck[];
+}
 
 export interface PackageActionPlan {
   id: string;
@@ -264,6 +281,7 @@ export interface PackageActionPlan {
   commandPreview: string;
   warnings: string[];
   previewLines: string[];
+  checks: ActionPreflightCheck[];
   requiresNetwork: boolean;
   createdAt: string;
 }
@@ -292,6 +310,11 @@ export interface PackageActionResult {
   finishedAt: string;
 }
 
+export interface PackageActionReconciliationResult {
+  audit: PackageActionAuditRecord;
+  environment: EnvironmentScan;
+}
+
 export interface PackageActionAuditRecord {
   actionId: string;
   planId: string;
@@ -304,6 +327,12 @@ export interface PackageActionAuditRecord {
   error?: string;
   startedAt: string;
   finishedAt: string;
+  baselineSnapshotId?: number;
+  resultSnapshotId?: number;
+  observedOutcome?: ObservedActionOutcome;
+  evidence: string[];
+  reconciledAt?: string;
+  rescanRequired: boolean;
 }
 
 export type HealthSeverity = "info" | "warning" | "error";
@@ -392,8 +421,10 @@ export interface DevPkgApi {
   getProjectSupplyChainReport(projectPath: string): Promise<ProjectSupplyChainReport>;
   exportProjectSbom(projectPath: string): Promise<ReportExportResult>;
   planPackageAction(managerId: WritableManagerId, action: PackageAction, targets: string[]): Promise<PackageActionPlan>;
+  getPackageActionCapabilities(): Promise<ActionCapability[]>;
   executePackageAction(planId: string): Promise<PackageActionResult>;
   cancelPackageAction(actionId: string): Promise<void>;
   listenToPackageActionProgress(listener: (progress: PackageActionProgress) => void): Promise<() => void>;
   listPackageActionAudit(): Promise<PackageActionAuditRecord[]>;
+  reconcilePackageAction(actionId: string): Promise<PackageActionReconciliationResult>;
 }

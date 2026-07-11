@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog, WritableManagerId } from "./types";
+import type { ActionCapability, DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog, WritableManagerId } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -69,11 +69,12 @@ const createMockActionPlan = (managerId: WritableManagerId, action: PackageActio
         : action === "uninstall" ? [managerId === "homebrew" ? "未发现依赖该 Formula 的已安装包。" : `将移除 pnpm 全局包 ${targets[0]}。`]
           : action === "install" ? [managerId === "homebrew" ? `Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。` : `包名已通过严格校验：${targets[0]}；固定禁用 lifecycle scripts。`]
             : [`待升级 ${managerName} 软件包均来自当前扫描结果。`];
-  const plan = {
+  const plan: PackageActionPlan = {
     id, managerId, action, targets,
     commandPreview: `${executable} ${args}`,
     warnings,
     previewLines,
+    checks: [{ code: "READY", status: "pass", title: "基础条件已满足", detail: "浏览器预览使用固定能力数据。" }],
     requiresNetwork: action === "install" || action === "upgrade",
     createdAt: new Date().toISOString(),
   };
@@ -245,6 +246,19 @@ const mockApi: DevPkgApi = {
     await wait(80);
     return createMockActionPlan(managerId, action, targets);
   },
+  async getPackageActionCapabilities() {
+    return (["homebrew", "npm", "pnpm"] as WritableManagerId[]).flatMap((managerId) =>
+      (["install", "upgrade", "uninstall", "cleanup"] as PackageAction[]).map((action): ActionCapability => ({
+        managerId,
+        action,
+        ready: true,
+        checks: [
+          { code: "READY", status: "pass", title: "基础条件已满足", detail: "浏览器预览不会执行真实写操作。" },
+          ...(managerId !== "homebrew" && action !== "cleanup" ? [{ code: "SCRIPTS_DISABLED" as const, status: "pass" as const, title: "生命周期脚本已禁用", detail: "固定使用 --ignore-scripts。" }] : []),
+        ],
+      })),
+    );
+  },
   async executePackageAction(planId) {
     const plan = mockActionPlans.get(planId);
     if (!plan) throw new Error("操作计划不存在、已执行或已过期");
@@ -257,13 +271,13 @@ const mockApi: DevPkgApi = {
       await wait(100);
       if (cancelledMockActions.delete(actionId)) {
         const result: PackageActionResult = { actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: "unknown", commandPreview: plan.commandPreview, logs: [message], error: "操作已终止；包管理器状态未知，已强制重新扫描。", comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
-        mockActionAudit.unshift({ ...result, comparison: undefined, environment: undefined } as PackageActionAuditRecord);
+        mockActionAudit.unshift({ actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, error: result.error, startedAt, finishedAt: result.finishedAt, baselineSnapshotId: 2, resultSnapshotId: 3, observedOutcome: "ambiguous", evidence: ["浏览器预览：取消后结果需要重新核对"], reconciledAt: result.finishedAt, rescanRequired: false });
         emitMockActionProgress({ actionId, status: "unknown", message: "操作状态未知，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
         return result;
       }
     }
     const result: PackageActionResult = { actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: "succeeded", commandPreview: plan.commandPreview, logs: [`${plan.managerId} ${actionLabel[plan.action]} 完成`], comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
-    mockActionAudit.unshift({ actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, startedAt, finishedAt: result.finishedAt });
+    mockActionAudit.unshift({ actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, startedAt, finishedAt: result.finishedAt, baselineSnapshotId: 2, resultSnapshotId: 3, observedOutcome: "applied", evidence: ["浏览器预览：已观察到固定变化"], reconciledAt: result.finishedAt, rescanRequired: false });
     emitMockActionProgress({ actionId, status: "succeeded", message: "操作完成，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
     return result;
   },
@@ -276,6 +290,13 @@ const mockApi: DevPkgApi = {
   },
   async listPackageActionAudit() {
     return [...mockActionAudit];
+  },
+  async reconcilePackageAction(actionId) {
+    const record = mockActionAudit.find((item) => item.actionId === actionId);
+    if (!record) throw new Error("操作审计记录不存在");
+    const audit = { ...record, status: record.status === "running" ? "unknown" as const : record.status, observedOutcome: "applied" as const, evidence: ["浏览器预览：重新扫描后目标状态符合预期"], reconciledAt: new Date().toISOString(), rescanRequired: false };
+    mockActionAudit.splice(mockActionAudit.indexOf(record), 1, audit);
+    return { audit, environment: { ...mockScan, scannedAt: new Date().toISOString() } };
   },
 };
 
@@ -301,12 +322,14 @@ const tauriApi: DevPkgApi = {
   getProjectSupplyChainReport: (projectPath) => invoke<ProjectSupplyChainReport>("get_project_supply_chain_report", { projectPath }),
   exportProjectSbom: (projectPath) => invoke("export_project_sbom", { projectPath }),
   planPackageAction: (managerId, action, targets) => invoke<PackageActionPlan>("plan_package_action", { managerId, action, targets }),
+  getPackageActionCapabilities: () => invoke<ActionCapability[]>("get_package_action_capabilities"),
   executePackageAction: (planId) => invoke<PackageActionResult>("execute_package_action", { planId }),
   cancelPackageAction: (actionId) => invoke<void>("cancel_package_action", { actionId }),
   async listenToPackageActionProgress(listener) {
     return listen<PackageActionProgress>("package-action-progress", (event) => listener(event.payload));
   },
   listPackageActionAudit: () => invoke<PackageActionAuditRecord[]>("list_package_action_audit"),
+  reconcilePackageAction: (actionId) => invoke("reconcile_package_action", { actionId }),
 };
 
 export const api: DevPkgApi = new Proxy(tauriApi, {

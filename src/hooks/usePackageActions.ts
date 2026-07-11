@@ -1,22 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { EnvironmentScan, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, WritableManagerId } from "../types";
+import type { ActionCapability, EnvironmentScan, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, WritableManagerId } from "../types";
 
 interface PackageActionState {
   plan?: PackageActionPlan;
   result?: PackageActionResult;
   audit: PackageActionAuditRecord[];
+  capabilities: ActionCapability[];
   progress: PackageActionProgress[];
   isPlanning: boolean;
   isExecuting: boolean;
+  isReconciling: boolean;
   error?: string;
 }
 
 const initialState: PackageActionState = {
   audit: [],
+  capabilities: [],
   progress: [],
   isPlanning: false,
   isExecuting: false,
+  isReconciling: false,
 };
 
 export function usePackageActions(onEnvironmentUpdated: (environment: EnvironmentScan) => void, scanVersion?: string) {
@@ -25,8 +29,11 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
 
   const loadAudit = useCallback(async () => {
     try {
-      const audit = await api.listPackageActionAudit();
-      setState((current) => ({ ...current, audit }));
+      const [audit, capabilities] = await Promise.all([
+        api.listPackageActionAudit(),
+        api.getPackageActionCapabilities(),
+      ]);
+      setState((current) => ({ ...current, audit, capabilities }));
     } catch (error) {
       setState((current) => ({ ...current, error: messageFrom(error) }));
     }
@@ -65,8 +72,11 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
     try {
       const result = await api.executePackageAction(state.plan.id);
       if (result.environment) onEnvironmentUpdated(result.environment);
-      const audit = await api.listPackageActionAudit();
-      setState((current) => ({ ...current, plan: undefined, result, audit, isExecuting: false }));
+      const [audit, capabilities] = await Promise.all([
+        api.listPackageActionAudit(),
+        api.getPackageActionCapabilities(),
+      ]);
+      setState((current) => ({ ...current, plan: undefined, result, audit, capabilities, isExecuting: false }));
     } catch (error) {
       setState((current) => ({ ...current, isExecuting: false, error: messageFrom(error) }));
     } finally {
@@ -82,7 +92,22 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
     setState((current) => ({ ...current, plan: undefined, result: undefined, progress: [], error: undefined }));
   }, []);
 
-  return { ...state, createPlan, executePlan, cancelAction, clearPlan, reloadAudit: loadAudit };
+  const reconcileAction = useCallback(async (actionId: string) => {
+    setState((current) => ({ ...current, isReconciling: true, error: undefined }));
+    try {
+      const result = await api.reconcilePackageAction(actionId);
+      onEnvironmentUpdated(result.environment);
+      const [audit, capabilities] = await Promise.all([
+        api.listPackageActionAudit(),
+        api.getPackageActionCapabilities(),
+      ]);
+      setState((current) => ({ ...current, audit, capabilities, isReconciling: false }));
+    } catch (error) {
+      setState((current) => ({ ...current, isReconciling: false, error: messageFrom(error) }));
+    }
+  }, [onEnvironmentUpdated]);
+
+  return { ...state, createPlan, executePlan, cancelAction, clearPlan, reconcileAction, reloadAudit: loadAudit };
 }
 
 function messageFrom(error: unknown): string {

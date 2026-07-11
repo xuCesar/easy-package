@@ -243,11 +243,20 @@ impl Storage {
         .map_err(AppError::from)
     }
 
-    pub fn has_incomplete_action(&self) -> Result<bool, AppError> {
+    pub fn action_audit(
+        &self,
+        action_id: &str,
+    ) -> Result<Option<PackageActionAuditRecord>, AppError> {
         Ok(self
             .list_action_audit()?
-            .iter()
-            .any(|record| record.status == crate::models::PackageActionStatus::Running))
+            .into_iter()
+            .find(|record| record.action_id == action_id))
+    }
+
+    pub fn has_incomplete_action(&self) -> Result<bool, AppError> {
+        Ok(self.list_action_audit()?.iter().any(|record| {
+            record.status == crate::models::PackageActionStatus::Running || record.rescan_required
+        }))
     }
 
     pub fn recover_incomplete_actions(&self) -> Result<usize, AppError> {
@@ -260,6 +269,7 @@ impl Storage {
             record.error =
                 Some("应用在操作完成前退出；已重新扫描环境，但无法确认中断前已完成的步骤。".into());
             record.finished_at = chrono::Utc::now().to_rfc3339();
+            record.rescan_required = true;
             self.save_action_audit(&record)?;
             recovered += 1;
         }
@@ -304,6 +314,12 @@ mod tests {
                 error: None,
                 started_at: "2026-07-11T00:00:00Z".into(),
                 finished_at: "2026-07-11T00:00:01Z".into(),
+                baseline_snapshot_id: None,
+                result_snapshot_id: None,
+                observed_outcome: None,
+                evidence: vec![],
+                reconciled_at: None,
+                rescan_required: false,
             })
             .unwrap();
         let records = storage.list_action_audit().unwrap();
@@ -328,6 +344,12 @@ mod tests {
                 error: None,
                 started_at: "2026-07-11T00:00:00Z".into(),
                 finished_at: "2026-07-11T00:00:00Z".into(),
+                baseline_snapshot_id: None,
+                result_snapshot_id: None,
+                observed_outcome: None,
+                evidence: vec![],
+                reconciled_at: None,
+                rescan_required: true,
             })
             .unwrap();
         assert!(storage.has_incomplete_action().unwrap());
@@ -335,7 +357,19 @@ mod tests {
         let record = storage.list_action_audit().unwrap().remove(0);
         assert_eq!(record.status, PackageActionStatus::Unknown);
         assert!(record.error.unwrap().contains("应用在操作完成前退出"));
-        assert!(!storage.has_incomplete_action().unwrap());
+        assert!(storage.has_incomplete_action().unwrap());
+        assert!(record.rescan_required);
+    }
+
+    #[test]
+    fn reads_legacy_action_audit_without_reconciliation_fields() {
+        let record: PackageActionAuditRecord = serde_json::from_str(
+            r#"{"actionId":"legacy","planId":"plan","managerId":"homebrew","action":"install","targets":["jq"],"status":"succeeded","commandPreview":"brew install jq","logs":[],"startedAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:00:01Z"}"#,
+        )
+        .unwrap();
+        assert!(record.observed_outcome.is_none());
+        assert!(record.evidence.is_empty());
+        assert!(!record.rescan_required);
     }
 
     #[test]

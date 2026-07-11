@@ -17,8 +17,9 @@ use crate::{
     actions::{self, ActionRegistry},
     error::AppError,
     models::{
-        EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord,
-        PackageActionPlan, PackageActionProgress, PackageActionResult, PackageActionStatus,
+        ActionCapability, EnvironmentScan, HealthIssue, ManagedPackage, ObservedActionOutcome,
+        PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress,
+        PackageActionReconciliationResult, PackageActionResult, PackageActionStatus,
         ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport,
         ScanProgress, ScanSettings, TaskLog,
     },
@@ -96,6 +97,9 @@ pub async fn scan_environment(
             scan::scan_environment(&storage, &cancellation, &scan_id_for_progress, progress)?;
         storage.save_snapshot(&scan)?;
         storage.recover_incomplete_actions()?;
+        if let Some(summary) = storage.list_snapshot_summaries()?.into_iter().next() {
+            actions::reconcile_pending_audits(&storage, summary.id, &scan)?;
+        }
         Ok(scan)
     })
     .await
@@ -329,6 +333,16 @@ pub async fn plan_package_action(
 }
 
 #[tauri::command]
+pub async fn get_package_action_capabilities(
+    storage: State<'_, Storage>,
+) -> Result<Vec<ActionCapability>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || actions::package_action_capabilities(&storage))
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
 pub async fn execute_package_action(
     plan_id: String,
     app: AppHandle,
@@ -359,6 +373,8 @@ pub async fn execute_package_action(
     let action_id_for_finish = action_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let started_at = Utc::now().to_rfc3339();
+        let baseline_summary = storage.list_snapshot_summaries()?.first().cloned();
+        let baseline_scan = storage.latest_snapshot()?;
         storage.save_action_audit(&PackageActionAuditRecord {
             action_id: action_id.clone(),
             plan_id: registered.plan.id.clone(),
@@ -372,9 +388,13 @@ pub async fn execute_package_action(
             started_at: started_at.clone(),
             // 运行中记录复用现有排序字段；最终结果会原位覆盖该时间。
             finished_at: started_at.clone(),
+            baseline_snapshot_id: baseline_summary.as_ref().map(|summary| summary.id),
+            result_snapshot_id: None,
+            observed_outcome: None,
+            evidence: Vec::new(),
+            reconciled_at: None,
+            rescan_required: true,
         })?;
-        let baseline_summary = storage.list_snapshot_summaries()?.first().cloned();
-        let baseline_scan = storage.latest_snapshot()?;
         emit_action_progress(
             &app,
             &action_id,
@@ -406,16 +426,32 @@ pub async fn execute_package_action(
         );
         let mut result_error = execution.error.clone();
         let mut environment = None;
+        let mut result_snapshot_id = None;
+        let mut observed_outcome = None;
+        let mut evidence = Vec::new();
+        let mut rescan_required = false;
         let comparison = match rescan_after_package_action(&storage, &action_id) {
             Ok((current, scan)) => {
+                result_snapshot_id = Some(current.id);
                 let comparison = match (baseline_summary.as_ref(), baseline_scan.as_ref()) {
-                    (Some(baseline), Some(baseline_scan)) => scan::history::compare_snapshots(
-                        baseline.id,
-                        baseline_scan,
-                        current.id,
-                        &scan,
-                    )
-                    .ok(),
+                    (Some(baseline), Some(baseline_scan)) => {
+                        let observed = actions::reconcile_observed_outcome(
+                            registered.plan.manager_id,
+                            registered.plan.action,
+                            &registered.plan.targets,
+                            baseline_scan,
+                            &scan,
+                        );
+                        observed_outcome = Some(observed.0);
+                        evidence = observed.1;
+                        scan::history::compare_snapshots(
+                            baseline.id,
+                            baseline_scan,
+                            current.id,
+                            &scan,
+                        )
+                        .ok()
+                    }
                     _ => None,
                 };
                 environment = Some(scan);
@@ -423,6 +459,7 @@ pub async fn execute_package_action(
             }
             Err(error) => {
                 append_error(&mut result_error, format!("操作后重新扫描失败：{error}"));
+                rescan_required = true;
                 None
             }
         };
@@ -454,6 +491,12 @@ pub async fn execute_package_action(
             error: result.error.clone(),
             started_at: result.started_at.clone(),
             finished_at: result.finished_at.clone(),
+            baseline_snapshot_id: baseline_summary.as_ref().map(|summary| summary.id),
+            result_snapshot_id,
+            observed_outcome,
+            evidence,
+            reconciled_at: (!rescan_required).then(|| Utc::now().to_rfc3339()),
+            rescan_required,
         };
         if let Err(error) = storage.save_action_audit(&audit) {
             append_error(&mut result.error, format!("操作审计记录保存失败：{error}"));
@@ -491,6 +534,58 @@ pub fn list_package_action_audit(
     storage: State<'_, Storage>,
 ) -> Result<Vec<PackageActionAuditRecord>, AppError> {
     storage.list_action_audit()
+}
+
+#[tauri::command]
+pub async fn reconcile_package_action(
+    action_id: String,
+    storage: State<'_, Storage>,
+    coordinator: State<'_, OperationCoordinator>,
+) -> Result<PackageActionReconciliationResult, AppError> {
+    let operation_id = format!("reconcile-{action_id}");
+    coordinator.begin_scan(&operation_id)?;
+    let coordinator = coordinator.inner().clone();
+    let storage = storage.inner().clone();
+    let operation_id_for_finish = operation_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut audit = storage
+            .action_audit(&action_id)?
+            .ok_or_else(|| AppError::Command("操作审计记录不存在".into()))?;
+        let baseline = match audit.baseline_snapshot_id {
+            Some(baseline_id) => storage.snapshot_by_id(baseline_id)?,
+            None => None,
+        };
+        let (current, environment) = rescan_after_package_action(&storage, &operation_id)?;
+        let (outcome, evidence) = match baseline.as_ref() {
+            Some(baseline) => actions::reconcile_observed_outcome(
+                audit.manager_id,
+                audit.action,
+                &audit.targets,
+                baseline,
+                &environment,
+            ),
+            None => (
+                ObservedActionOutcome::Ambiguous,
+                vec!["基线快照不存在或已过期，只能确认已完成最新扫描。".into()],
+            ),
+        };
+        audit.result_snapshot_id = Some(current.id);
+        audit.observed_outcome = Some(outcome);
+        audit.evidence = evidence;
+        audit.reconciled_at = Some(Utc::now().to_rfc3339());
+        audit.rescan_required = false;
+        if audit.status == PackageActionStatus::Running {
+            audit.status = PackageActionStatus::Unknown;
+            audit.error = Some("应用在操作完成前退出；已根据最新扫描核对实际环境。".into());
+            audit.finished_at = Utc::now().to_rfc3339();
+        }
+        storage.save_action_audit(&audit)?;
+        Ok(PackageActionReconciliationResult { audit, environment })
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()));
+    coordinator.finish(&operation_id_for_finish);
+    result?
 }
 
 fn emit_action_progress(

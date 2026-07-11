@@ -22,6 +22,8 @@ Easy Package 是一个 macOS 本机开发环境管理器 MVP。它使用 Tauri 2
 - npm 使用相同包名边界，安装、升级和卸载固定带 `--ignore-scripts`；缓存维护仅调用 `npm cache verify`，不提供 `npm cache clean --force`。npm/pnpm 均不允许修改管理器自身。
 - 写操作与环境扫描互斥，执行日志会脱敏并保存在本机审计记录中；取消或超时不会声称回滚，而是标记“状态未知”并强制重新扫描。
 - 写操作开始前会先保存 `running` 审计；异常退出后新写操作保持阻塞，直到用户完成一次成功环境扫描并将遗留记录归档为“状态未知”。
+- 操作中心会在生成计划前展示 Homebrew、npm、pnpm 各动作的类型化能力检查和稳定阻塞码；PATH、信任、恢复或数据路径不满足时直接禁用计划入口。
+- 审计分别记录命令状态与复扫观察结果。安装、卸载、升级和缓存维护会依据前后快照标记 `applied`、`notApplied` 或 `ambiguous`；中断记录可通过“重新扫描并核对”解除阻塞，但不会伪造回滚或成功结论。
 - Yarn、Bun、Cargo、uv、pip、RubyGems、Composer 等其他管理器仍保持只读；不提供 lifecycle scripts、任意 Shell、自动修复、后台升级或定时写操作。
 - Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
 - 项目扫描会从 Yarn Classic、Yarn Berry 与文本 `bun.lock` 关联 JavaScript 直接依赖的锁定版本；`bun.lockb` 仅展示受控限制提示，不尝试解析二进制内容。
@@ -91,6 +93,8 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量
 - `src-tauri/src/scan/dependency_graph.rs`：受预算限制的 npm、pnpm、Cargo 完整依赖图与 CycloneDX 导出。
 - `src-tauri/src/scan/supply_chain.rs`：不联网的结构性供应链规则、稳定规则 ID、证据和依赖路径。
 - `src-tauri/src/actions.rs`：通用动作执行内核，以及 Homebrew/npm/pnpm 独立的固定参数、路径指纹、执行上下文和预检规则。
+- `src-tauri/src/actions/capabilities.rs`：写操作能力矩阵、稳定阻塞码和只读执行条件检查。
+- `src-tauri/src/actions/reconcile.rs`：基于前后快照推导实际观察结果与审计证据。
 - `src-tauri/src/storage.rs`：SQLite 快照、根目录、扫描设置和日志存储。
 - `src-tauri/src/commands.rs`：对前端开放的扫描、报告与受控软件包动作 command；写操作只能消费一次性计划。
 

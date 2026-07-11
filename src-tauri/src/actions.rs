@@ -14,6 +14,12 @@ use std::{
 use chrono::Utc;
 use uuid::Uuid;
 
+mod capabilities;
+mod reconcile;
+
+pub use capabilities::package_action_capabilities;
+pub use reconcile::{reconcile_observed_outcome, reconcile_pending_audits};
+
 use crate::{
     adapters::runner::{execution_trust, redact_and_truncate, CommandRunner},
     error::AppError,
@@ -182,6 +188,19 @@ pub fn create_package_plan(
     action: PackageAction,
     targets: Vec<String>,
 ) -> Result<PackageActionPlan, AppError> {
+    let capability = package_action_capabilities(storage)?
+        .into_iter()
+        .find(|capability| capability.manager_id == manager_id && capability.action == action)
+        .ok_or_else(|| AppError::Command("该操作没有可用能力声明".into()))?;
+    if !capability.ready {
+        let blocker = capability
+            .checks
+            .iter()
+            .find(|check| check.status == crate::models::ActionCheckStatus::Blocked)
+            .map(|check| format!("{:?}：{}", check.code, check.detail))
+            .unwrap_or_else(|| "操作当前不可用".into());
+        return Err(AppError::Command(blocker));
+    }
     if !cfg!(target_os = "macos") {
         return Err(AppError::Command("软件包写操作当前仅支持 macOS".into()));
     }
@@ -389,6 +408,7 @@ pub fn create_package_plan(
         command_preview,
         warnings,
         preview_lines,
+        checks: capability.checks,
         requires_network: matches!(action, PackageAction::Install | PackageAction::Upgrade),
         created_at: Utc::now().to_rfc3339(),
     };
@@ -746,7 +766,7 @@ fn build_npm_spec(
     })
 }
 
-fn validate_homebrew_executable(executable: &Path) -> Result<(), AppError> {
+pub(super) fn validate_homebrew_executable(executable: &Path) -> Result<(), AppError> {
     let canonical = executable
         .canonicalize()
         .map_err(|error| AppError::Command(format!("无法验证 Homebrew 路径：{error}")))?;
@@ -808,7 +828,7 @@ fn verify_executable_fingerprint(
     }
 }
 
-fn validate_pnpm_executable(executable: &Path) -> Result<(), AppError> {
+pub(super) fn validate_pnpm_executable(executable: &Path) -> Result<(), AppError> {
     if executable.file_name().and_then(|name| name.to_str()) != Some("pnpm") {
         return Err(AppError::Command(
             "pnpm 写操作仅允许扫描得到的 pnpm 可执行文件".into(),
@@ -830,7 +850,7 @@ fn validate_pnpm_executable(executable: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-fn validate_npm_executable(executable: &Path) -> Result<(), AppError> {
+pub(super) fn validate_npm_executable(executable: &Path) -> Result<(), AppError> {
     if executable.file_name().and_then(|name| name.to_str()) != Some("npm") {
         return Err(AppError::Command(
             "npm 写操作仅允许扫描得到的 npm 可执行文件".into(),
@@ -865,7 +885,7 @@ fn validate_npm_executable(executable: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-fn validate_npm_active_node(
+pub(super) fn validate_npm_active_node(
     snapshot: &crate::models::EnvironmentScan,
     executable: &Path,
 ) -> Result<(), AppError> {
@@ -891,7 +911,7 @@ fn validate_npm_active_node(
     Ok(())
 }
 
-fn npm_preflight(
+pub(super) fn npm_preflight(
     runner: &CommandRunner,
     executable: &Path,
 ) -> Result<(PathBuf, PathBuf, PathBuf), AppError> {
@@ -937,7 +957,7 @@ fn is_allowed_npm_data_path(path: &Path) -> bool {
         || dirs::home_dir().is_some_and(|home| path.starts_with(home))
 }
 
-fn path_looks_read_only(path: &Path) -> bool {
+pub(super) fn path_looks_read_only(path: &Path) -> bool {
     path.metadata()
         .ok()
         .or_else(|| path.parent().and_then(|parent| parent.metadata().ok()))
@@ -1363,6 +1383,7 @@ mod tests {
                 command_preview: "pnpm add --global --ignore-scripts eslint".into(),
                 warnings: spec.warnings,
                 preview_lines: vec![],
+                checks: vec![],
                 requires_network: true,
                 created_at: Utc::now().to_rfc3339(),
             },
@@ -1470,6 +1491,7 @@ mod tests {
             command_preview: "brew cleanup".into(),
             warnings: vec![],
             preview_lines: vec![],
+            checks: vec![],
             requires_network: false,
             created_at: Utc::now().to_rfc3339(),
         };
@@ -1504,6 +1526,7 @@ mod tests {
             command_preview: "brew cleanup".into(),
             warnings: vec![],
             preview_lines: vec![],
+            checks: vec![],
             requires_network: false,
             created_at: (Utc::now() - chrono::Duration::minutes(11)).to_rfc3339(),
         };

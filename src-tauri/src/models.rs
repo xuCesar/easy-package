@@ -635,6 +635,57 @@ pub enum PackageActionStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ActionCheckStatus {
+    Pass,
+    Warning,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActionBlockerCode {
+    Ready,
+    UnsupportedPlatform,
+    MissingScan,
+    RecoveryRequired,
+    ManagerUnavailable,
+    UntrustedExecutable,
+    RuntimeConflict,
+    UnsafeDataPath,
+    PermissionRisk,
+    NetworkRequired,
+    ScriptsDisabled,
+    CacheSemantics,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionPreflightCheck {
+    pub code: ActionBlockerCode,
+    pub status: ActionCheckStatus,
+    pub title: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCapability {
+    pub manager_id: PackageManagerId,
+    pub action: PackageAction,
+    pub ready: bool,
+    pub checks: Vec<ActionPreflightCheck>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ObservedActionOutcome {
+    Applied,
+    NotApplied,
+    Ambiguous,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionPlan {
@@ -645,6 +696,8 @@ pub struct PackageActionPlan {
     pub command_preview: String,
     pub warnings: Vec<String>,
     pub preview_lines: Vec<String>,
+    #[serde(default)]
+    pub checks: Vec<ActionPreflightCheck>,
     pub requires_network: bool,
     pub created_at: String,
 }
@@ -695,6 +748,25 @@ pub struct PackageActionAuditRecord {
     pub error: Option<String>,
     pub started_at: String,
     pub finished_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_snapshot_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_snapshot_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_outcome: Option<ObservedActionOutcome>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconciled_at: Option<String>,
+    #[serde(default)]
+    pub rescan_required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageActionReconciliationResult {
+    pub audit: PackageActionAuditRecord,
+    pub environment: EnvironmentScan,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
