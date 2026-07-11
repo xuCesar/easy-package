@@ -1,4 +1,5 @@
 mod health;
+pub mod history;
 pub mod projects;
 pub mod report;
 

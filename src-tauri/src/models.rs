@@ -339,6 +339,68 @@ pub struct EnvironmentScan {
     pub partial_failures: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotSummary {
+    pub id: i64,
+    pub scanned_at: String,
+    pub manager_count: usize,
+    pub package_count: usize,
+    pub project_count: usize,
+    pub health_issue_count: usize,
+}
+
+impl SnapshotSummary {
+    pub fn from_scan(id: i64, scan: &EnvironmentScan) -> Self {
+        Self {
+            id,
+            scanned_at: scan.scanned_at.clone(),
+            manager_count: scan.managers.len(),
+            package_count: scan.packages.len(),
+            project_count: scan.projects.len(),
+            health_issue_count: scan.health_issues.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum SnapshotChangeKind {
+    Added,
+    Removed,
+    Changed,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum SnapshotChangeEntity {
+    Manager,
+    Package,
+    Project,
+    Health,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotChange {
+    pub kind: SnapshotChangeKind,
+    pub entity: SnapshotChangeEntity,
+    pub key: String,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotComparison {
+    pub baseline: SnapshotSummary,
+    pub current: SnapshotSummary,
+    pub changes: Vec<SnapshotChange>,
+    pub added_count: usize,
+    pub removed_count: usize,
+    pub changed_count: usize,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ScanPhase {

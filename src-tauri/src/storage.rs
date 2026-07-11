@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     error::AppError,
-    models::{EnvironmentScan, ScanSettings, TaskLog},
+    models::{EnvironmentScan, ScanSettings, SnapshotSummary, TaskLog},
 };
 
 #[derive(Debug, Clone)]
@@ -152,6 +152,38 @@ impl Storage {
         }
     }
 
+    pub fn list_snapshot_summaries(&self) -> Result<Vec<SnapshotSummary>, AppError> {
+        let connection = self.connection()?;
+        let mut statement =
+            connection.prepare("SELECT id, payload FROM snapshots ORDER BY id DESC")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.map(|row| {
+            let (id, payload) = row?;
+            let scan = serde_json::from_str::<EnvironmentScan>(&payload).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(SnapshotSummary::from_scan(id, &scan))
+        })
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
+        .map_err(AppError::from)
+    }
+
+    pub fn snapshot_by_id(&self, id: i64) -> Result<Option<EnvironmentScan>, AppError> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare("SELECT payload FROM snapshots WHERE id = ?1")?;
+        let mut rows = statement.query([id])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(serde_json::from_str(&row.get::<_, String>(0)?)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn list_logs(&self) -> Result<Vec<TaskLog>, AppError> {
         let connection = self.connection()?;
         let mut statement = connection
@@ -214,5 +246,22 @@ mod tests {
         assert!(settings
             .default_ignored_directory_names
             .contains(&"node_modules".into()));
+    }
+
+    #[test]
+    fn lists_snapshot_summaries_and_reads_snapshots_by_id() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        let scan: EnvironmentScan = serde_json::from_str(
+            r#"{"managers":[],"packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"2026-01-01T00:00:00Z","partialFailures":0}"#,
+        )
+        .unwrap();
+        storage.save_snapshot(&scan).unwrap();
+
+        let summaries = storage.list_snapshot_summaries().unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].scanned_at, "2026-01-01T00:00:00Z");
+        assert!(storage.snapshot_by_id(summaries[0].id).unwrap().is_some());
+        assert!(storage.snapshot_by_id(999).unwrap().is_none());
     }
 }

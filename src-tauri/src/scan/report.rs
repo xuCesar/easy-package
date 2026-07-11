@@ -3,7 +3,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{error::AppError, models::EnvironmentScan};
+use crate::{
+    error::AppError,
+    models::{EnvironmentScan, SnapshotComparison},
+};
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -45,6 +48,18 @@ pub struct ReportExportResult {
 
 pub fn build_report(scan: &EnvironmentScan, format: ReportFormat) -> Result<String, AppError> {
     build_report_with_home(scan, format, dirs::home_dir().as_deref())
+}
+
+pub fn build_comparison_report(
+    comparison: &SnapshotComparison,
+    format: ReportFormat,
+) -> Result<String, AppError> {
+    let mut report = serde_json::to_value(comparison)?;
+    redact_value(&mut report, dirs::home_dir().as_deref());
+    match format {
+        ReportFormat::Json => Ok(serde_json::to_string_pretty(&report)?),
+        ReportFormat::Markdown => Ok(markdown_comparison_report(&report)),
+    }
 }
 
 fn build_report_with_home(
@@ -156,6 +171,33 @@ fn markdown_report(report: &Value) -> String {
     output
 }
 
+fn markdown_comparison_report(report: &Value) -> String {
+    let baseline = report["baseline"]["scannedAt"].as_str().unwrap_or("未知");
+    let current = report["current"]["scannedAt"].as_str().unwrap_or("未知");
+    let added = report["addedCount"].as_u64().unwrap_or_default();
+    let removed = report["removedCount"].as_u64().unwrap_or_default();
+    let changed = report["changedCount"].as_u64().unwrap_or_default();
+    let changes = report["changes"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut output = format!(
+        "# Easy Package 环境变化报告\n\n- 基线快照：{baseline}\n- 当前快照：{current}\n- 只读模式：是\n\n## 摘要\n\n- 新增：{added}\n- 移除：{removed}\n- 变化：{changed}\n\n## 变化明细\n\n"
+    );
+    if changes.is_empty() {
+        output.push_str("两次快照之间没有可见变化。\n");
+    } else {
+        for change in changes {
+            output.push_str(&format!(
+                "- **{}**：{}\n",
+                change["title"].as_str().unwrap_or("环境变化"),
+                change["description"].as_str().unwrap_or("—")
+            ));
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -197,5 +239,38 @@ mod tests {
         assert!(report.contains("## 包管理器"));
         assert!(report.contains("## 项目"));
         assert!(report.contains("~/Code/app"));
+    }
+
+    #[test]
+    fn comparison_report_has_summary_and_changes() {
+        let comparison: SnapshotComparison = serde_json::from_value(json!({
+            "baseline":{"id":1,"scannedAt":"old","managerCount":1,"packageCount":1,"projectCount":1,"healthIssueCount":0},
+            "current":{"id":2,"scannedAt":"new","managerCount":1,"packageCount":2,"projectCount":1,"healthIssueCount":1},
+            "addedCount":1,"removedCount":0,"changedCount":1,
+            "changes":[{"kind":"added","entity":"package","key":"npm:test","title":"新增软件包：test","description":"npm · 1.0"}]
+        }))
+        .unwrap();
+        let report = build_comparison_report(&comparison, ReportFormat::Markdown).unwrap();
+        assert!(report.contains("# Easy Package 环境变化报告"));
+        assert!(report.contains("## 摘要"));
+        assert!(report.contains("新增软件包：test"));
+    }
+
+    #[test]
+    fn comparison_report_redacts_project_paths() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let path = home.join("Code/app").to_string_lossy().into_owned();
+        let comparison: SnapshotComparison = serde_json::from_value(json!({
+            "baseline":{"id":1,"scannedAt":"old","managerCount":0,"packageCount":0,"projectCount":1,"healthIssueCount":0},
+            "current":{"id":2,"scannedAt":"new","managerCount":0,"packageCount":0,"projectCount":0,"healthIssueCount":0},
+            "addedCount":0,"removedCount":1,"changedCount":0,
+            "changes":[{"kind":"removed","entity":"project","key":path,"title":"未再识别项目：app","description":path}]
+        }))
+        .unwrap();
+        let report = build_comparison_report(&comparison, ReportFormat::Json).unwrap();
+        assert!(report.contains("~/Code/app"));
+        assert!(!report.contains(home.to_string_lossy().as_ref()));
     }
 }

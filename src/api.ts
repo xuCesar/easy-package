@@ -1,12 +1,36 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, ScanSettings, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 let browserProjects = [...mockProjects];
 let browserScanRoots = [...mockScan.scanRoots];
 let browserScanSettings: ScanSettings = structuredClone(mockScan.scanSettings);
+
+const mockSnapshotSummaries: SnapshotSummary[] = [
+  { id: 2, scannedAt: nowMinusMinutes(5), managerCount: mockScan.managers.length, packageCount: mockScan.packages.length, projectCount: mockScan.projects.length, healthIssueCount: mockScan.healthIssues.length },
+  { id: 1, scannedAt: nowMinusMinutes(60), managerCount: mockScan.managers.length - 1, packageCount: mockScan.packages.length - 2, projectCount: mockScan.projects.length - 1, healthIssueCount: mockScan.healthIssues.length + 1 },
+];
+
+const mockSnapshotComparison: SnapshotComparison = {
+  baseline: mockSnapshotSummaries[1],
+  current: mockSnapshotSummaries[0],
+  addedCount: 3,
+  removedCount: 1,
+  changedCount: 2,
+  changes: [
+    { kind: "added", entity: "manager", key: "composer", title: "新增包管理器：Composer", description: "本次扫描发现该包管理器。" },
+    { kind: "added", entity: "package", key: "composer:psr/log", title: "新增软件包：psr/log", description: "composer · 3.0.2" },
+    { kind: "changed", entity: "package", key: "npm:typescript", title: "软件包已变化：typescript", description: "npm：5.8.3 → 5.9.3" },
+    { kind: "changed", entity: "project", key: "~/Code/easy-package", title: "项目元数据已变化：easy-package", description: "生态、锁文件、运行时或直接依赖声明已变化。" },
+    { kind: "removed", entity: "health", key: "legacy-warning", title: "健康提示已消失：旧版运行时", description: "该提示未出现在本次扫描结果中。" },
+  ],
+};
+
+function nowMinusMinutes(minutes: number) {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
 
 const wait = (duration = 180) => new Promise((resolve) => window.setTimeout(resolve, duration));
 const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
@@ -91,6 +115,16 @@ const mockApi: DevPkgApi = {
   async exportEnvironmentReport() {
     return { saved: true };
   },
+  async listSnapshotSummaries() {
+    return mockSnapshotSummaries;
+  },
+  async compareSnapshots(baselineId, currentId) {
+    if (baselineId === currentId) throw new Error("请选择两个不同的快照进行比较");
+    return { ...mockSnapshotComparison, baseline: mockSnapshotSummaries.find((summary) => summary.id === baselineId) ?? mockSnapshotComparison.baseline, current: mockSnapshotSummaries.find((summary) => summary.id === currentId) ?? mockSnapshotComparison.current };
+  },
+  async exportSnapshotComparisonReport() {
+    return { saved: true };
+  },
   async getHealthReport() {
     return mockScan.healthIssues;
   },
@@ -112,6 +146,9 @@ const tauriApi: DevPkgApi = {
   getScanSettings: () => invoke<ScanSettings>("get_scan_settings"),
   updateScanSettings: (settings) => invoke<ProjectAnalysis>("update_scan_settings", { settings }),
   exportEnvironmentReport: (format) => invoke("export_environment_report", { format }),
+  listSnapshotSummaries: () => invoke<SnapshotSummary[]>("list_snapshot_summaries"),
+  compareSnapshots: (baselineId, currentId) => invoke<SnapshotComparison>("compare_snapshots", { baselineId, currentId }),
+  exportSnapshotComparisonReport: (format, baselineId, currentId) => invoke("export_snapshot_comparison_report", { format, baselineId, currentId }),
   getHealthReport: () => invoke<HealthIssue[]>("get_health_report"),
   getScanLogs: () => invoke<TaskLog[]>("get_scan_logs"),
 };

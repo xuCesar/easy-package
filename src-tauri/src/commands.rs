@@ -187,29 +187,93 @@ pub async fn export_environment_report(
             .latest_snapshot()?
             .ok_or_else(|| AppError::Command("尚无可导出的环境扫描结果".into()))?;
         let content = scan::report::build_report(&scan, format)?;
-        let dialog = app
-            .dialog()
-            .file()
-            .set_title("导出环境报告")
-            .set_file_name(format.file_name())
-            .add_filter(format.filter_name(), &[format.extension()]);
-        let Some(file) = dialog.blocking_save_file() else {
-            return Ok(scan::report::ReportExportResult {
-                saved: false,
-                path: None,
-            });
-        };
-        let path = file
-            .into_path()
-            .map_err(|error| AppError::Command(error.to_string()))?;
-        fs::write(path, content).map_err(|error| AppError::Command(error.to_string()))?;
-        Ok(scan::report::ReportExportResult {
-            saved: true,
-            path: None,
-        })
+        save_report_with_dialog(&app, format, format.file_name(), content)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub fn list_snapshot_summaries(
+    storage: State<'_, Storage>,
+) -> Result<Vec<crate::models::SnapshotSummary>, AppError> {
+    storage.list_snapshot_summaries()
+}
+
+#[tauri::command]
+pub fn compare_snapshots(
+    baseline_id: i64,
+    current_id: i64,
+    storage: State<'_, Storage>,
+) -> Result<crate::models::SnapshotComparison, AppError> {
+    snapshot_comparison(storage.inner(), baseline_id, current_id)
+}
+
+#[tauri::command]
+pub async fn export_snapshot_comparison_report(
+    format: scan::report::ReportFormat,
+    baseline_id: i64,
+    current_id: i64,
+    app: AppHandle,
+    storage: State<'_, Storage>,
+) -> Result<scan::report::ReportExportResult, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let comparison = snapshot_comparison(&storage, baseline_id, current_id)?;
+        let content = scan::report::build_comparison_report(&comparison, format)?;
+        let file_name = match format {
+            scan::report::ReportFormat::Json => "easy-package-changes.json",
+            scan::report::ReportFormat::Markdown => "easy-package-changes.md",
+        };
+        save_report_with_dialog(&app, format, file_name, content)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+fn snapshot_comparison(
+    storage: &Storage,
+    baseline_id: i64,
+    current_id: i64,
+) -> Result<crate::models::SnapshotComparison, AppError> {
+    if baseline_id == current_id {
+        return Err(AppError::Command("请选择两个不同的快照进行比较".into()));
+    }
+    let baseline = storage
+        .snapshot_by_id(baseline_id)?
+        .ok_or_else(|| AppError::Command("基线快照不存在或已被清理".into()))?;
+    let current = storage
+        .snapshot_by_id(current_id)?
+        .ok_or_else(|| AppError::Command("当前快照不存在或已被清理".into()))?;
+    scan::history::compare_snapshots(baseline_id, &baseline, current_id, &current)
+}
+
+fn save_report_with_dialog(
+    app: &AppHandle,
+    format: scan::report::ReportFormat,
+    file_name: &str,
+    content: String,
+) -> Result<scan::report::ReportExportResult, AppError> {
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("导出环境报告")
+        .set_file_name(file_name)
+        .add_filter(format.filter_name(), &[format.extension()]);
+    let Some(file) = dialog.blocking_save_file() else {
+        return Ok(scan::report::ReportExportResult {
+            saved: false,
+            path: None,
+        });
+    };
+    let path = file
+        .into_path()
+        .map_err(|error| AppError::Command(error.to_string()))?;
+    fs::write(path, content).map_err(|error| AppError::Command(error.to_string()))?;
+    Ok(scan::report::ReportExportResult {
+        saved: true,
+        path: None,
+    })
 }
 
 #[tauri::command]
@@ -227,6 +291,8 @@ pub fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppErr
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
@@ -236,5 +302,20 @@ mod tests {
         registry.cancel("scan-1");
         assert!(cancellation.load(Ordering::SeqCst));
         registry.finish("scan-1");
+    }
+
+    #[test]
+    fn rejects_identical_or_missing_snapshot_ids() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+
+        assert!(snapshot_comparison(&storage, 1, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("两个不同的快照"));
+        assert!(snapshot_comparison(&storage, 1, 2)
+            .unwrap_err()
+            .to_string()
+            .contains("基线快照不存在或已被清理"));
     }
 }

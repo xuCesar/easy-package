@@ -1,4 +1,4 @@
-export type PageId = "overview" | "packages" | "projects" | "dependencies" | "environment";
+export type PageId = "overview" | "packages" | "projects" | "dependencies" | "history" | "environment";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
@@ -118,6 +118,35 @@ export interface ReportExportResult {
   saved: boolean;
 }
 
+export interface SnapshotSummary {
+  id: number;
+  scannedAt: string;
+  managerCount: number;
+  packageCount: number;
+  projectCount: number;
+  healthIssueCount: number;
+}
+
+export type SnapshotChangeKind = "added" | "removed" | "changed";
+export type SnapshotChangeEntity = "manager" | "package" | "project" | "health";
+
+export interface SnapshotChange {
+  kind: SnapshotChangeKind;
+  entity: SnapshotChangeEntity;
+  key: string;
+  title: string;
+  description: string;
+}
+
+export interface SnapshotComparison {
+  baseline: SnapshotSummary;
+  current: SnapshotSummary;
+  changes: SnapshotChange[];
+  addedCount: number;
+  removedCount: number;
+  changedCount: number;
+}
+
 export type HealthSeverity = "info" | "warning" | "error";
 
 export interface HealthIssue {
@@ -193,6 +222,9 @@ export interface DevPkgApi {
   getScanSettings(): Promise<ScanSettings>;
   updateScanSettings(settings: ScanSettings): Promise<ProjectAnalysis>;
   exportEnvironmentReport(format: ReportFormat): Promise<ReportExportResult>;
+  listSnapshotSummaries(): Promise<SnapshotSummary[]>;
+  compareSnapshots(baselineId: number, currentId: number): Promise<SnapshotComparison>;
+  exportSnapshotComparisonReport(format: ReportFormat, baselineId: number, currentId: number): Promise<ReportExportResult>;
   getHealthReport(): Promise<HealthIssue[]>;
   getScanLogs(): Promise<TaskLog[]>;
 }

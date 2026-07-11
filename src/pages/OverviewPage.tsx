@@ -2,12 +2,13 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityMark, StatusDot, UpdateBadge } from "../components/Status";
 import { formatBytes, formatRelativeTime } from "../lib/format";
-import type { EnvironmentScan, PageId, ScanProgress } from "../types";
+import type { EnvironmentScan, PageId, ScanProgress, SnapshotComparison } from "../types";
 
 interface OverviewPageProps {
   data: EnvironmentScan;
   isLoading: boolean;
   scanProgress?: ScanProgress;
+  comparison?: SnapshotComparison;
   onRefresh: () => void;
   onCancel: () => void;
   onNavigate: (page: PageId) => void;
@@ -20,7 +21,7 @@ const phaseLabel: Record<ScanProgress["phase"], string> = {
   complete: "扫描完成",
 };
 
-export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCancel, onNavigate }: OverviewPageProps) {
+export function OverviewPage({ data, isLoading, scanProgress, comparison, onRefresh, onCancel, onNavigate }: OverviewPageProps) {
   const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
   const outdated = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
   const cacheSize = data.managers.reduce((total, manager) => total + (manager.cacheSizeBytes ?? 0), 0);
@@ -73,6 +74,10 @@ export function OverviewPage({ data, isLoading, scanProgress, onRefresh, onCance
         <section className="panel panel--dependencies">
           <div className="panel__header"><h2>依赖洞察</h2><button className="text-button" onClick={() => onNavigate("dependencies")}>查看全部 <Icon name="chevron" /></button></div>
           <div className="dependency-preview"><strong>{data.dependencyInsights.length}</strong><span>项直接依赖</span><p>{resolutionRisks ? `${resolutionRisks} 项锁文件解析异常` : dependencyRisks ? `${dependencyRisks} 项依赖需要关注${divergentDependencies ? `，含 ${divergentDependencies} 项版本分歧` : ""}` : "未发现跨项目依赖风险"}</p></div>
+        </section>
+        <section className="panel panel--history">
+          <div className="panel__header"><h2>环境变化</h2><button className="text-button" onClick={() => onNavigate("history")}>查看历史 <Icon name="chevron" /></button></div>
+          <div className="dependency-preview"><strong>{comparison ? comparison.changes.length : "—"}</strong><span>{comparison ? "项快照变化" : "等待第二次扫描"}</span><p>{comparison ? `新增 ${comparison.addedCount} 项 · 变化 ${comparison.changedCount} 项 · 移除 ${comparison.removedCount} 项` : "当前仅有一份可用快照，完成下一次扫描后即可比较。"}</p></div>
         </section>
         <section className="panel panel--updates">
           <div className="panel__header"><h2>软件包状态</h2><button className="text-button" onClick={() => onNavigate("packages")}>查看全部 <Icon name="chevron" /></button></div>

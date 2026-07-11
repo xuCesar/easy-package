@@ -8,9 +8,10 @@ mod scan;
 mod storage;
 
 use commands::{
-    add_scan_root, cancel_environment_scan, export_environment_report, get_health_report,
-    get_scan_logs, get_scan_settings, list_packages, list_projects, remove_scan_root,
-    scan_environment, update_scan_settings,
+    add_scan_root, cancel_environment_scan, compare_snapshots, export_environment_report,
+    export_snapshot_comparison_report, get_health_report, get_scan_logs, get_scan_settings,
+    list_packages, list_projects, list_snapshot_summaries, remove_scan_root, scan_environment,
+    update_scan_settings,
 };
 use storage::Storage;
 use tauri::Manager;
@@ -35,6 +36,9 @@ pub fn run() {
             get_scan_settings,
             update_scan_settings,
             export_environment_report,
+            list_snapshot_summaries,
+            compare_snapshots,
+            export_snapshot_comparison_report,
             get_health_report,
             get_scan_logs,
         ])
