@@ -248,6 +248,24 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .dependency-projects strong { color: var(--text); font-size: 11px; }
 .dependency-projects code { overflow: hidden; color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
 
+.runtime-metrics { grid-template-columns: repeat(3, 1fr); }
+.runtime-metrics .metric:last-child { border-right: 0; }
+.runtime-layout { display: grid; grid-template-columns: .9fr 1.1fr; gap: 16px; }
+.runtime-installations, .runtime-assessments { display: grid; }
+.runtime-installation, .runtime-assessment { min-height: 74px; padding: 13px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; border-bottom: 1px solid var(--border-soft); }
+.runtime-installation:last-child, .runtime-assessment:last-child { border-bottom: 0; }
+.runtime-installation h3 { display: inline; margin: 0 8px; font-size: 13px; }
+.runtime-installation code, .runtime-assessment code { display: block; max-width: 360px; margin-top: 7px; overflow: hidden; color: var(--text-3); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.runtime-installation > div:last-child { display: grid; gap: 5px; text-align: right; }
+.runtime-installation > div:last-child strong { font-size: 10px; }
+.runtime-installation > div:last-child span { color: var(--text-3); font-size: 9px; }
+.runtime-active { padding: 3px 6px; border: 1px solid #245c3a; border-radius: 999px; color: #63da89; background: rgba(26, 100, 51, .13); font-size: 9px; }
+.runtime-assessment > div { min-width: 0; }
+.runtime-assessment > div:last-child { display: grid; gap: 5px; text-align: right; }
+.runtime-assessment span, .runtime-assessment b { font-size: 10px; }
+.runtime-assessment small { max-width: 340px; color: var(--text-3); font-size: 9px; }
+.runtime-assessment--missing, .runtime-assessment--mismatch { box-shadow: inset 3px 0 #d8a73e; }
+
 .environment-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; }
 .environment-managers { display: grid; }
 .environment-manager { min-height: 66px; padding: 11px 18px; display: grid; grid-template-columns: 10px 30px minmax(0,1fr) auto 32px; align-items: center; gap: 11px; border-bottom: 1px solid var(--border-soft); }
@@ -300,7 +318,7 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
   .metrics { grid-template-columns: repeat(2, 1fr); }
   .metric:nth-child(2) { border-right: 0; }
   .metric:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
-  .overview-grid, .environment-layout { grid-template-columns: 1fr; }
+  .overview-grid, .environment-layout, .runtime-layout { grid-template-columns: 1fr; }
   .panel--updates { grid-column: auto; }
   .panel--dependencies { grid-column: auto; }
 }

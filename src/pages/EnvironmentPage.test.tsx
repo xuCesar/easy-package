@@ -13,7 +13,8 @@ describe("EnvironmentPage", () => {
     expect(screen.getByText("环境扫描完成")).toBeInTheDocument();
     expect(screen.getAllByText("已识别管理器路径").length).toBeGreaterThan(0);
     expect(screen.getAllByText("已识别用户工具路径").length).toBeGreaterThan(0);
-    expect(screen.getByText(/更新检查可能通过本机 registry/)).toBeInTheDocument();
+    expect(screen.getByText("3.6 GB（部分）")).toBeInTheDocument();
+    expect(screen.getByText(/离线模式，不执行 registry 更新检查/)).toBeInTheDocument();
     expect(screen.getByText(/本机 SQLite 会保存扫描快照与路径元数据/)).toBeInTheDocument();
   });
 
@@ -39,6 +40,15 @@ describe("EnvironmentPage", () => {
     render(<EnvironmentPage data={data} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: "查看相关项目" }));
     expect(onNavigate).toHaveBeenCalledWith("projects");
+  });
+
+  it("将运行时健康项定位到运行时页", () => {
+    const onNavigate = vi.fn();
+    const data = structuredClone(mockScan);
+    data.healthIssues = [{ id: "runtime-warning", severity: "warning", code: "RUNTIME_NOT_INSTALLED", title: "缺少 Python", description: "未发现运行时", path: "/tmp/project" }];
+    render(<EnvironmentPage data={data} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: "查看相关运行时" }));
+    expect(onNavigate).toHaveBeenCalledWith("runtimes");
   });
 
   it("可只显示命令冲突并展示候选来源", () => {

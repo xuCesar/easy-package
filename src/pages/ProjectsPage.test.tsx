@@ -20,6 +20,7 @@ const scanSettings: ScanSettings = {
   ignoredPaths: ["/tmp/archive"],
   maxDepth: 6,
   defaultIgnoredDirectoryNames: ["node_modules", ".git", "target", "dist", "build", ".venv", "vendor"],
+  networkPolicy: "offline",
 };
 
 const pageProps = {
@@ -68,7 +69,10 @@ describe("ProjectsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "应用" }));
 
     await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ ...scanSettings, maxDepth: 8 }));
-    expect(screen.getByText("扫描范围已更新，项目与依赖洞察已重新计算。")).toBeInTheDocument();
+    expect(screen.getByText("扫描范围已更新，项目、依赖与运行时关联已重新计算。")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("联网策略"), { target: { value: "registry" } });
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ ...scanSettings, networkPolicy: "registry" }));
   });
 
   it("拒绝无效忽略路径并处理导出成功与失败", async () => {

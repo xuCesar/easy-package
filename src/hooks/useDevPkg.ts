@@ -34,7 +34,7 @@ export const useDevPkg = () => {
     const scanId = crypto.randomUUID();
     activeScanId.current = scanId;
     setState((current) => ({ ...current, isLoading: true, error: undefined }));
-    setScanProgress({ scanId, phase: "managers", completed: 0, total: 10 });
+    setScanProgress({ scanId, phase: "managers", completed: 0, total: 13 });
     setNotice(undefined);
     try {
       const data = await api.scanEnvironment(scanId);

@@ -1,9 +1,10 @@
-export type PageId = "overview" | "packages" | "projects" | "dependencies" | "history" | "environment";
+export type PageId = "overview" | "packages" | "projects" | "dependencies" | "runtimes" | "history" | "environment";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
 export type ManagerStatus = "available" | "unavailable" | "error" | "blocked" | "unsupported";
 export type ExecutionTrust = "system" | "managed" | "userManaged" | "unverified" | "notApplicable";
+export type CacheScanStatus = "complete" | "partial" | "unavailable" | "notApplicable";
 
 export interface DiagnosticError {
   code: string;
@@ -22,6 +23,7 @@ export interface PackageManager {
   capabilities: string[];
   error?: DiagnosticError;
   cacheSizeBytes?: number;
+  cacheScanStatus: CacheScanStatus;
   scannedAt: string;
 }
 
@@ -105,6 +107,8 @@ export interface ProjectAnalysis {
   projects: ProjectMetadata[];
   dependencyInsights: DependencyInsight[];
   workspaces: ProjectWorkspace[];
+  runtimeAssessments: RuntimeRequirementAssessment[];
+  healthIssues: HealthIssue[];
   scanSettings: ScanSettings;
 }
 
@@ -112,6 +116,30 @@ export interface ScanSettings {
   ignoredPaths: string[];
   maxDepth: number;
   defaultIgnoredDirectoryNames: string[];
+  networkPolicy: "offline" | "registry";
+}
+
+export interface RuntimeInstallation {
+  id: string;
+  runtime: string;
+  version: string;
+  path: string;
+  provider: string;
+  isActive: boolean;
+  executionTrust: ExecutionTrust;
+}
+
+export type RuntimeRequirementStatus = "available" | "missing" | "mismatch" | "unknown";
+
+export interface RuntimeRequirementAssessment {
+  projectName: string;
+  projectPath: string;
+  runtime: string;
+  requirement: string;
+  status: RuntimeRequirementStatus;
+  activeVersion?: string;
+  installedVersions: string[];
+  message: string;
 }
 
 export type ReportFormat = "json" | "markdown";
@@ -194,6 +222,8 @@ export interface EnvironmentScan {
   projects: ProjectMetadata[];
   dependencyInsights: DependencyInsight[];
   workspaces: ProjectWorkspace[];
+  runtimeInstallations: RuntimeInstallation[];
+  runtimeAssessments: RuntimeRequirementAssessment[];
   scanRoots: string[];
   scanSettings: ScanSettings;
   healthIssues: HealthIssue[];
@@ -203,7 +233,7 @@ export interface EnvironmentScan {
   partialFailures: number;
 }
 
-export type ScanPhase = "managers" | "projects" | "health" | "complete";
+export type ScanPhase = "managers" | "projects" | "runtimes" | "health" | "complete";
 
 export interface ScanProgress {
   scanId: string;

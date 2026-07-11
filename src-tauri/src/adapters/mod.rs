@@ -10,6 +10,7 @@ use std::{
         Arc,
     },
     thread,
+    time::{Duration, Instant},
 };
 
 use chrono::Utc;
@@ -17,8 +18,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::models::{
-    DiagnosticError, ExecutionTrust, LogCategory, LogStatus, ManagedPackage, ManagerStatus,
-    PackageManager, PackageManagerId, PackageScope, TaskLog, UpdateStatus,
+    CacheScanStatus, DiagnosticError, ExecutionTrust, LogCategory, LogStatus, ManagedPackage,
+    ManagerStatus, NetworkPolicy, PackageManager, PackageManagerId, PackageScope, TaskLog,
+    UpdateStatus,
 };
 use parsers::{
     parse_brew_packages, parse_cargo_packages, parse_npm_packages, parse_pip_packages,
@@ -215,6 +217,7 @@ const MAX_PARALLEL_MANAGER_SCANS: usize = 3;
 pub fn scan_all(
     cancelled: &AtomicBool,
     on_complete: Arc<dyn Fn(PackageManagerId) + Send + Sync>,
+    network_policy: NetworkPolicy,
 ) -> Result<Vec<AdapterScan>, crate::error::AppError> {
     if !cfg!(target_os = "macos") {
         return Ok(SPECS.iter().map(unsupported_scan).collect());
@@ -233,7 +236,7 @@ pub fn scan_all(
                     .enumerate()
                     .filter(|(index, _)| index % workers == worker)
                     .map(|(index, spec)| {
-                        let scan = scan_manager(spec, &runner, cancelled)?;
+                        let scan = scan_manager(spec, &runner, cancelled, network_policy)?;
                         let _ = completed.fetch_add(1, Ordering::SeqCst);
                         on_complete(spec.id);
                         Ok((index, scan))
@@ -273,6 +276,7 @@ fn unsupported_scan(spec: &ManagerSpec) -> AdapterScan {
                 output: None,
             }),
             cache_size_bytes: None,
+            cache_scan_status: CacheScanStatus::NotApplicable,
             scanned_at: Utc::now().to_rfc3339(),
         },
         packages: Vec::new(),
@@ -290,6 +294,7 @@ fn scan_manager(
     spec: &ManagerSpec,
     runner: &CommandRunner,
     cancelled: &AtomicBool,
+    network_policy: NetworkPolicy,
 ) -> Result<AdapterScan, crate::error::AppError> {
     if cancelled.load(Ordering::SeqCst) {
         return Err(crate::error::AppError::ScanCancelled);
@@ -307,6 +312,7 @@ fn scan_manager(
                 capabilities: Vec::new(),
                 error: None,
                 cache_size_bytes: None,
+                cache_scan_status: CacheScanStatus::NotApplicable,
                 scanned_at,
             },
             packages: Vec::new(),
@@ -339,6 +345,7 @@ fn scan_manager(
                 capabilities: Vec::new(),
                 error: Some(error.clone()),
                 cache_size_bytes: None,
+                cache_scan_status: CacheScanStatus::NotApplicable,
                 scanned_at,
             },
             packages: Vec::new(),
@@ -373,6 +380,7 @@ fn scan_manager(
                 capabilities: Vec::new(),
                 error: Some(error.clone()),
                 cache_size_bytes: None,
+                cache_scan_status: CacheScanStatus::NotApplicable,
                 scanned_at,
             },
             packages: Vec::new(),
@@ -399,7 +407,7 @@ fn scan_manager(
         &mut partial_failures,
     )?;
 
-    if let Some(args) = spec.outdated_args {
+    if let Some(args) = outdated_args_for_policy(network_policy, spec) {
         let output = runner.run_cancellable(&executable, args, cancelled);
         if cancelled.load(Ordering::SeqCst) {
             return Err(crate::error::AppError::ScanCancelled);
@@ -417,16 +425,24 @@ fn scan_manager(
                 Some(error),
             ));
         }
-    } else {
+    } else if network_policy == NetworkPolicy::Registry {
         logs.push(log(
             spec.id,
             LogStatus::Info,
             "当前适配器不提供安全的更新检查",
             None,
         ));
+    } else {
+        logs.push(log(
+            spec.id,
+            LogStatus::Info,
+            "离线策略已跳过更新检查",
+            None,
+        ));
     }
 
-    let cache_size_bytes = read_cache_size(spec, runner, &executable, cancelled, &mut logs)?;
+    let (cache_size_bytes, cache_scan_status) =
+        read_cache_size(spec, runner, &executable, cancelled, &mut logs)?;
 
     logs.push(log(
         spec.id,
@@ -449,12 +465,22 @@ fn scan_manager(
             capabilities: manager_capabilities(spec, supports_packages, cache_size_bytes.is_some()),
             error: None,
             cache_size_bytes,
+            cache_scan_status,
             scanned_at,
         },
         packages,
         logs,
         partial_failures,
     })
+}
+
+fn outdated_args_for_policy(
+    network_policy: NetworkPolicy,
+    spec: &ManagerSpec,
+) -> Option<&'static [&'static str]> {
+    (network_policy == NetworkPolicy::Registry)
+        .then_some(spec.outdated_args)
+        .flatten()
 }
 
 fn read_packages(
@@ -655,9 +681,9 @@ fn read_cache_size(
     executable: &Path,
     cancelled: &AtomicBool,
     logs: &mut Vec<TaskLog>,
-) -> Result<Option<u64>, crate::error::AppError> {
+) -> Result<(Option<u64>, CacheScanStatus), crate::error::AppError> {
     let path = match spec.cache_source {
-        CacheSource::None => return Ok(None),
+        CacheSource::None => return Ok((None, CacheScanStatus::NotApplicable)),
         CacheSource::Bun => Some(bun_install_dir().join("install/cache")),
         CacheSource::Cargo => Some(cargo_home().join("registry/cache")),
         CacheSource::Command(args) => {
@@ -682,7 +708,19 @@ fn read_cache_size(
             }
         }
     };
-    Ok(path.and_then(|path| directory_size(&path)))
+    let Some(path) = path else {
+        return Ok((None, CacheScanStatus::Unavailable));
+    };
+    let result = directory_size(&path, cancelled)?;
+    if result.status == CacheScanStatus::Partial {
+        logs.push(log(
+            spec.id,
+            LogStatus::Warning,
+            "缓存目录较大，仅展示预算范围内的统计",
+            None,
+        ));
+    }
+    Ok((Some(result.bytes), result.status))
 }
 
 fn manager_capabilities(spec: &ManagerSpec, packages: bool, cache: bool) -> Vec<String> {
@@ -840,23 +878,56 @@ fn log(
     }
 }
 
-fn directory_size(path: &Path) -> Option<u64> {
+const CACHE_SCAN_ENTRY_LIMIT: usize = 100_000;
+const CACHE_SCAN_TIME_LIMIT: Duration = Duration::from_secs(3);
+
+#[derive(Debug)]
+struct DirectorySizeResult {
+    bytes: u64,
+    status: CacheScanStatus,
+}
+
+fn directory_size(
+    path: &Path,
+    cancelled: &AtomicBool,
+) -> Result<DirectorySizeResult, crate::error::AppError> {
     if !path.exists() {
-        return Some(0);
+        return Ok(DirectorySizeResult {
+            bytes: 0,
+            status: CacheScanStatus::Complete,
+        });
     }
+    let started_at = Instant::now();
     let mut total = 0u64;
-    for entry in walkdir::WalkDir::new(path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
+    let mut visited = 0usize;
+    let mut partial = false;
+    for entry in walkdir::WalkDir::new(path).follow_links(false) {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err(crate::error::AppError::ScanCancelled);
+        }
+        if visited >= CACHE_SCAN_ENTRY_LIMIT || started_at.elapsed() >= CACHE_SCAN_TIME_LIMIT {
+            partial = true;
+            break;
+        }
+        visited += 1;
+        let Ok(entry) = entry else {
+            partial = true;
+            continue;
+        };
         if entry.file_type().is_file() {
             if let Ok(metadata) = entry.metadata() {
                 total = total.saturating_add(metadata.len());
             }
         }
     }
-    Some(total)
+    Ok(DirectorySizeResult {
+        bytes: total,
+        status: if partial {
+            CacheScanStatus::Partial
+        } else {
+            CacheScanStatus::Complete
+        },
+    })
 }
 
 #[cfg(test)]
@@ -955,6 +1026,25 @@ mod tests {
             let spec = SPECS.iter().find(|spec| spec.id == id).unwrap();
             assert!(spec.outdated_args.is_none());
         }
+    }
+
+    #[test]
+    fn offline_policy_never_runs_registry_update_checks() {
+        for spec in &SPECS {
+            assert!(outdated_args_for_policy(NetworkPolicy::Offline, spec).is_none());
+        }
+        let npm = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Npm)
+            .unwrap();
+        assert!(outdated_args_for_policy(NetworkPolicy::Registry, npm).is_some());
+    }
+
+    #[test]
+    fn cache_walk_honors_cancellation() {
+        let cancelled = AtomicBool::new(true);
+        let error = directory_size(Path::new("/"), &cancelled).unwrap_err();
+        assert!(matches!(error, crate::error::AppError::ScanCancelled));
     }
 
     #[test]

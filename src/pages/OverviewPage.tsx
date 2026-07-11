@@ -17,6 +17,7 @@ interface OverviewPageProps {
 const phaseLabel: Record<ScanProgress["phase"], string> = {
   managers: "正在扫描包管理器",
   projects: "正在扫描项目",
+  runtimes: "正在扫描运行时",
   health: "正在生成健康报告",
   complete: "扫描完成",
 };

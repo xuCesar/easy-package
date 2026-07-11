@@ -52,6 +52,21 @@ pub enum ExecutionTrust {
     NotApplicable,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CacheScanStatus {
+    Complete,
+    Partial,
+    Unavailable,
+    NotApplicable,
+}
+
+impl Default for CacheScanStatus {
+    fn default() -> Self {
+        Self::NotApplicable
+    }
+}
+
 impl Default for ExecutionTrust {
     fn default() -> Self {
         Self::NotApplicable
@@ -86,6 +101,8 @@ pub struct PackageManager {
     pub error: Option<DiagnosticError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub cache_scan_status: CacheScanStatus,
     pub scanned_at: String,
 }
 
@@ -178,6 +195,19 @@ pub fn default_ignored_directory_names() -> Vec<String> {
     .collect()
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkPolicy {
+    Offline,
+    Registry,
+}
+
+impl Default for NetworkPolicy {
+    fn default() -> Self {
+        Self::Offline
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanSettings {
@@ -187,6 +217,8 @@ pub struct ScanSettings {
     pub max_depth: usize,
     #[serde(default = "default_ignored_directory_names")]
     pub default_ignored_directory_names: Vec<String>,
+    #[serde(default)]
+    pub network_policy: NetworkPolicy,
 }
 
 impl Default for ScanSettings {
@@ -195,8 +227,45 @@ impl Default for ScanSettings {
             ignored_paths: Vec::new(),
             max_depth: default_scan_max_depth(),
             default_ignored_directory_names: default_ignored_directory_names(),
+            network_policy: NetworkPolicy::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeInstallation {
+    pub id: String,
+    pub runtime: String,
+    pub version: String,
+    pub path: String,
+    pub provider: String,
+    pub is_active: bool,
+    pub execution_trust: ExecutionTrust,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RuntimeRequirementStatus {
+    Available,
+    Missing,
+    Mismatch,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeRequirementAssessment {
+    pub project_name: String,
+    pub project_path: String,
+    pub runtime: String,
+    pub requirement: String,
+    pub status: RuntimeRequirementStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_version: Option<String>,
+    #[serde(default)]
+    pub installed_versions: Vec<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -253,6 +322,10 @@ pub struct ProjectAnalysis {
     pub projects: Vec<ProjectMetadata>,
     pub dependency_insights: Vec<DependencyInsight>,
     pub workspaces: Vec<ProjectWorkspace>,
+    #[serde(default)]
+    pub runtime_assessments: Vec<RuntimeRequirementAssessment>,
+    #[serde(default)]
+    pub health_issues: Vec<HealthIssue>,
     #[serde(default)]
     pub scan_settings: ScanSettings,
 }
@@ -348,6 +421,10 @@ pub struct EnvironmentScan {
     pub dependency_insights: Vec<DependencyInsight>,
     #[serde(default)]
     pub workspaces: Vec<ProjectWorkspace>,
+    #[serde(default)]
+    pub runtime_installations: Vec<RuntimeInstallation>,
+    #[serde(default)]
+    pub runtime_assessments: Vec<RuntimeRequirementAssessment>,
     pub scan_roots: Vec<String>,
     #[serde(default)]
     pub scan_settings: ScanSettings,
@@ -425,6 +502,7 @@ pub struct SnapshotComparison {
 pub enum ScanPhase {
     Managers,
     Projects,
+    Runtimes,
     Health,
     Complete,
 }
@@ -445,8 +523,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        EnvironmentScan, ExecutionTrust, PackageManager, ProjectDependency, ProjectMetadata,
-        ScanSettings,
+        CacheScanStatus, EnvironmentScan, ExecutionTrust, NetworkPolicy, PackageManager,
+        ProjectDependency, ProjectMetadata, ScanSettings,
     };
 
     #[test]
@@ -476,6 +554,9 @@ mod tests {
         assert!(scan.dependency_insights.is_empty());
         assert!(scan.path_observations[0].candidates.is_empty());
         assert_eq!(scan.scan_settings, ScanSettings::default());
+        assert_eq!(scan.scan_settings.network_policy, NetworkPolicy::Offline);
+        assert!(scan.runtime_installations.is_empty());
+        assert!(scan.runtime_assessments.is_empty());
     }
 
     #[test]
@@ -496,5 +577,6 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(manager.execution_trust, ExecutionTrust::NotApplicable);
+        assert_eq!(manager.cache_scan_status, CacheScanStatus::NotApplicable);
     }
 }

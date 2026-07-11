@@ -9,6 +9,7 @@ import { DependenciesPage } from "./pages/DependenciesPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PackagesPage } from "./pages/PackagesPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { RuntimesPage } from "./pages/RuntimesPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import type { PageId } from "./types";
 
@@ -32,6 +33,7 @@ export function App() {
         {page === "packages" ? <PackagesPage packages={data.packages} /> : null}
         {page === "projects" ? <ProjectsPage projects={data.projects} workspaces={data.workspaces} scanRoots={data.scanRoots} scanSettings={data.scanSettings} onAddRoot={addRoot} onRemoveRoot={removeRoot} onUpdateSettings={updateScanSettings} onExportReport={exportEnvironmentReport} onRefresh={() => void refresh()} /> : null}
         {page === "dependencies" ? <DependenciesPage insights={data.dependencyInsights} /> : null}
+        {page === "runtimes" ? <RuntimesPage installations={data.runtimeInstallations} assessments={data.runtimeAssessments} /> : null}
         {page === "history" ? <HistoryPage summaries={history.summaries} comparison={history.comparison} isLoading={history.isLoading} error={history.error} onCompare={history.compare} onExport={history.exportComparison} /> : null}
         {page === "environment" ? <EnvironmentPage data={data} onNavigate={setPage} /> : null}
       </>

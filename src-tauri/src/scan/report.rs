@@ -128,13 +128,22 @@ fn markdown_report(report: &Value) -> String {
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
+    let runtimes = report["runtimeInstallations"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let network_behavior = if report["scanSettings"]["networkPolicy"].as_str() == Some("registry") {
+        "允许通过本机 registry 配置读取更新状态"
+    } else {
+        "离线，不执行 registry 更新检查"
+    };
     let issues = report["healthIssues"]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
 
     let mut output = format!(
-        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 只读模式：是\n- 网络行为：部分更新检查可能通过本机 registry 读取远端状态\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 命令来源 | 路径 |\n| --- | --- | --- | --- | --- |\n"
+        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 只读模式：是\n- 网络行为：{network_behavior}\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 命令来源 | 路径 |\n| --- | --- | --- | --- | --- |\n"
     );
     for manager in managers {
         output.push_str(&format!(
@@ -158,6 +167,25 @@ fn markdown_report(report: &Value) -> String {
             project["name"].as_str().unwrap_or("未命名项目"),
             project["path"].as_str().unwrap_or("—")
         ));
+    }
+    output.push_str("\n## 运行时\n\n");
+    if runtimes.is_empty() {
+        output.push_str("未发现受支持的运行时。\n");
+    } else {
+        for runtime in runtimes {
+            output.push_str(&format!(
+                "- **{} {}** — {} · `{}`{}\n",
+                runtime["runtime"].as_str().unwrap_or("运行时"),
+                runtime["version"].as_str().unwrap_or("未知"),
+                runtime["provider"].as_str().unwrap_or("未知来源"),
+                runtime["path"].as_str().unwrap_or("—"),
+                if runtime["isActive"].as_bool() == Some(true) {
+                    " · 当前"
+                } else {
+                    ""
+                }
+            ));
+        }
     }
     output.push_str("\n## 健康提示\n\n");
     if issues.is_empty() {
@@ -241,6 +269,8 @@ mod tests {
         assert!(report.contains("# Easy Package 环境报告"));
         assert!(report.contains("## 包管理器"));
         assert!(report.contains("## 项目"));
+        assert!(report.contains("## 运行时"));
+        assert!(report.contains("网络行为：离线"));
         assert!(report.contains("~/Code/app"));
     }
 

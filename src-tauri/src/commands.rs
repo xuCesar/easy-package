@@ -32,8 +32,10 @@ impl ScanRegistry {
             .active
             .lock()
             .map_err(|error| AppError::Command(error.to_string()))?;
-        if active.contains_key(scan_id) {
-            return Err(AppError::Command("扫描会话已存在".into()));
+        if !active.is_empty() {
+            return Err(AppError::Command(
+                "SCAN_ALREADY_RUNNING：已有环境扫描正在进行".into(),
+            ));
         }
         let cancellation = Arc::new(AtomicBool::new(false));
         active.insert(scan_id.into(), cancellation.clone());
@@ -305,6 +307,16 @@ mod tests {
         registry.cancel("scan-1");
         assert!(cancellation.load(Ordering::SeqCst));
         registry.finish("scan-1");
+    }
+
+    #[test]
+    fn rejects_a_second_concurrent_scan_session() {
+        let registry = ScanRegistry::default();
+        registry.begin("scan-1").unwrap();
+        let error = registry.begin("scan-2").unwrap_err().to_string();
+        assert!(error.contains("SCAN_ALREADY_RUNNING"));
+        registry.finish("scan-1");
+        assert!(registry.begin("scan-2").is_ok());
     }
 
     #[test]

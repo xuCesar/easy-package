@@ -112,16 +112,16 @@ export const mockProjects: ProjectMetadata[] = [
 
 export const mockScan: EnvironmentScan = {
   managers: [
-    { id: "homebrew", displayName: "Homebrew", version: "4.6.15", executablePath: "/opt/homebrew/bin/brew", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 1_420_000_000, scannedAt: now },
-    { id: "npm", displayName: "npm", version: "11.5.1", executablePath: "/opt/homebrew/bin/npm", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 382_000_000, scannedAt: now },
-    { id: "pnpm", displayName: "pnpm", version: "11.5.3", executablePath: "~/.local/share/pnpm/pnpm", status: "available", executionTrust: "userManaged", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 3_840_000_000, scannedAt: now },
-    { id: "uv", displayName: "uv", version: "0.8.13", executablePath: "~/.local/bin/uv", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 694_000_000, scannedAt: now },
-    { id: "pip", displayName: "pip", version: "25.2", executablePath: "/opt/homebrew/bin/pip3", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 121_000_000, scannedAt: now },
-    { id: "yarn", displayName: "Yarn", version: "1.22.19", executablePath: "/opt/homebrew/bin/yarn", status: "available", executionTrust: "managed", capabilities: ["packages"], scannedAt: now },
-    { id: "bun", displayName: "Bun", version: "1.3.14", executablePath: "~/.bun/bin/bun", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 512_000_000, scannedAt: now },
-    { id: "cargo", displayName: "Cargo", version: "1.84.0", executablePath: "/opt/homebrew/bin/cargo", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 840_000_000, scannedAt: now },
-    { id: "rubygems", displayName: "RubyGems", version: "3.6.3", executablePath: "/opt/homebrew/bin/gem", status: "available", executionTrust: "managed", capabilities: ["packages"], scannedAt: now },
-    { id: "composer", displayName: "Composer", version: "2.8.6", executablePath: "/opt/homebrew/bin/composer", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 74_000_000, scannedAt: now },
+    { id: "homebrew", displayName: "Homebrew", version: "4.6.15", executablePath: "/opt/homebrew/bin/brew", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 1_420_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "npm", displayName: "npm", version: "11.5.1", executablePath: "/opt/homebrew/bin/npm", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 382_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "pnpm", displayName: "pnpm", version: "11.5.3", executablePath: "~/.local/share/pnpm/pnpm", status: "available", executionTrust: "userManaged", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 3_840_000_000, cacheScanStatus: "partial", scannedAt: now },
+    { id: "uv", displayName: "uv", version: "0.8.13", executablePath: "~/.local/bin/uv", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 694_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "pip", displayName: "pip", version: "25.2", executablePath: "/opt/homebrew/bin/pip3", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 121_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "yarn", displayName: "Yarn", version: "1.22.19", executablePath: "/opt/homebrew/bin/yarn", status: "available", executionTrust: "managed", capabilities: ["packages"], cacheScanStatus: "notApplicable", scannedAt: now },
+    { id: "bun", displayName: "Bun", version: "1.3.14", executablePath: "~/.bun/bin/bun", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 512_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "cargo", displayName: "Cargo", version: "1.84.0", executablePath: "/opt/homebrew/bin/cargo", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 840_000_000, cacheScanStatus: "complete", scannedAt: now },
+    { id: "rubygems", displayName: "RubyGems", version: "3.6.3", executablePath: "/opt/homebrew/bin/gem", status: "available", executionTrust: "managed", capabilities: ["packages"], cacheScanStatus: "notApplicable", scannedAt: now },
+    { id: "composer", displayName: "Composer", version: "2.8.6", executablePath: "/opt/homebrew/bin/composer", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 74_000_000, cacheScanStatus: "complete", scannedAt: now },
   ],
   packages: [
     { id: "homebrew:git", managerId: "homebrew", name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system", updateStatus: "available" },
@@ -152,8 +152,18 @@ export const mockScan: EnvironmentScan = {
     { ecosystem: "JavaScript", name: "hono", projectCount: 1, versionRequirements: ["^4.6.0"], resolvedVersions: ["4.6.14"], projects: [{ projectName: "bun-api", projectPath: "~/Code/bun-api", versionRequirement: "^4.6.0", scopes: ["运行"], resolvedVersion: "4.6.14", resolutionSource: "bun.lock" }], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false },
   ],
   workspaces: [{ name: "developer-tools", path: "~/Code", ecosystem: "JavaScript", memberPaths: ["~/Code/easy-package", "~/Code/api-lab"] }],
+  runtimeInstallations: [
+    { id: "node:homebrew", runtime: "Node.js", version: "22.17.1", path: "/opt/homebrew/bin/node", provider: "Homebrew", isActive: true, executionTrust: "managed" },
+    { id: "node:nvm", runtime: "Node.js", version: "20.19.4", path: "~/.nvm/versions/node/v20.19.4/bin/node", provider: "nvm", isActive: false, executionTrust: "userManaged" },
+    { id: "python:homebrew", runtime: "Python", version: "3.13.5", path: "/opt/homebrew/bin/python3", provider: "Homebrew", isActive: true, executionTrust: "managed" },
+    { id: "rust:rustup", runtime: "Rust", version: "1.88.0", path: "~/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc", provider: "rustup", isActive: true, executionTrust: "userManaged" },
+  ],
+  runtimeAssessments: [
+    { projectName: "easy-package", projectPath: "~/Code/easy-package", runtime: "Node.js", requirement: ">=22", status: "available", activeVersion: "22.17.1", installedVersions: ["20.19.4", "22.17.1"], message: "已发现本机运行时；复杂版本范围未自动判定" },
+    { projectName: "easy-package", projectPath: "~/Code/easy-package", runtime: "Python", requirement: ">=3.12", status: "available", activeVersion: "3.13.5", installedVersions: ["3.13.5"], message: "已发现本机运行时；复杂版本范围未自动判定" },
+  ],
   scanRoots: ["~/Code"],
-  scanSettings: { ignoredPaths: ["~/Code/archive"], maxDepth: 6, defaultIgnoredDirectoryNames: ["node_modules", ".git", "target", "dist", "build", ".venv", "vendor"] },
+  scanSettings: { ignoredPaths: ["~/Code/archive"], maxDepth: 6, defaultIgnoredDirectoryNames: ["node_modules", ".git", "target", "dist", "build", ".venv", "vendor"], networkPolicy: "offline" },
   healthIssues: [
     { id: "updates", severity: "warning", code: "UPDATES_AVAILABLE", title: "3 个软件包可更新", description: "本版本仅展示更新状态，不会修改本机环境。" },
     { id: "python-path", severity: "info", code: "PATH_CONFLICT", title: "发现多个 Python 路径", description: "当前优先使用 /opt/homebrew/bin/python3，请确认这符合预期。" },

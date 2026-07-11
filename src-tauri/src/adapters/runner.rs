@@ -179,6 +179,7 @@ fn execution_trust_with_home(path: &Path, home: Option<&Path>) -> ExecutionTrust
         let user_managed_roots = [
             home.join(".local/bin"),
             home.join(".local/share/pnpm"),
+            home.join(".local/share/uv"),
             home.join(".bun/bin"),
             home.join(".cargo/bin"),
             home.join(".nvm/versions/node"),
@@ -188,6 +189,7 @@ fn execution_trust_with_home(path: &Path, home: Option<&Path>) -> ExecutionTrust
             home.join(".mise"),
             home.join(".pyenv"),
             home.join(".rbenv"),
+            home.join(".rustup/toolchains"),
         ];
         if user_managed_roots.iter().any(|root| {
             let root = root.canonicalize().unwrap_or_else(|_| root.clone());

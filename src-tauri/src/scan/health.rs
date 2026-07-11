@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::models::{
     HealthIssue, HealthSeverity, ManagedPackage, ManagerStatus, PackageManager, PackageManagerId,
-    PackageScope, PathObservation, ProjectMetadata, ProjectWorkspace, UpdateStatus,
+    PackageScope, PathObservation, ProjectMetadata, ProjectWorkspace, RuntimeRequirementAssessment,
+    RuntimeRequirementStatus, UpdateStatus,
 };
 
 const LARGE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -13,6 +14,7 @@ pub fn build_health_report(
     projects: &[ProjectMetadata],
     workspaces: &[ProjectWorkspace],
     paths: &[PathObservation],
+    runtime_assessments: &[RuntimeRequirementAssessment],
 ) -> Vec<HealthIssue> {
     let mut issues = Vec::new();
     for manager in managers {
@@ -303,6 +305,39 @@ pub fn build_health_report(
             command: None,
         });
     }
+    for assessment in runtime_assessments {
+        let (code, title) = match assessment.status {
+            RuntimeRequirementStatus::Missing => (
+                "RUNTIME_NOT_INSTALLED",
+                format!(
+                    "{} 缺少 {} 运行时",
+                    assessment.project_name, assessment.runtime
+                ),
+            ),
+            RuntimeRequirementStatus::Mismatch => (
+                "ACTIVE_RUNTIME_MISMATCH",
+                format!(
+                    "{} 的 {} 当前版本不匹配",
+                    assessment.project_name, assessment.runtime
+                ),
+            ),
+            RuntimeRequirementStatus::Available | RuntimeRequirementStatus::Unknown => continue,
+        };
+        issues.push(HealthIssue {
+            id: format!(
+                "runtime-requirement-{}-{}",
+                assessment.project_path,
+                assessment.runtime.to_lowercase()
+            ),
+            severity: HealthSeverity::Warning,
+            code: code.into(),
+            title,
+            description: assessment.message.clone(),
+            manager_id: None,
+            path: Some(assessment.project_path.clone()),
+            command: None,
+        });
+    }
     issues
 }
 
@@ -318,7 +353,7 @@ mod tests {
     use super::*;
     use crate::models::{
         ManagerStatus, PackageManagerId, PackageScope, PathObservation, ProjectDependency,
-        ProjectMetadata, ProjectWorkspace,
+        ProjectMetadata, ProjectWorkspace, RuntimeRequirementAssessment, RuntimeRequirementStatus,
     };
 
     #[test]
@@ -333,9 +368,10 @@ mod tests {
             capabilities: vec![],
             error: None,
             cache_size_bytes: Some(LARGE_CACHE_BYTES),
+            cache_scan_status: crate::models::CacheScanStatus::Complete,
             scanned_at: String::new(),
         };
-        let issues = build_health_report(&[manager], &[], &[], &[], &[]);
+        let issues = build_health_report(&[manager], &[], &[], &[], &[], &[]);
         assert_eq!(issues[0].code, "LARGE_CACHE");
     }
 
@@ -351,9 +387,10 @@ mod tests {
             capabilities: vec![],
             error: None,
             cache_size_bytes: None,
+            cache_scan_status: crate::models::CacheScanStatus::NotApplicable,
             scanned_at: String::new(),
         };
-        let issues = build_health_report(&[manager], &[], &[], &[], &[]);
+        let issues = build_health_report(&[manager], &[], &[], &[], &[], &[]);
         assert_eq!(issues[0].code, "UNVERIFIED_EXECUTABLE");
     }
 
@@ -410,7 +447,7 @@ mod tests {
                 .map(|project| project.path.clone())
                 .collect(),
         }];
-        let issues = build_health_report(&[], &[], &projects, &workspaces, &[]);
+        let issues = build_health_report(&[], &[], &projects, &workspaces, &[], &[]);
         assert!(issues
             .iter()
             .any(|issue| issue.code == "WORKSPACE_DEPENDENCY_VERSION_DIVERGENCE"));
@@ -457,7 +494,7 @@ mod tests {
                 update_status: UpdateStatus::Unknown,
             },
         ];
-        let issues = build_health_report(&[], &packages, &[], &[], &paths);
+        let issues = build_health_report(&[], &packages, &[], &[], &paths, &[]);
         assert!(issues
             .iter()
             .any(|issue| issue.code == "COMMAND_PATH_CONFLICT"
@@ -468,5 +505,38 @@ mod tests {
         assert!(issues
             .iter()
             .any(|issue| issue.code == "GLOBAL_TOOL_DUPLICATE"));
+    }
+
+    #[test]
+    fn reports_missing_and_mismatched_project_runtimes() {
+        let assessments = vec![
+            RuntimeRequirementAssessment {
+                project_name: "api".into(),
+                project_path: "/tmp/api".into(),
+                runtime: "Python".into(),
+                requirement: "3.12.0".into(),
+                status: RuntimeRequirementStatus::Missing,
+                active_version: None,
+                installed_versions: vec![],
+                message: "未发现可用的 Python 运行时".into(),
+            },
+            RuntimeRequirementAssessment {
+                project_name: "web".into(),
+                project_path: "/tmp/web".into(),
+                runtime: "Node.js".into(),
+                requirement: "22.18.0".into(),
+                status: RuntimeRequirementStatus::Mismatch,
+                active_version: Some("22.17.0".into()),
+                installed_versions: vec!["22.17.0".into()],
+                message: "当前激活版本不一致".into(),
+            },
+        ];
+        let issues = build_health_report(&[], &[], &[], &[], &[], &assessments);
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "RUNTIME_NOT_INSTALLED"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "ACTIVE_RUNTIME_MISMATCH"));
     }
 }

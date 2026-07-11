@@ -58,19 +58,21 @@ const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
     projects,
     dependencyInsights: [...insights.values()].map((insight) => ({ ...insight, versionRequirements: [...insight.versionRequirements].sort(), resolvedVersions: [...insight.resolvedVersions].sort(), hasVersionDivergence: insight.versionRequirements.length > 1, hasResolvedVersionDivergence: insight.resolvedVersions.length > 1, hasHealthRisk: insight.versionRequirements.length > 1 || insight.resolvedVersions.length > 1 || insight.hasResolutionRisk || insight.versionRequirements.some((requirement) => requirement === "未声明版本" || requirement.startsWith("workspace:") || requirement.startsWith("file:")) })),
     workspaces: mockScan.workspaces.filter((workspace) => workspace.memberPaths.some((path) => projects.some((project) => project.path === path))),
+    runtimeAssessments: mockScan.runtimeAssessments.filter((assessment) => projects.some((project) => project.path === assessment.projectPath)),
+    healthIssues: mockScan.healthIssues,
     scanSettings: browserScanSettings,
   };
 };
 
 const mockApi: DevPkgApi = {
   async scanEnvironment(scanId) {
-    const total = 10;
+    const total = 13;
     for (let completed = 0; completed < total; completed += 1) {
       await wait(45);
       if (cancelledMockScans.delete(scanId)) throw new Error("扫描已取消");
       emitMockProgress({
         scanId,
-        phase: completed < 8 ? "managers" : completed === 8 ? "projects" : "health",
+        phase: completed < 10 ? "managers" : completed === 10 ? "projects" : completed === 11 ? "runtimes" : "health",
         completed,
         total,
       });

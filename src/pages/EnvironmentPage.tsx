@@ -25,7 +25,7 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
 
   return (
     <>
-      <PageHeader title="环境" description="检查包管理器、命令来源和 PATH 优先级。部分更新检查可能通过本机 registry 读取远端状态，但不会安装、升级或修复。" />
+      <PageHeader title="环境" description={`检查包管理器、命令来源和 PATH 优先级。当前${data.scanSettings.networkPolicy === "offline" ? "为离线模式，不执行 registry 更新检查" : "允许通过本机 registry 配置读取更新状态"}。`} />
       <div className="runtime-banner"><Icon name="info" /><span>本机 SQLite 会保存扫描快照与路径元数据；导出报告会将主目录替换为 <code>~</code>，且不包含诊断原始输出。</span></div>
       <div className="environment-layout">
         <section className="panel">
@@ -35,7 +35,7 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
               <StatusDot status={manager.status} />
               <span className={`manager-logo manager-logo--${manager.id}`}>{manager.displayName.slice(0, 1)}</span>
               <div className="environment-manager__main"><strong>{manager.displayName}</strong><code>{manager.executablePath ?? manager.error?.message ?? "未检测到可执行文件"}</code></div>
-              <div className="environment-manager__meta"><span>来源 <b>{trustLabel[manager.executionTrust]}</b></span><span>版本 <b>{manager.version ?? "—"}</b></span><span>缓存 <b>{formatBytes(manager.cacheSizeBytes)}</b></span></div>
+              <div className="environment-manager__meta"><span>来源 <b>{trustLabel[manager.executionTrust]}</b></span><span>版本 <b>{manager.version ?? "—"}</b></span><span>缓存 <b>{formatBytes(manager.cacheSizeBytes)}{manager.cacheScanStatus === "partial" ? "（部分）" : ""}</b></span></div>
               {manager.error?.output ? <button className="icon-button" onClick={() => void copyText(manager.id, manager.error?.output ?? "")} title="复制诊断输出"><Icon name="copy" /></button> : null}
             </article>
           ))}</div>
@@ -52,7 +52,7 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
         </section>
         <section className="panel environment-health">
           <div className="panel__header"><h2>健康报告</h2><span className="count-label">{data.healthIssues.length}</span></div>
-          <div className="health-list">{data.healthIssues.map((issue) => { const destination = issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE" ? "dependencies" : issue.path ? "projects" : undefined; return <div className="health-item" key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}</strong><p>{issue.description}</p>{issue.path ? <code>{issue.path}</code> : null}{issue.command ? <button className="text-button health-item__link" onClick={() => document.getElementById(`command-${issue.command}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>查看相关命令<Icon name="chevron" /></button> : destination ? <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>查看相关{destination === "dependencies" ? "依赖" : "项目"}<Icon name="chevron" /></button> : null}</div></div>; })}{data.healthIssues.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
+          <div className="health-list">{data.healthIssues.map((issue) => { const destination = issue.code.startsWith("RUNTIME_") || issue.code === "ACTIVE_RUNTIME_MISMATCH" ? "runtimes" : issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE" ? "dependencies" : issue.path ? "projects" : undefined; return <div className="health-item" key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}</strong><p>{issue.description}</p>{issue.path ? <code>{issue.path}</code> : null}{issue.command ? <button className="text-button health-item__link" onClick={() => document.getElementById(`command-${issue.command}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>查看相关命令<Icon name="chevron" /></button> : destination ? <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>查看相关{destination === "dependencies" ? "依赖" : destination === "runtimes" ? "运行时" : "项目"}<Icon name="chevron" /></button> : null}</div></div>; })}{data.healthIssues.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
         </section>
         <section className="panel environment-logs">
           <div className="panel__header"><h2>扫描日志</h2><span className="quiet-label">最近 {data.logs.length} 条</span></div>

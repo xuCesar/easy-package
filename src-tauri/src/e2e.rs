@@ -23,7 +23,8 @@ pub fn scan(
     for (completed, phase) in [
         (1, ScanPhase::Managers),
         (2, ScanPhase::Projects),
-        (3, ScanPhase::Health),
+        (3, ScanPhase::Runtimes),
+        (4, ScanPhase::Health),
     ] {
         thread::sleep(Duration::from_millis(120));
         if cancelled.load(Ordering::SeqCst) {
@@ -33,7 +34,7 @@ pub fn scan(
             scan_id: scan_id.into(),
             phase,
             completed,
-            total: 3,
+            total: 4,
             manager_id: None,
         });
     }
@@ -41,8 +42,8 @@ pub fn scan(
     progress(ScanProgress {
         scan_id: scan_id.into(),
         phase: ScanPhase::Complete,
-        completed: 3,
-        total: 3,
+        completed: 4,
+        total: 4,
         manager_id: None,
     });
     Ok(scan)

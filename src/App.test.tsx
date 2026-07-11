@@ -12,6 +12,8 @@ describe("App", () => {
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "运行时" }));
+    expect(screen.getByRole("heading", { name: "运行时" })).toBeInTheDocument();
   });
 
   it("软件包筛选展示空态", async () => {

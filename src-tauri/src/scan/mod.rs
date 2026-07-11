@@ -2,6 +2,7 @@ mod health;
 pub mod history;
 pub mod projects;
 pub mod report;
+mod runtimes;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -24,7 +25,7 @@ use crate::{
 use crate::adapters::runner::find_all_in_path_for_names;
 pub use projects::analyze_projects;
 
-const SCAN_STEPS: usize = 10;
+const SCAN_STEPS: usize = 13;
 
 pub fn scan_environment(
     storage: &Storage,
@@ -33,6 +34,7 @@ pub fn scan_environment(
     on_progress: Arc<dyn Fn(ScanProgress) + Send + Sync>,
 ) -> Result<EnvironmentScan, AppError> {
     let scanned_at = Utc::now().to_rfc3339();
+    let scan_settings = storage.scan_settings()?;
     let emit_progress = |phase, completed, manager_id| {
         on_progress(ScanProgress {
             scan_id: scan_id.into(),
@@ -59,7 +61,7 @@ pub fn scan_environment(
             });
         })
     };
-    let adapter_scans = adapters::scan_all(cancelled, callback)?;
+    let adapter_scans = adapters::scan_all(cancelled, callback, scan_settings.network_policy)?;
     if cancelled.load(Ordering::SeqCst) {
         return Err(AppError::ScanCancelled);
     }
@@ -78,7 +80,6 @@ pub fn scan_environment(
     packages.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
 
     let roots = storage.list_scan_roots()?;
-    let scan_settings = storage.scan_settings()?;
     let scan_roots = roots
         .iter()
         .map(|root| root.to_string_lossy().into_owned())
@@ -91,13 +92,17 @@ pub fn scan_environment(
     partial_failures += project_scan.failures;
     logs.extend(project_scan.logs);
     let path_observations = scan_paths(&managers);
-    emit_progress(ScanPhase::Health, manager_count + 1, None);
+    emit_progress(ScanPhase::Runtimes, manager_count + 1, None);
+    let (runtime_installations, runtime_assessments) =
+        runtimes::scan_runtimes(&project_scan.projects, cancelled)?;
+    emit_progress(ScanPhase::Health, manager_count + 2, None);
     let health_issues = health::build_health_report(
         &managers,
         &packages,
         &project_scan.projects,
         &project_scan.workspaces,
         &path_observations,
+        &runtime_assessments,
     );
     logs.push(TaskLog {
         id: Uuid::new_v4().to_string(),
@@ -125,6 +130,8 @@ pub fn scan_environment(
         projects: project_scan.projects,
         dependency_insights: project_scan.dependency_insights,
         workspaces: project_scan.workspaces,
+        runtime_installations,
+        runtime_assessments,
         scan_roots,
         scan_settings,
         health_issues,
@@ -216,7 +223,25 @@ fn source_for_path(
 pub fn projects_for_roots(storage: &Storage) -> Result<ProjectAnalysis, AppError> {
     let roots = storage.list_scan_roots()?;
     let settings = storage.scan_settings()?;
-    analyze_projects(&roots, &settings, &AtomicBool::new(false))
+    let mut analysis = analyze_projects(&roots, &settings, &AtomicBool::new(false))?;
+    let snapshot = storage.latest_snapshot()?;
+    let installations = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.runtime_installations.clone())
+        .unwrap_or_default();
+    analysis.runtime_assessments =
+        runtimes::assess_requirements(&analysis.projects, &installations);
+    if let Some(snapshot) = snapshot {
+        analysis.health_issues = health::build_health_report(
+            &snapshot.managers,
+            &snapshot.packages,
+            &analysis.projects,
+            &analysis.workspaces,
+            &snapshot.path_observations,
+            &analysis.runtime_assessments,
+        );
+    }
+    Ok(analysis)
 }
 
 #[cfg(test)]
@@ -247,6 +272,7 @@ mod tests {
             capabilities: vec![],
             error: None,
             cache_size_bytes: None,
+            cache_scan_status: crate::models::CacheScanStatus::NotApplicable,
             scanned_at: String::new(),
         }];
         let observation = build_path_observation(

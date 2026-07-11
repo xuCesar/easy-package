@@ -148,6 +148,8 @@ pub fn analyze_projects(
         projects: scan.projects,
         dependency_insights: scan.dependency_insights,
         workspaces: scan.workspaces,
+        runtime_assessments: Vec::new(),
+        health_issues: Vec::new(),
         scan_settings: settings.clone(),
     })
 }
