@@ -112,16 +112,16 @@ export const mockProjects: ProjectMetadata[] = [
 
 export const mockScan: EnvironmentScan = {
   managers: [
-    { id: "homebrew", displayName: "Homebrew", version: "4.6.15", executablePath: "/opt/homebrew/bin/brew", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 1_420_000_000, scannedAt: now },
-    { id: "npm", displayName: "npm", version: "11.5.1", executablePath: "/opt/homebrew/bin/npm", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 382_000_000, scannedAt: now },
-    { id: "pnpm", displayName: "pnpm", version: "11.5.3", executablePath: "~/.local/share/pnpm/pnpm", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 3_840_000_000, scannedAt: now },
-    { id: "uv", displayName: "uv", version: "0.8.13", executablePath: "~/.local/bin/uv", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 694_000_000, scannedAt: now },
-    { id: "pip", displayName: "pip", version: "25.2", executablePath: "/opt/homebrew/bin/pip3", status: "available", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 121_000_000, scannedAt: now },
-    { id: "yarn", displayName: "Yarn", version: "1.22.19", executablePath: "/opt/homebrew/bin/yarn", status: "available", capabilities: ["packages"], scannedAt: now },
-    { id: "bun", displayName: "Bun", version: "1.3.14", executablePath: "~/.bun/bin/bun", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 512_000_000, scannedAt: now },
-    { id: "cargo", displayName: "Cargo", version: "1.84.0", executablePath: "/opt/homebrew/bin/cargo", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 840_000_000, scannedAt: now },
-    { id: "rubygems", displayName: "RubyGems", version: "3.6.3", executablePath: "/opt/homebrew/bin/gem", status: "available", capabilities: ["packages"], scannedAt: now },
-    { id: "composer", displayName: "Composer", version: "2.8.6", executablePath: "/opt/homebrew/bin/composer", status: "available", capabilities: ["packages", "cache"], cacheSizeBytes: 74_000_000, scannedAt: now },
+    { id: "homebrew", displayName: "Homebrew", version: "4.6.15", executablePath: "/opt/homebrew/bin/brew", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 1_420_000_000, scannedAt: now },
+    { id: "npm", displayName: "npm", version: "11.5.1", executablePath: "/opt/homebrew/bin/npm", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 382_000_000, scannedAt: now },
+    { id: "pnpm", displayName: "pnpm", version: "11.5.3", executablePath: "~/.local/share/pnpm/pnpm", status: "available", executionTrust: "userManaged", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 3_840_000_000, scannedAt: now },
+    { id: "uv", displayName: "uv", version: "0.8.13", executablePath: "~/.local/bin/uv", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 694_000_000, scannedAt: now },
+    { id: "pip", displayName: "pip", version: "25.2", executablePath: "/opt/homebrew/bin/pip3", status: "available", executionTrust: "managed", capabilities: ["packages", "outdated", "cache"], cacheSizeBytes: 121_000_000, scannedAt: now },
+    { id: "yarn", displayName: "Yarn", version: "1.22.19", executablePath: "/opt/homebrew/bin/yarn", status: "available", executionTrust: "managed", capabilities: ["packages"], scannedAt: now },
+    { id: "bun", displayName: "Bun", version: "1.3.14", executablePath: "~/.bun/bin/bun", status: "available", executionTrust: "userManaged", capabilities: ["packages", "cache"], cacheSizeBytes: 512_000_000, scannedAt: now },
+    { id: "cargo", displayName: "Cargo", version: "1.84.0", executablePath: "/opt/homebrew/bin/cargo", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 840_000_000, scannedAt: now },
+    { id: "rubygems", displayName: "RubyGems", version: "3.6.3", executablePath: "/opt/homebrew/bin/gem", status: "available", executionTrust: "managed", capabilities: ["packages"], scannedAt: now },
+    { id: "composer", displayName: "Composer", version: "2.8.6", executablePath: "/opt/homebrew/bin/composer", status: "available", executionTrust: "managed", capabilities: ["packages", "cache"], cacheSizeBytes: 74_000_000, scannedAt: now },
   ],
   packages: [
     { id: "homebrew:git", managerId: "homebrew", name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system", updateStatus: "available" },

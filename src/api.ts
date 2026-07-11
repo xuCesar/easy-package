@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
-const isTauri = () => "__TAURI_INTERNALS__" in window;
+export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
 let browserProjects = [...mockProjects];
 let browserScanRoots = [...mockScan.scanRoots];
 let browserScanSettings: ScanSettings = structuredClone(mockScan.scanSettings);
@@ -155,6 +155,6 @@ const tauriApi: DevPkgApi = {
 
 export const api: DevPkgApi = new Proxy(tauriApi, {
   get(target, property: keyof DevPkgApi) {
-    return isTauri() ? target[property] : mockApi[property];
+    return isTauriRuntime() ? target[property] : mockApi[property];
   },
 });

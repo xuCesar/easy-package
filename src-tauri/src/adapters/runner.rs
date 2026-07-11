@@ -11,6 +11,8 @@ use std::{
 
 use wait_timeout::ChildExt;
 
+use crate::models::ExecutionTrust;
+
 const OUTPUT_LIMIT: usize = 8_000;
 
 #[derive(Debug, Default)]
@@ -139,15 +141,62 @@ fn join_reader(reader: Option<thread::JoinHandle<Vec<u8>>>) -> String {
 }
 
 pub fn find_executable(names: &[&str], common_paths: &[&str]) -> Option<PathBuf> {
+    if let Some(path) = common_paths
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+    {
+        return Some(path);
+    }
     for name in names {
         if let Some(path) = find_all_in_path(name).into_iter().next() {
             return Some(path);
         }
     }
-    common_paths
-        .iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
+    None
+}
+
+pub fn execution_trust(path: &Path, _common_paths: &[&str]) -> ExecutionTrust {
+    execution_trust_with_home(path, dirs::home_dir().as_deref())
+}
+
+pub fn can_execute(trust: ExecutionTrust) -> bool {
+    !matches!(
+        trust,
+        ExecutionTrust::Unverified | ExecutionTrust::NotApplicable
+    )
+}
+
+fn execution_trust_with_home(path: &Path, home: Option<&Path>) -> ExecutionTrust {
+    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if resolved.starts_with("/usr/bin") || resolved.starts_with("/bin") {
+        return ExecutionTrust::System;
+    }
+    if resolved.starts_with("/opt/homebrew") || resolved.starts_with("/usr/local") {
+        return ExecutionTrust::Managed;
+    }
+    if let Some(home) = home {
+        let user_managed_roots = [
+            home.join(".local/bin"),
+            home.join(".local/share/pnpm"),
+            home.join(".bun/bin"),
+            home.join(".cargo/bin"),
+            home.join(".nvm/versions/node"),
+            home.join(".volta/bin"),
+            home.join(".fnm"),
+            home.join(".asdf"),
+            home.join(".mise"),
+            home.join(".pyenv"),
+            home.join(".rbenv"),
+        ];
+        if user_managed_roots.iter().any(|root| {
+            let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+            resolved.starts_with(root)
+        }) {
+            return ExecutionTrust::UserManaged;
+        }
+    }
+    ExecutionTrust::Unverified
 }
 
 pub fn find_all_in_path(command: &str) -> Vec<PathBuf> {
@@ -232,5 +281,54 @@ mod tests {
         );
         assert!(output.success);
         assert!(output.stdout.contains("$(touch"));
+    }
+
+    #[test]
+    fn classifies_known_and_unverified_executable_paths() {
+        assert_eq!(
+            execution_trust(
+                Path::new("/opt/homebrew/bin/brew"),
+                &["/opt/homebrew/bin/brew"]
+            ),
+            ExecutionTrust::Managed
+        );
+        assert_eq!(
+            execution_trust(Path::new("/tmp/unexpected/npm"), &[]),
+            ExecutionTrust::Unverified
+        );
+        assert!(!can_execute(ExecutionTrust::Unverified));
+        assert!(can_execute(ExecutionTrust::UserManaged));
+    }
+
+    #[test]
+    fn recognizes_a_tool_inside_an_explicit_user_managed_root() {
+        let home = tempdir().unwrap();
+        let executable = home.path().join(".local/bin/uv");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::write(&executable, "").unwrap();
+
+        assert_eq!(
+            execution_trust_with_home(&executable, Some(home.path())),
+            ExecutionTrust::UserManaged
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_trust_a_known_looking_symlink_to_an_unverified_target() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let target = outside.path().join("unverified-tool");
+        let link = home.path().join(".local/bin/trusted-looking-tool");
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        fs::write(&target, "").unwrap();
+        symlink(&target, &link).unwrap();
+
+        assert_eq!(
+            execution_trust_with_home(&link, Some(home.path())),
+            ExecutionTrust::Unverified
+        );
     }
 }

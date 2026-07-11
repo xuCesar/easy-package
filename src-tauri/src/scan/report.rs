@@ -134,14 +134,17 @@ fn markdown_report(report: &Value) -> String {
         .unwrap_or_default();
 
     let mut output = format!(
-        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 只读模式：是\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 路径 |\n| --- | --- | --- | --- |\n"
+        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 只读模式：是\n- 网络行为：部分更新检查可能通过本机 registry 读取远端状态\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 命令来源 | 路径 |\n| --- | --- | --- | --- | --- |\n"
     );
     for manager in managers {
         output.push_str(&format!(
-            "| {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} |\n",
             manager["displayName"].as_str().unwrap_or("—"),
             manager["version"].as_str().unwrap_or("—"),
             manager["status"].as_str().unwrap_or("—"),
+            manager["executionTrust"]
+                .as_str()
+                .unwrap_or("notApplicable"),
             manager["executablePath"].as_str().unwrap_or("—")
         ));
     }

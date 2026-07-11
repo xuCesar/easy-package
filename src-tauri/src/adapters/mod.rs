@@ -17,14 +17,16 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::models::{
-    DiagnosticError, LogCategory, LogStatus, ManagedPackage, ManagerStatus, PackageManager,
-    PackageManagerId, PackageScope, TaskLog, UpdateStatus,
+    DiagnosticError, ExecutionTrust, LogCategory, LogStatus, ManagedPackage, ManagerStatus,
+    PackageManager, PackageManagerId, PackageScope, TaskLog, UpdateStatus,
 };
 use parsers::{
     parse_brew_packages, parse_cargo_packages, parse_npm_packages, parse_pip_packages,
     parse_pnpm_packages, parse_rubygems_packages, parse_uv_packages,
 };
-use runner::{find_executable, readable_path, CommandOutput, CommandRunner};
+use runner::{
+    can_execute, execution_trust, find_executable, readable_path, CommandOutput, CommandRunner,
+};
 
 #[derive(Debug)]
 pub struct AdapterScan {
@@ -262,6 +264,7 @@ fn unsupported_scan(spec: &ManagerSpec) -> AdapterScan {
             version: None,
             executable_path: None,
             status: ManagerStatus::Unsupported,
+            execution_trust: ExecutionTrust::NotApplicable,
             capabilities: Vec::new(),
             error: Some(DiagnosticError {
                 code: "PLATFORM_UNSUPPORTED".into(),
@@ -300,6 +303,7 @@ fn scan_manager(
                 version: None,
                 executable_path: None,
                 status: ManagerStatus::Unavailable,
+                execution_trust: ExecutionTrust::NotApplicable,
                 capabilities: Vec::new(),
                 error: None,
                 cache_size_bytes: None,
@@ -315,6 +319,38 @@ fn scan_manager(
             partial_failures: 0,
         });
     };
+
+    let trust = execution_trust(&executable, spec.common_paths);
+    if !can_execute(trust) {
+        let error = DiagnosticError {
+            code: "UNVERIFIED_EXECUTABLE".into(),
+            message: "发现未经验证的 PATH 可执行文件，已跳过执行".into(),
+            exit_code: None,
+            output: None,
+        };
+        return Ok(AdapterScan {
+            manager: PackageManager {
+                id: spec.id,
+                display_name: spec.display_name.into(),
+                version: None,
+                executable_path: Some(readable_path(&executable)),
+                status: ManagerStatus::Blocked,
+                execution_trust: trust,
+                capabilities: Vec::new(),
+                error: Some(error.clone()),
+                cache_size_bytes: None,
+                scanned_at,
+            },
+            packages: Vec::new(),
+            logs: vec![log(
+                spec.id,
+                LogStatus::Warning,
+                "发现未经验证的 PATH 可执行文件，已跳过执行",
+                Some(error),
+            )],
+            partial_failures: 0,
+        });
+    }
 
     let version_output = runner.run_cancellable(&executable, spec.version_args, cancelled);
     if cancelled.load(Ordering::SeqCst) {
@@ -333,6 +369,7 @@ fn scan_manager(
                 version: None,
                 executable_path: Some(readable_path(&executable)),
                 status: ManagerStatus::Error,
+                execution_trust: trust,
                 capabilities: Vec::new(),
                 error: Some(error.clone()),
                 cache_size_bytes: None,
@@ -408,6 +445,7 @@ fn scan_manager(
             version,
             executable_path: Some(readable_path(&executable)),
             status: ManagerStatus::Available,
+            execution_trust: trust,
             capabilities: manager_capabilities(spec, supports_packages, cache_size_bytes.is_some()),
             error: None,
             cache_size_bytes,
@@ -870,6 +908,40 @@ mod tests {
             PackageSource::YarnGlobalDirectory
         ));
         assert!(yarn.outdated_args.is_none());
+    }
+
+    #[test]
+    fn manager_specs_expose_only_read_only_command_arguments() {
+        let forbidden = ["add", "remove", "uninstall", "upgrade", "update", "clean"];
+        for spec in SPECS {
+            let command_sets = [
+                Some(spec.version_args),
+                match spec.package_source {
+                    PackageSource::Command(args) => Some(args),
+                    _ => None,
+                },
+                spec.outdated_args,
+                match spec.cache_source {
+                    CacheSource::Command(args) => Some(args),
+                    _ => None,
+                },
+            ];
+            for args in command_sets.into_iter().flatten() {
+                assert!(
+                    !args.iter().any(|arg| forbidden.contains(arg)),
+                    "{} has a mutating command argument: {args:?}",
+                    spec.display_name
+                );
+            }
+        }
+        let cargo = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Cargo)
+            .unwrap();
+        assert!(matches!(
+            cargo.package_source,
+            PackageSource::Command(&["install", "--list"])
+        ));
     }
 
     #[test]

@@ -112,6 +112,7 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .status-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 0 3px rgba(111, 129, 147, .1); }
 .status-dot--available { background: var(--green); box-shadow: 0 0 0 3px rgba(76, 211, 123, .1); }
 .status-dot--error { background: var(--red); box-shadow: 0 0 0 3px rgba(240, 97, 97, .1); }
+.status-dot--blocked { background: var(--yellow); box-shadow: 0 0 0 3px rgba(244, 189, 69, .1); }
 .status-dot--unsupported { background: var(--yellow); }
 .health-list { padding: 0 19px; }
 .health-item { display: grid; grid-template-columns: 10px minmax(0,1fr); gap: 12px; padding: 17px 0; border-bottom: 1px solid var(--border-soft); }
@@ -280,6 +281,9 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .inline-alert svg { width: 15px; flex-shrink: 0; }
 .inline-alert button { margin-left: auto; border: 0; color: inherit; background: transparent; cursor: pointer; }
 .inline-alert--error { color: #ffb0b0; border-color: #63363d; background: rgba(91, 36, 44, .24); }
+.runtime-banner { min-height: 42px; margin: -17px 0 18px; padding: 9px 13px; display: flex; align-items: center; gap: 9px; border: 1px solid #2d506e; border-radius: 8px; color: #9bc8f7; background: rgba(18, 43, 70, .58); font-size: 11px; }
+.runtime-banner svg { width: 15px; flex-shrink: 0; }
+.runtime-banner code { color: #c5dcf3; }
 .app-state { min-height: calc(100vh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .app-state h1 { margin: 20px 0 8px; font-size: 21px; }
 .app-state p { margin: 0; color: var(--text-3); font-size: 12px; }

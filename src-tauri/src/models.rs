@@ -38,7 +38,24 @@ pub enum ManagerStatus {
     Available,
     Unavailable,
     Error,
+    Blocked,
     Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ExecutionTrust {
+    System,
+    Managed,
+    UserManaged,
+    Unverified,
+    NotApplicable,
+}
+
+impl Default for ExecutionTrust {
+    fn default() -> Self {
+        Self::NotApplicable
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +79,8 @@ pub struct PackageManager {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executable_path: Option<String>,
     pub status: ManagerStatus,
+    #[serde(default)]
+    pub execution_trust: ExecutionTrust,
     pub capabilities: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<DiagnosticError>,
@@ -425,7 +444,10 @@ pub struct ScanProgress {
 mod tests {
     use serde_json::json;
 
-    use super::{EnvironmentScan, ProjectDependency, ProjectMetadata, ScanSettings};
+    use super::{
+        EnvironmentScan, ExecutionTrust, PackageManager, ProjectDependency, ProjectMetadata,
+        ScanSettings,
+    };
 
     #[test]
     fn accepts_project_snapshots_without_dependencies() {
@@ -465,5 +487,14 @@ mod tests {
         .unwrap();
         assert!(dependency.resolved_version.is_none());
         assert!(!dependency.resolution_checked);
+    }
+
+    #[test]
+    fn accepts_legacy_manager_without_execution_trust() {
+        let manager: PackageManager = serde_json::from_value(json!({
+            "id":"npm","displayName":"npm","status":"available","capabilities":[],"scannedAt":"now"
+        }))
+        .unwrap();
+        assert_eq!(manager.execution_trust, ExecutionTrust::NotApplicable);
     }
 }

@@ -9,6 +9,7 @@ describe("App", () => {
     render(<App />);
     expect(screen.getByText("正在扫描本机环境")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+    expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
   });

@@ -3,7 +3,15 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityMark, StatusDot } from "../components/Status";
 import { formatBytes, managerLabel } from "../lib/format";
-import type { EnvironmentScan, PageId } from "../types";
+import type { EnvironmentScan, ExecutionTrust, PageId } from "../types";
+
+const trustLabel: Record<ExecutionTrust, string> = {
+  system: "系统路径",
+  managed: "已识别管理器路径",
+  userManaged: "已识别用户工具路径",
+  unverified: "未经验证的 PATH 路径",
+  notApplicable: "未执行",
+};
 
 export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; onNavigate: (page: PageId) => void }) {
   const [copied, setCopied] = useState<string>();
@@ -17,7 +25,8 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
 
   return (
     <>
-      <PageHeader title="环境" description="检查包管理器、命令来源和 PATH 优先级。诊断信息不会自动修复。" />
+      <PageHeader title="环境" description="检查包管理器、命令来源和 PATH 优先级。部分更新检查可能通过本机 registry 读取远端状态，但不会安装、升级或修复。" />
+      <div className="runtime-banner"><Icon name="info" /><span>本机 SQLite 会保存扫描快照与路径元数据；导出报告会将主目录替换为 <code>~</code>，且不包含诊断原始输出。</span></div>
       <div className="environment-layout">
         <section className="panel">
           <div className="panel__header"><h2>包管理器</h2><span className="count-label">{data.managers.length}</span></div>
@@ -26,7 +35,7 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
               <StatusDot status={manager.status} />
               <span className={`manager-logo manager-logo--${manager.id}`}>{manager.displayName.slice(0, 1)}</span>
               <div className="environment-manager__main"><strong>{manager.displayName}</strong><code>{manager.executablePath ?? manager.error?.message ?? "未检测到可执行文件"}</code></div>
-              <div className="environment-manager__meta"><span>版本 <b>{manager.version ?? "—"}</b></span><span>缓存 <b>{formatBytes(manager.cacheSizeBytes)}</b></span></div>
+              <div className="environment-manager__meta"><span>来源 <b>{trustLabel[manager.executionTrust]}</b></span><span>版本 <b>{manager.version ?? "—"}</b></span><span>缓存 <b>{formatBytes(manager.cacheSizeBytes)}</b></span></div>
               {manager.error?.output ? <button className="icon-button" onClick={() => void copyText(manager.id, manager.error?.output ?? "")} title="复制诊断输出"><Icon name="copy" /></button> : null}
             </article>
           ))}</div>

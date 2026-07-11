@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AppShell } from "./components/AppShell";
+import { isTauriRuntime } from "./api";
 import { Icon } from "./components/Icon";
 import { useDevPkg } from "./hooks/useDevPkg";
 import { useSnapshotHistory } from "./hooks/useSnapshotHistory";
@@ -26,6 +27,7 @@ export function App() {
       <>
         {error ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>{error}</span><button onClick={() => void refresh()}>重试</button></div> : null}
         {notice ? <div className="inline-alert"><Icon name="info" /><span>{notice}</span></div> : null}
+        {!isTauriRuntime() ? <div className="runtime-banner"><Icon name="info" /><span>浏览器预览：当前展示模拟数据，不会读取本机包管理器、项目目录或 SQLite 快照。</span></div> : null}
         {page === "overview" ? <OverviewPage data={data} isLoading={isLoading} scanProgress={scanProgress} comparison={history.comparison} onRefresh={() => void refresh()} onCancel={() => void cancelScan()} onNavigate={setPage} /> : null}
         {page === "packages" ? <PackagesPage packages={data.packages} /> : null}
         {page === "projects" ? <ProjectsPage projects={data.projects} workspaces={data.workspaces} scanRoots={data.scanRoots} scanSettings={data.scanSettings} onAddRoot={addRoot} onRemoveRoot={removeRoot} onUpdateSettings={updateScanSettings} onExportReport={exportEnvironmentReport} onRefresh={() => void refresh()} /> : null}

@@ -243,6 +243,7 @@ mod tests {
             version: Some("4.6.0".into()),
             executable_path: Some("/opt/homebrew/bin/brew".into()),
             status: crate::models::ManagerStatus::Available,
+            execution_trust: crate::models::ExecutionTrust::Managed,
             capabilities: vec![],
             error: None,
             cache_size_bytes: None,

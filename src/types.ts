@@ -2,7 +2,8 @@ export type PageId = "overview" | "packages" | "projects" | "dependencies" | "hi
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
-export type ManagerStatus = "available" | "unavailable" | "error" | "unsupported";
+export type ManagerStatus = "available" | "unavailable" | "error" | "blocked" | "unsupported";
+export type ExecutionTrust = "system" | "managed" | "userManaged" | "unverified" | "notApplicable";
 
 export interface DiagnosticError {
   code: string;
@@ -17,6 +18,7 @@ export interface PackageManager {
   version?: string;
   executablePath?: string;
   status: ManagerStatus;
+  executionTrust: ExecutionTrust;
   capabilities: string[];
   error?: DiagnosticError;
   cacheSizeBytes?: number;

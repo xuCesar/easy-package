@@ -11,6 +11,10 @@ describe("EnvironmentPage", () => {
     expect(screen.getAllByText("多个来源")).toHaveLength(3);
     expect(screen.getByText("发现多个 Python 路径")).toBeInTheDocument();
     expect(screen.getByText("环境扫描完成")).toBeInTheDocument();
+    expect(screen.getAllByText("已识别管理器路径").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("已识别用户工具路径").length).toBeGreaterThan(0);
+    expect(screen.getByText(/更新检查可能通过本机 registry/)).toBeInTheDocument();
+    expect(screen.getByText(/本机 SQLite 会保存扫描快照与路径元数据/)).toBeInTheDocument();
   });
 
   it("展示包管理器诊断错误", () => {

@@ -32,6 +32,18 @@ pub fn build_health_report(
                 command: None,
             });
         }
+        if matches!(manager.status, ManagerStatus::Blocked) {
+            issues.push(HealthIssue {
+                id: format!("unverified-executable-{}", manager.id.as_str()),
+                severity: HealthSeverity::Warning,
+                code: "UNVERIFIED_EXECUTABLE".into(),
+                title: format!("{} 的命令来源未经验证", manager.display_name),
+                description: "为避免执行未知 PATH 中的程序，本次已仅展示发现结果。".into(),
+                manager_id: Some(manager.id),
+                path: manager.executable_path.clone(),
+                command: None,
+            });
+        }
         if manager
             .cache_size_bytes
             .is_some_and(|size| size >= LARGE_CACHE_BYTES)
@@ -317,6 +329,7 @@ mod tests {
             version: Some("1".into()),
             executable_path: Some("/tmp/pnpm".into()),
             status: ManagerStatus::Available,
+            execution_trust: crate::models::ExecutionTrust::NotApplicable,
             capabilities: vec![],
             error: None,
             cache_size_bytes: Some(LARGE_CACHE_BYTES),
@@ -324,6 +337,24 @@ mod tests {
         };
         let issues = build_health_report(&[manager], &[], &[], &[], &[]);
         assert_eq!(issues[0].code, "LARGE_CACHE");
+    }
+
+    #[test]
+    fn reports_blocked_unverified_executable() {
+        let manager = PackageManager {
+            id: PackageManagerId::Npm,
+            display_name: "npm".into(),
+            version: None,
+            executable_path: Some("/tmp/unverified/npm".into()),
+            status: ManagerStatus::Blocked,
+            execution_trust: crate::models::ExecutionTrust::Unverified,
+            capabilities: vec![],
+            error: None,
+            cache_size_bytes: None,
+            scanned_at: String::new(),
+        };
+        let issues = build_health_report(&[manager], &[], &[], &[], &[]);
+        assert_eq!(issues[0].code, "UNVERIFIED_EXECUTABLE");
     }
 
     #[test]
