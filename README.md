@@ -1,6 +1,6 @@
 # Easy Package
 
-Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip、RubyGems、Composer，以及用户明确选择目录中的 JavaScript / Python / Rust / Go 项目元数据与直接依赖洞察。
+Easy Package 是一个 macOS 本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip、RubyGems、Composer，以及用户明确选择目录中的项目元数据与依赖洞察；Homebrew Formula 支持经过预检和确认的受控写操作。
 
 ## 当前边界
 
@@ -15,7 +15,11 @@ Easy Package 是一个只读的本机开发环境管理器 MVP。它使用 Tauri
 - 可通过系统保存对话框导出当前环境快照或快照变化为 JSON / Markdown；报告会将用户主目录替换为 `~`，且不包含诊断原始输出。
 - 环境页会解析 node、npm、pnpm、Python/pip、Ruby/gem、PHP、Composer 的 PATH 优先级与候选来源，并只读标记命令冲突、运行时路径不一致和重复 Node 全局工具。
 - “运行时”页面只读发现 Node.js、Python 与 Rust 的当前及本地安装，识别 nvm、fnm、Volta、asdf、mise、pyenv、uv 与 rustup 来源，并关联项目运行时声明；复杂版本范围只展示，不推测兼容性。
-- 不提供安装、升级、卸载、清理或任意 Shell 执行接口。
+- “操作中心”支持 Homebrew Formula 的安装、单个或批量升级、卸载和 `brew cleanup`：后端先生成一次性操作计划，展示固定命令、联网需求、依赖警告与 dry-run 结果，经用户二次确认后才执行。
+- 写操作仅允许 `/opt/homebrew/bin/brew` 或 `/usr/local/bin/brew` 的可信真实路径，不经过 Shell、不接受自定义参数、不请求 `sudo`；安装和卸载各限一个目标，批量升级最多 20 个已扫描 Formula。
+- 写操作与环境扫描互斥，执行日志会脱敏并保存在本机审计记录中；取消或超时不会声称回滚，而是标记“状态未知”并强制重新扫描。
+- 写操作期间不应退出应用；异常退出后必须重新启动并刷新扫描，以 Homebrew 实际状态为准。
+- npm、pnpm 及其他管理器仍保持只读；不提供任意 Shell、自动修复、后台升级或定时写操作。
 - Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
 - 项目扫描会从 Yarn Classic、Yarn Berry 与文本 `bun.lock` 关联 JavaScript 直接依赖的锁定版本；`bun.lockb` 仅展示受控限制提示，不尝试解析二进制内容。
 - RubyGems 只读取本机的全局 gem 列表，不检查更新或执行写操作。
@@ -73,7 +77,8 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量
 4. 调整扫描范围后确认项目与依赖洞察同步更新；完成第二次扫描后，在“历史”页检查快照比较与筛选。
 5. 导出一份环境报告和变化报告，检查主目录已脱敏且不含诊断原始输出。
 6. 在“依赖”页按需解析项目图，检查直接/传递/重复版本筛选与依赖路径；在“供应链”页检查结构性风险证据并导出一份 SBOM。
-7. 删除临时测试目录，确认不会遗留扫描根目录或修改任何包管理器状态。
+7. 在“操作中心”生成安装、升级、卸载和清理计划，核对固定命令、确认门槛与取消提示；真实执行仅使用隔离的测试 Homebrew 环境。
+8. 删除临时测试目录，确认不会遗留扫描根目录。
 
 ## 结构
 
@@ -82,6 +87,7 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量
 - `src-tauri/src/scan/`：项目扫描、直接依赖索引、PATH 检查和健康规则。
 - `src-tauri/src/scan/dependency_graph.rs`：受预算限制的 npm、pnpm、Cargo 完整依赖图与 CycloneDX 导出。
 - `src-tauri/src/scan/supply_chain.rs`：不联网的结构性供应链规则、稳定规则 ID、证据和依赖路径。
+- `src-tauri/src/actions.rs`：Homebrew 操作白名单、一次性计划、预检、流式日志、取消与超时处理。
 - `src-tauri/src/storage.rs`：SQLite 快照、根目录、扫描设置和日志存储。
 - `src-tauri/src/commands.rs`：对前端开放的受控只读 Tauri command；报告写入仅可经系统保存对话框触发。
 

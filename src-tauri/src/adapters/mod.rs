@@ -87,8 +87,8 @@ const SPECS: [ManagerSpec; 10] = [
         executable_names: &["brew"],
         common_paths: &["/opt/homebrew/bin/brew", "/usr/local/bin/brew"],
         version_args: &["--version"],
-        package_source: PackageSource::Command(&["list", "--versions"]),
-        outdated_args: Some(&["outdated"]),
+        package_source: PackageSource::Command(&["list", "--formula", "--versions"]),
+        outdated_args: Some(&["outdated", "--formula"]),
         cache_source: CacheSource::Command(&["--cache"]),
         scope: PackageScope::System,
         parser: ParserKind::Brew,
@@ -899,9 +899,12 @@ fn directory_size(
     }
     let started_at = Instant::now();
     let mut total = 0u64;
-    let mut visited = 0usize;
     let mut partial = false;
-    for entry in walkdir::WalkDir::new(path).follow_links(false) {
+    for (visited, entry) in walkdir::WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .enumerate()
+    {
         if cancelled.load(Ordering::SeqCst) {
             return Err(crate::error::AppError::ScanCancelled);
         }
@@ -909,7 +912,6 @@ fn directory_size(
             partial = true;
             break;
         }
-        visited += 1;
         let Ok(entry) = entry else {
             partial = true;
             continue;
@@ -1012,6 +1014,18 @@ mod tests {
         assert!(matches!(
             cargo.package_source,
             PackageSource::Command(&["install", "--list"])
+        ));
+        let homebrew = SPECS
+            .iter()
+            .find(|spec| spec.id == PackageManagerId::Homebrew)
+            .unwrap();
+        assert!(matches!(
+            homebrew.package_source,
+            PackageSource::Command(&["list", "--formula", "--versions"])
+        ));
+        assert!(matches!(
+            homebrew.outdated_args,
+            Some(&["outdated", "--formula"])
         ));
     }
 

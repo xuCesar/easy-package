@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     error::AppError,
-    models::{EnvironmentScan, ScanSettings, SnapshotSummary, TaskLog},
+    models::{EnvironmentScan, PackageActionAuditRecord, ScanSettings, SnapshotSummary, TaskLog},
 };
 
 #[derive(Debug, Clone)]
@@ -60,6 +60,11 @@ impl Storage {
              );
              CREATE TABLE IF NOT EXISTS scan_settings (
                key TEXT PRIMARY KEY,
+               payload TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS package_action_audit (
+               action_id TEXT PRIMARY KEY,
+               finished_at TEXT NOT NULL,
                payload TEXT NOT NULL
              );",
         )?;
@@ -202,6 +207,41 @@ impl Storage {
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)
     }
+
+    pub fn save_action_audit(&self, record: &PackageActionAuditRecord) -> Result<(), AppError> {
+        let connection = self.connection()?;
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO package_action_audit(action_id, finished_at, payload) VALUES (?1, ?2, ?3)",
+            params![record.action_id, record.finished_at, serde_json::to_string(record)?],
+        )?;
+        transaction.execute(
+            "DELETE FROM package_action_audit WHERE action_id NOT IN (SELECT action_id FROM package_action_audit ORDER BY finished_at DESC LIMIT 100)",
+            [],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_action_audit(&self) -> Result<Vec<PackageActionAuditRecord>, AppError> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT payload FROM package_action_audit ORDER BY finished_at DESC LIMIT 100",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|row| {
+            let payload = row?;
+            serde_json::from_str(&payload).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(AppError::from)
+    }
 }
 
 #[cfg(test)]
@@ -209,6 +249,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+    use crate::models::{
+        PackageAction, PackageActionAuditRecord, PackageActionStatus, PackageManagerId,
+    };
 
     #[test]
     fn stores_scan_roots_without_duplicates() {
@@ -219,6 +262,30 @@ mod tests {
         assert_eq!(storage.list_scan_roots().unwrap(), vec![directory.path()]);
         storage.remove_scan_root(directory.path()).unwrap();
         assert!(storage.list_scan_roots().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stores_package_action_audit_records_without_raw_command_arguments() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        storage
+            .save_action_audit(&PackageActionAuditRecord {
+                action_id: "action-1".into(),
+                plan_id: "plan-1".into(),
+                manager_id: PackageManagerId::Homebrew,
+                action: PackageAction::Install,
+                targets: vec!["jq".into()],
+                status: PackageActionStatus::Succeeded,
+                command_preview: "/opt/homebrew/bin/brew install jq".into(),
+                logs: vec!["安装完成".into()],
+                error: None,
+                started_at: "2026-07-11T00:00:00Z".into(),
+                finished_at: "2026-07-11T00:00:01Z".into(),
+            })
+            .unwrap();
+        let records = storage.list_action_audit().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].targets, vec!["jq"]);
     }
 
     #[test]

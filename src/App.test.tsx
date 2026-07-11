@@ -18,6 +18,11 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "供应链" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }));
+    expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "缓存清理" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(await screen.findByText("/opt/homebrew/bin/brew cleanup")).toBeInTheDocument();
   });
 
   it("软件包筛选展示空态", async () => {

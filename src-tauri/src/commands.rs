@@ -8,15 +8,21 @@ use std::{
     },
 };
 
+use chrono::Utc;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
+use uuid::Uuid;
 
 use crate::{
+    actions::{self, ActionRegistry},
     error::AppError,
     models::{
-        EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectDependencyGraph,
-        ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, TaskLog,
+        EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord,
+        PackageActionPlan, PackageActionProgress, PackageActionResult, PackageActionStatus,
+        ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport,
+        ScanProgress, ScanSettings, TaskLog,
     },
+    operation_guard::OperationCoordinator,
     scan,
     storage::Storage,
 };
@@ -63,8 +69,17 @@ pub async fn scan_environment(
     app: AppHandle,
     storage: State<'_, Storage>,
     registry: State<'_, ScanRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
 ) -> Result<EnvironmentScan, AppError> {
-    let cancellation = registry.begin(&scan_id)?;
+    coordinator.begin_scan(&scan_id)?;
+    let coordinator = coordinator.inner().clone();
+    let cancellation = match registry.begin(&scan_id) {
+        Ok(cancellation) => cancellation,
+        Err(error) => {
+            coordinator.finish(&scan_id);
+            return Err(error);
+        }
+    };
     let registry = registry.inner().clone();
     let storage = storage.inner().clone();
     let scan_id_for_finish = scan_id.clone();
@@ -85,6 +100,7 @@ pub async fn scan_environment(
     .await
     .map_err(|error| AppError::Command(error.to_string()));
     registry.finish(&scan_id_for_finish);
+    coordinator.finish(&scan_id_for_finish);
     result?
 }
 
@@ -292,6 +308,215 @@ pub fn get_health_report(storage: State<'_, Storage>) -> Result<Vec<HealthIssue>
 #[tauri::command]
 pub fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppError> {
     storage.list_logs()
+}
+
+#[tauri::command]
+pub async fn plan_homebrew_action(
+    action: PackageAction,
+    targets: Vec<String>,
+    storage: State<'_, Storage>,
+    registry: State<'_, ActionRegistry>,
+) -> Result<PackageActionPlan, AppError> {
+    let storage = storage.inner().clone();
+    let registry = registry.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        actions::create_homebrew_plan(&storage, &registry, action, targets)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn execute_package_action(
+    plan_id: String,
+    app: AppHandle,
+    storage: State<'_, Storage>,
+    registry: State<'_, ActionRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
+) -> Result<PackageActionResult, AppError> {
+    let action_id = Uuid::new_v4().to_string();
+    coordinator.begin_package_action(&action_id)?;
+    let cancellation = match registry.begin(&action_id) {
+        Ok(cancellation) => cancellation,
+        Err(error) => {
+            coordinator.finish(&action_id);
+            return Err(error);
+        }
+    };
+    let registered = match registry.take(&plan_id) {
+        Ok(registered) => registered,
+        Err(error) => {
+            registry.finish(&action_id);
+            coordinator.finish(&action_id);
+            return Err(error);
+        }
+    };
+    let storage = storage.inner().clone();
+    let registry = registry.inner().clone();
+    let coordinator = coordinator.inner().clone();
+    let action_id_for_finish = action_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let started_at = Utc::now().to_rfc3339();
+        let baseline_summary = storage.list_snapshot_summaries()?.first().cloned();
+        let baseline_scan = storage.latest_snapshot()?;
+        emit_action_progress(
+            &app,
+            &action_id,
+            PackageActionStatus::Running,
+            "开始执行已确认的 Homebrew 操作",
+            true,
+        );
+        let progress_app = app.clone();
+        let progress_action_id = action_id.clone();
+        let on_log = move |message: String| {
+            emit_action_progress(
+                &progress_app,
+                &progress_action_id,
+                PackageActionStatus::Running,
+                &message,
+                true,
+            );
+        };
+        let execution = actions::execute_registered_plan(&registered, &cancellation, &on_log);
+        emit_action_progress(
+            &app,
+            &action_id,
+            PackageActionStatus::Running,
+            "正在重新扫描本机环境并计算变化",
+            false,
+        );
+        let mut result_error = execution.error.clone();
+        let mut environment = None;
+        let comparison = match rescan_after_package_action(&storage, &action_id) {
+            Ok((current, scan)) => {
+                let comparison = match (baseline_summary.as_ref(), baseline_scan.as_ref()) {
+                    (Some(baseline), Some(baseline_scan)) => scan::history::compare_snapshots(
+                        baseline.id,
+                        baseline_scan,
+                        current.id,
+                        &scan,
+                    )
+                    .ok(),
+                    _ => None,
+                };
+                environment = Some(scan);
+                comparison
+            }
+            Err(error) => {
+                append_error(&mut result_error, format!("操作后重新扫描失败：{error}"));
+                None
+            }
+        };
+        let finished_at = Utc::now().to_rfc3339();
+        let mut result = PackageActionResult {
+            action_id: action_id.clone(),
+            plan_id: registered.plan.id.clone(),
+            manager_id: registered.plan.manager_id,
+            action: registered.plan.action,
+            targets: registered.plan.targets.clone(),
+            status: execution.status,
+            command_preview: registered.plan.command_preview.clone(),
+            logs: execution.logs,
+            error: result_error,
+            comparison,
+            environment,
+            started_at,
+            finished_at,
+        };
+        let audit = PackageActionAuditRecord {
+            action_id: result.action_id.clone(),
+            plan_id: result.plan_id.clone(),
+            manager_id: result.manager_id,
+            action: result.action,
+            targets: result.targets.clone(),
+            status: result.status,
+            command_preview: result.command_preview.clone(),
+            logs: result.logs.clone(),
+            error: result.error.clone(),
+            started_at: result.started_at.clone(),
+            finished_at: result.finished_at.clone(),
+        };
+        if let Err(error) = storage.save_action_audit(&audit) {
+            append_error(&mut result.error, format!("操作审计记录保存失败：{error}"));
+        }
+        emit_action_progress(
+            &app,
+            &action_id,
+            result.status,
+            match result.status {
+                PackageActionStatus::Succeeded => "操作完成，环境已重新扫描",
+                PackageActionStatus::Failed => "Homebrew 操作失败，环境已重新扫描",
+                PackageActionStatus::Unknown => "操作状态未知，环境已重新扫描",
+                PackageActionStatus::Planned | PackageActionStatus::Running => {
+                    "操作结束，环境已重新扫描"
+                }
+            },
+            false,
+        );
+        Ok::<_, AppError>(result)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()));
+    registry.finish(&action_id_for_finish);
+    coordinator.finish(&action_id_for_finish);
+    result?
+}
+
+#[tauri::command]
+pub fn cancel_package_action(action_id: String, registry: State<'_, ActionRegistry>) {
+    registry.cancel(&action_id);
+}
+
+#[tauri::command]
+pub fn list_package_action_audit(
+    storage: State<'_, Storage>,
+) -> Result<Vec<PackageActionAuditRecord>, AppError> {
+    storage.list_action_audit()
+}
+
+fn emit_action_progress(
+    app: &AppHandle,
+    action_id: &str,
+    status: PackageActionStatus,
+    message: &str,
+    cancellable: bool,
+) {
+    let _ = app.emit(
+        "package-action-progress",
+        PackageActionProgress {
+            action_id: action_id.into(),
+            status,
+            message: message.into(),
+            cancellable,
+            timestamp: Utc::now().to_rfc3339(),
+        },
+    );
+}
+
+fn rescan_after_package_action(
+    storage: &Storage,
+    action_id: &str,
+) -> Result<(crate::models::SnapshotSummary, EnvironmentScan), AppError> {
+    let scan_id = format!("post-action-{action_id}");
+    let scan =
+        scan::scan_environment(storage, &AtomicBool::new(false), &scan_id, Arc::new(|_| {}))?;
+    storage.save_snapshot(&scan)?;
+    let summary = storage
+        .list_snapshot_summaries()?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::Storage("操作后快照未保存".into()))?;
+    Ok((summary, scan))
+}
+
+fn append_error(target: &mut Option<String>, value: String) {
+    match target {
+        Some(current) => {
+            current.push('；');
+            current.push_str(&value);
+        }
+        None => *target = Some(value),
+    }
 }
 
 #[tauri::command]

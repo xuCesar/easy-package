@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -35,10 +35,51 @@ function nowMinusMinutes(minutes: number) {
 const wait = (duration = 180) => new Promise((resolve) => window.setTimeout(resolve, duration));
 const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
 const cancelledMockScans = new Set<string>();
+const mockActionProgressListeners = new Set<(progress: PackageActionProgress) => void>();
+const cancelledMockActions = new Set<string>();
+const mockActionAudit: PackageActionAuditRecord[] = [];
+const mockActionPlans = new Map<string, PackageActionPlan>();
 
 const emitMockProgress = (progress: ScanProgress) => {
   mockProgressListeners.forEach((listener) => listener(progress));
 };
+
+const emitMockActionProgress = (progress: PackageActionProgress) => {
+  mockActionProgressListeners.forEach((listener) => listener(progress));
+};
+
+const actionLabel: Record<PackageAction, string> = { install: "install", upgrade: "upgrade", uninstall: "uninstall", cleanup: "cleanup" };
+
+const createMockActionPlan = (action: PackageAction, targets: string[]): PackageActionPlan => {
+  const id = crypto.randomUUID();
+  const warnings = ["该操作会修改本机 Homebrew 环境，无法保证自动回滚。", "操作期间请勿退出应用；若应用异常退出，请重新启动并刷新扫描确认实际状态。"];
+  if (action === "cleanup") warnings.push("缓存清理会删除 Homebrew 判定为可安全移除的旧下载和版本。");
+  const plan = {
+    id, managerId: "homebrew" as const, action, targets,
+    commandPreview: `/opt/homebrew/bin/brew ${actionLabel[action]}${targets.length ? ` ${targets.join(" ")}` : ""}`,
+    warnings,
+    previewLines: action === "cleanup" ? ["Would remove: ~/Library/Caches/Homebrew/downloads/example.tar.gz"] : action === "uninstall" ? ["未发现依赖该 Formula 的已安装包。"] : action === "install" ? [`Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。`] : ["待升级 Formula 均来自当前扫描结果。"],
+    requiresNetwork: action === "install" || action === "upgrade",
+    createdAt: new Date().toISOString(),
+  };
+  mockActionPlans.set(id, plan);
+  return plan;
+};
+
+const mockActionComparison = (plan: PackageActionPlan): SnapshotComparison => ({
+  baseline: { id: 2, scannedAt: nowMinusMinutes(5), managerCount: 10, packageCount: 11, projectCount: mockProjects.length, healthIssueCount: 2 },
+  current: { id: 3, scannedAt: new Date().toISOString(), managerCount: 10, packageCount: plan.action === "install" ? 12 : plan.action === "uninstall" ? 10 : 11, projectCount: mockProjects.length, healthIssueCount: 2 },
+  addedCount: plan.action === "install" ? 1 : 0,
+  removedCount: plan.action === "uninstall" ? 1 : 0,
+  changedCount: plan.action === "upgrade" || plan.action === "cleanup" ? 1 : 0,
+  changes: [{
+    kind: plan.action === "install" ? "added" : plan.action === "uninstall" ? "removed" : "changed",
+    entity: plan.action === "cleanup" ? "manager" : "package",
+    key: `homebrew:${plan.targets[0] ?? "cache"}`,
+    title: plan.action === "cleanup" ? "Homebrew 缓存信息已变化" : `${plan.targets[0]} 已${plan.action === "install" ? "安装" : plan.action === "uninstall" ? "移除" : "升级"}`,
+    description: "浏览器预览使用固定结果，不会修改本机环境。",
+  }],
+});
 
 const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
   const insights = new Map<string, DependencyInsight>();
@@ -185,6 +226,41 @@ const mockApi: DevPkgApi = {
   async exportProjectSbom() {
     return { saved: true };
   },
+  async planHomebrewAction(action, targets) {
+    await wait(80);
+    return createMockActionPlan(action, targets);
+  },
+  async executePackageAction(planId) {
+    const plan = mockActionPlans.get(planId);
+    if (!plan) throw new Error("操作计划不存在、已执行或已过期");
+    mockActionPlans.delete(planId);
+    const actionId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    for (const message of ["开始执行已确认的 Homebrew 操作", `brew ${actionLabel[plan.action]} 正在运行`, "正在重新扫描本机环境并计算变化"]) {
+      emitMockActionProgress({ actionId, status: "running", message, cancellable: message !== "正在重新扫描本机环境并计算变化", timestamp: new Date().toISOString() });
+      await wait(100);
+      if (cancelledMockActions.delete(actionId)) {
+        const result: PackageActionResult = { actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: "unknown", commandPreview: plan.commandPreview, logs: [message], error: "操作已终止；包管理器状态未知，已强制重新扫描。", comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
+        mockActionAudit.unshift({ ...result, comparison: undefined, environment: undefined } as PackageActionAuditRecord);
+        emitMockActionProgress({ actionId, status: "unknown", message: "操作状态未知，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
+        return result;
+      }
+    }
+    const result: PackageActionResult = { actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: "succeeded", commandPreview: plan.commandPreview, logs: [`brew ${actionLabel[plan.action]} 完成`], comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
+    mockActionAudit.unshift({ actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, startedAt, finishedAt: result.finishedAt });
+    emitMockActionProgress({ actionId, status: "succeeded", message: "操作完成，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
+    return result;
+  },
+  async cancelPackageAction(actionId) {
+    cancelledMockActions.add(actionId);
+  },
+  async listenToPackageActionProgress(listener) {
+    mockActionProgressListeners.add(listener);
+    return () => mockActionProgressListeners.delete(listener);
+  },
+  async listPackageActionAudit() {
+    return [...mockActionAudit];
+  },
 };
 
 const tauriApi: DevPkgApi = {
@@ -208,6 +284,13 @@ const tauriApi: DevPkgApi = {
   getProjectDependencyGraph: (projectPath) => invoke<ProjectDependencyGraph>("get_project_dependency_graph", { projectPath }),
   getProjectSupplyChainReport: (projectPath) => invoke<ProjectSupplyChainReport>("get_project_supply_chain_report", { projectPath }),
   exportProjectSbom: (projectPath) => invoke("export_project_sbom", { projectPath }),
+  planHomebrewAction: (action, targets) => invoke<PackageActionPlan>("plan_homebrew_action", { action, targets }),
+  executePackageAction: (planId) => invoke<PackageActionResult>("execute_package_action", { planId }),
+  cancelPackageAction: (actionId) => invoke<void>("cancel_package_action", { actionId }),
+  async listenToPackageActionProgress(listener) {
+    return listen<PackageActionProgress>("package-action-progress", (event) => listener(event.payload));
+  },
+  listPackageActionAudit: () => invoke<PackageActionAuditRecord[]>("list_package_action_audit"),
 };
 
 export const api: DevPkgApi = new Proxy(tauriApi, {

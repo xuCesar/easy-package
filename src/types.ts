@@ -1,4 +1,4 @@
-export type PageId = "overview" | "packages" | "projects" | "dependencies" | "supplyChain" | "runtimes" | "history" | "environment";
+export type PageId = "overview" | "packages" | "actions" | "projects" | "dependencies" | "supplyChain" | "runtimes" | "history" | "environment";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
@@ -252,6 +252,59 @@ export interface SnapshotComparison {
   changedCount: number;
 }
 
+export type PackageAction = "install" | "upgrade" | "uninstall" | "cleanup";
+export type PackageActionStatus = "planned" | "running" | "succeeded" | "failed" | "unknown";
+
+export interface PackageActionPlan {
+  id: string;
+  managerId: "homebrew";
+  action: PackageAction;
+  targets: string[];
+  commandPreview: string;
+  warnings: string[];
+  previewLines: string[];
+  requiresNetwork: boolean;
+  createdAt: string;
+}
+
+export interface PackageActionProgress {
+  actionId: string;
+  status: PackageActionStatus;
+  message: string;
+  cancellable: boolean;
+  timestamp: string;
+}
+
+export interface PackageActionResult {
+  actionId: string;
+  planId: string;
+  managerId: "homebrew";
+  action: PackageAction;
+  targets: string[];
+  status: PackageActionStatus;
+  commandPreview: string;
+  logs: string[];
+  error?: string;
+  comparison?: SnapshotComparison;
+  environment?: EnvironmentScan;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface PackageActionAuditRecord {
+  actionId: string;
+  planId: string;
+  managerId: "homebrew";
+  action: PackageAction;
+  targets: string[];
+  status: PackageActionStatus;
+  commandPreview: string;
+  logs: string[];
+  error?: string;
+  startedAt: string;
+  finishedAt: string;
+}
+
 export type HealthSeverity = "info" | "warning" | "error";
 
 export interface HealthIssue {
@@ -337,4 +390,9 @@ export interface DevPkgApi {
   getProjectDependencyGraph(projectPath: string): Promise<ProjectDependencyGraph>;
   getProjectSupplyChainReport(projectPath: string): Promise<ProjectSupplyChainReport>;
   exportProjectSbom(projectPath: string): Promise<ReportExportResult>;
+  planHomebrewAction(action: PackageAction, targets: string[]): Promise<PackageActionPlan>;
+  executePackageAction(planId: string): Promise<PackageActionResult>;
+  cancelPackageAction(actionId: string): Promise<void>;
+  listenToPackageActionProgress(listener: (progress: PackageActionProgress) => void): Promise<() => void>;
+  listPackageActionAudit(): Promise<PackageActionAuditRecord[]>;
 }

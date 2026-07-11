@@ -5,6 +5,7 @@ import type { PageId } from "../types";
 const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "overview", label: "概览", icon: "overview" },
   { id: "packages", label: "软件包", icon: "packages" },
+  { id: "actions", label: "操作", icon: "terminal" },
   { id: "projects", label: "项目", icon: "projects" },
   { id: "dependencies", label: "依赖", icon: "dependencies" },
   { id: "supplyChain", label: "供应链", icon: "warning" },
@@ -33,7 +34,7 @@ export function AppShell({ page, onNavigate, children }: AppShellProps) {
             </button>
           ))}
         </nav>
-        <div className="sidebar__footer"><span>v0.1.0</span><span className="readonly-label">只读模式</span></div>
+        <div className="sidebar__footer"><span>v0.1.0</span><span className="readonly-label">受控模式</span></div>
       </aside>
       <main className="main-content">{children}</main>
     </div>

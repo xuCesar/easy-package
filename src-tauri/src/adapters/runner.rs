@@ -55,6 +55,9 @@ impl CommandRunner {
         let mut child = match Command::new(executable)
             .args(args)
             .env("NO_COLOR", "1")
+            .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+            .env("HOMEBREW_NO_ANALYTICS", "1")
+            .env("HOMEBREW_NO_ENV_HINTS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -232,12 +235,13 @@ pub fn readable_path(path: &Path) -> String {
     value
 }
 
-fn redact_and_truncate(value: &str) -> String {
-    let redacted = if let Some(home) = dirs::home_dir() {
+pub(crate) fn redact_and_truncate(value: &str) -> String {
+    let home_redacted = if let Some(home) = dirs::home_dir() {
         value.replace(home.to_string_lossy().as_ref(), "~")
     } else {
         value.to_string()
     };
+    let redacted = redact_sensitive_fragments(home_redacted);
     if redacted.len() <= OUTPUT_LIMIT {
         return redacted.trim().to_string();
     }
@@ -248,6 +252,51 @@ fn redact_and_truncate(value: &str) -> String {
         .last()
         .unwrap_or(OUTPUT_LIMIT);
     format!("{}\n…输出已截断", redacted[..boundary].trim())
+}
+
+fn redact_sensitive_fragments(mut value: String) -> String {
+    let mut cursor = 0;
+    while let Some(offset) = value[cursor..].find("://") {
+        let authority_start = cursor + offset + 3;
+        let authority_end = value[authority_start..]
+            .char_indices()
+            .find(|(_, character)| {
+                character.is_whitespace() || matches!(character, '/' | '?' | '#')
+            })
+            .map(|(index, _)| authority_start + index)
+            .unwrap_or(value.len());
+        let authority = &value[authority_start..authority_end];
+        if let Some(at) = authority.rfind('@') {
+            value.replace_range(authority_start..authority_start + at, "[REDACTED]");
+            cursor = authority_start + "[REDACTED]@".len();
+        } else {
+            cursor = authority_end;
+        }
+    }
+    for key in ["access_token=", "token=", "password=", "passwd="] {
+        let mut cursor = 0;
+        loop {
+            let lower = value.to_ascii_lowercase();
+            let Some(offset) = lower[cursor..].find(key) else {
+                break;
+            };
+            let secret_start = cursor + offset + key.len();
+            if value[secret_start..].starts_with("[REDACTED]") {
+                cursor = secret_start + "[REDACTED]".len();
+                continue;
+            }
+            let secret_end = value[secret_start..]
+                .char_indices()
+                .find(|(_, character)| {
+                    character.is_whitespace() || matches!(character, '&' | ';' | ',' | '\'' | '"')
+                })
+                .map(|(index, _)| secret_start + index)
+                .unwrap_or(value.len());
+            value.replace_range(secret_start..secret_end, "[REDACTED]");
+            cursor = secret_start + "[REDACTED]".len();
+        }
+    }
+    value
 }
 
 #[cfg(test)]
@@ -283,6 +332,19 @@ mod tests {
         );
         assert!(output.success);
         assert!(output.stdout.contains("$(touch"));
+    }
+
+    #[test]
+    fn redacts_url_credentials_and_common_secret_parameters() {
+        let output = redact_and_truncate(
+            "fetch https://user:pass@example.com/pkg?token=secret&name=x password=hunter2",
+        );
+        assert_eq!(
+            output,
+            "fetch https://[REDACTED]@example.com/pkg?token=[REDACTED]&name=x password=[REDACTED]"
+        );
+        assert!(!output.contains("hunter2"));
+        assert!(!output.contains("user:pass"));
     }
 
     #[test]

@@ -503,7 +503,7 @@ fn parse_pnpm_lock(
                             id: id.clone(),
                             ecosystem: "JavaScript".into(),
                             name: name.into(),
-                            version: reference.into(),
+                            version: reference,
                             kind: DependencyGraphNodeKind::Local,
                             direct: true,
                             scopes: vec![dependency_type.into()],

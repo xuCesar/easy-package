@@ -616,6 +616,87 @@ pub struct SnapshotComparison {
     pub changed_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PackageAction {
+    Install,
+    Upgrade,
+    Uninstall,
+    Cleanup,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PackageActionStatus {
+    Planned,
+    Running,
+    Succeeded,
+    Failed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageActionPlan {
+    pub id: String,
+    pub manager_id: PackageManagerId,
+    pub action: PackageAction,
+    pub targets: Vec<String>,
+    pub command_preview: String,
+    pub warnings: Vec<String>,
+    pub preview_lines: Vec<String>,
+    pub requires_network: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageActionProgress {
+    pub action_id: String,
+    pub status: PackageActionStatus,
+    pub message: String,
+    pub cancellable: bool,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageActionResult {
+    pub action_id: String,
+    pub plan_id: String,
+    pub manager_id: PackageManagerId,
+    pub action: PackageAction,
+    pub targets: Vec<String>,
+    pub status: PackageActionStatus,
+    pub command_preview: String,
+    pub logs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<SnapshotComparison>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentScan>,
+    pub started_at: String,
+    pub finished_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageActionAuditRecord {
+    pub action_id: String,
+    pub plan_id: String,
+    pub manager_id: PackageManagerId,
+    pub action: PackageAction,
+    pub targets: Vec<String>,
+    pub status: PackageActionStatus,
+    pub command_preview: String,
+    pub logs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub started_at: String,
+    pub finished_at: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ScanPhase {

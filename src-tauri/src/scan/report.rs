@@ -143,7 +143,7 @@ fn markdown_report(report: &Value) -> String {
         .unwrap_or_default();
 
     let mut output = format!(
-        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 只读模式：是\n- 网络行为：{network_behavior}\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 命令来源 | 路径 |\n| --- | --- | --- | --- | --- |\n"
+        "# Easy Package 环境报告\n\n- 扫描时间：{scanned_at}\n- 扫描目录：{roots}\n- 扫描行为：只读\n- 网络行为：{network_behavior}\n\n## 包管理器\n\n| 管理器 | 版本 | 状态 | 命令来源 | 路径 |\n| --- | --- | --- | --- | --- |\n"
     );
     for manager in managers {
         output.push_str(&format!(
@@ -213,7 +213,7 @@ fn markdown_comparison_report(report: &Value) -> String {
         .map(Vec::as_slice)
         .unwrap_or_default();
     let mut output = format!(
-        "# Easy Package 环境变化报告\n\n- 基线快照：{baseline}\n- 当前快照：{current}\n- 只读模式：是\n\n## 摘要\n\n- 新增：{added}\n- 移除：{removed}\n- 变化：{changed}\n\n## 变化明细\n\n"
+        "# Easy Package 环境变化报告\n\n- 基线快照：{baseline}\n- 当前快照：{current}\n- 快照比较：只读\n\n## 摘要\n\n- 新增：{added}\n- 移除：{removed}\n- 变化：{changed}\n\n## 变化明细\n\n"
     );
     if changes.is_empty() {
         output.push_str("两次快照之间没有可见变化。\n");

@@ -40,4 +40,4 @@ Git history is not present in this checkout, so use concise imperative commits s
 
 ## Security & Configuration
 
-Never add package installation, upgrade, removal, arbitrary command execution, or secret logging. Use executable paths plus argument arrays, preserve timeouts and output redaction, and keep user-selected scanning boundaries explicit.
+Never add arbitrary command execution or secret logging. Homebrew Formula mutations must go through the existing one-time action-plan registry, trusted executable validation, fixed argument builders, explicit confirmation, operation mutex, timeout/cancellation handling, post-action rescan, and local audit record. Do not extend write access to another manager without equivalent tests and an explicit product decision. Keep scan commands read-only, use executable paths plus argument arrays, and preserve output redaction.
