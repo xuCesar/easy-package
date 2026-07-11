@@ -19,6 +19,7 @@ export const mockProjects: ProjectMetadata[] = [
       { ecosystem: "JavaScript", name: "vitest", normalizedName: "vitest", versionRequirement: "^3.2.0", scopes: ["开发"], resolvedVersion: "3.2.4", resolutionSource: "pnpm-lock.yaml", resolutionChecked: true },
       { ecosystem: "Python", name: "httpx", normalizedName: "httpx", versionRequirement: ">=0.28", scopes: ["运行"], resolvedVersion: "0.28.1", resolutionSource: "uv.lock", resolutionChecked: true },
     ],
+    supplyChainRiskSummary: { totalCount: 3, warningCount: 0, infoCount: 3, ruleIds: ["PACKAGE_SOURCE_UNKNOWN"] },
     warnings: [],
   },
   {
@@ -32,6 +33,7 @@ export const mockProjects: ProjectMetadata[] = [
       { ecosystem: "Python", name: "pydantic", normalizedName: "pydantic", versionRequirement: ">=2.0", scopes: ["requirements.txt"], resolutionChecked: false },
     ],
     workspace: { name: "developer-tools", path: "~/Code", ecosystem: "JavaScript" },
+    supplyChainRiskSummary: { totalCount: 1, warningCount: 1, infoCount: 0, ruleIds: ["LOCKFILE_MISSING"] },
     warnings: [],
   },
   {

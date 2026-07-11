@@ -1,8 +1,10 @@
+pub mod dependency_graph;
 mod health;
 pub mod history;
 pub mod projects;
 pub mod report;
 mod runtimes;
+pub mod supply_chain;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},

@@ -74,10 +74,13 @@ export const useDevPkg = () => {
   }, []);
 
   const exportEnvironmentReport = useCallback((format: ReportFormat) => api.exportEnvironmentReport(format), []);
+  const getProjectDependencyGraph = useCallback((projectPath: string) => api.getProjectDependencyGraph(projectPath), []);
+  const getProjectSupplyChainReport = useCallback((projectPath: string) => api.getProjectSupplyChainReport(projectPath), []);
+  const exportProjectSbom = useCallback((projectPath: string) => api.exportProjectSbom(projectPath), []);
 
   const cancelScan = useCallback(async () => {
     if (activeScanId.current) await api.cancelEnvironmentScan(activeScanId.current);
   }, []);
 
-  return { ...state, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport };
+  return { ...state, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport, getProjectDependencyGraph, getProjectSupplyChainReport, exportProjectSbom };
 };

@@ -337,6 +337,8 @@ mod tests {
             package_manager: None,
             dependencies: vec![],
             workspace: None,
+            dependency_graph_summary: None,
+            supply_chain_risk_summary: None,
             warnings: vec![],
         }
     }

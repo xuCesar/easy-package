@@ -122,6 +122,7 @@ pub fn scan_projects_with_settings(
         .map(|(directory, markers)| parse_project(&directory, &markers))
         .collect::<Vec<_>>();
     let workspaces = discover_workspaces(&mut projects);
+    super::dependency_graph::enrich_dependency_graph_summaries(&mut projects, cancelled)?;
     if !roots.is_empty() {
         logs.push(project_log(
             LogStatus::Success,
@@ -633,6 +634,8 @@ fn parse_project(directory: &Path, markers: &BTreeSet<String>) -> ProjectMetadat
             merge_project_dependencies(dependencies, &mut warnings),
         ),
         workspace: None,
+        dependency_graph_summary: None,
+        supply_chain_risk_summary: None,
         warnings,
     }
 }

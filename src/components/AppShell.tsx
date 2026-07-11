@@ -7,6 +7,7 @@ const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "packages", label: "软件包", icon: "packages" },
   { id: "projects", label: "项目", icon: "projects" },
   { id: "dependencies", label: "依赖", icon: "dependencies" },
+  { id: "supplyChain", label: "供应链", icon: "warning" },
   { id: "runtimes", label: "运行时", icon: "runtimes" },
   { id: "history", label: "历史", icon: "history" },
   { id: "environment", label: "环境", icon: "environment" },

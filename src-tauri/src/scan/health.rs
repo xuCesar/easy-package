@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::models::{
-    HealthIssue, HealthSeverity, ManagedPackage, ManagerStatus, PackageManager, PackageManagerId,
-    PackageScope, PathObservation, ProjectMetadata, ProjectWorkspace, RuntimeRequirementAssessment,
-    RuntimeRequirementStatus, UpdateStatus,
+    DependencyGraphCompleteness, HealthIssue, HealthSeverity, ManagedPackage, ManagerStatus,
+    PackageManager, PackageManagerId, PackageScope, PathObservation, ProjectMetadata,
+    ProjectWorkspace, RuntimeRequirementAssessment, RuntimeRequirementStatus, UpdateStatus,
 };
 
 const LARGE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -81,6 +81,77 @@ pub fn build_health_report(
     }
 
     for project in projects {
+        if let Some(summary) = &project.dependency_graph_summary {
+            if matches!(summary.completeness, DependencyGraphCompleteness::Partial) {
+                issues.push(HealthIssue {
+                    id: format!("dependency-graph-partial-{}", project.path),
+                    severity: HealthSeverity::Warning,
+                    code: "DEPENDENCY_GRAPH_PARTIAL".into(),
+                    title: format!("{} 的完整依赖图不完整", project.name),
+                    description: "锁文件图已达到解析预算或包含无法可靠关联的条目。".into(),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                    command: None,
+                });
+            }
+            if matches!(summary.completeness, DependencyGraphCompleteness::Invalid) {
+                issues.push(HealthIssue {
+                    id: format!("dependency-graph-invalid-{}", project.path),
+                    severity: HealthSeverity::Warning,
+                    code: "DEPENDENCY_GRAPH_INVALID".into(),
+                    title: format!("{} 的锁文件无法解析", project.name),
+                    description: "受支持的锁文件格式无效，无法生成完整依赖图。".into(),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                    command: None,
+                });
+            }
+            if summary.duplicate_version_count > 0 {
+                issues.push(HealthIssue {
+                    id: format!("dependency-versions-{}", project.path),
+                    severity: HealthSeverity::Info,
+                    code: "MULTIPLE_RESOLVED_VERSIONS".into(),
+                    title: format!("{} 存在同名多版本依赖", project.name),
+                    description: format!(
+                        "锁文件中有 {} 个依赖解析到多个版本。",
+                        summary.duplicate_version_count
+                    ),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                    command: None,
+                });
+            }
+            if summary.unreachable_count > 0 {
+                issues.push(HealthIssue {
+                    id: format!("dependency-unreachable-{}", project.path),
+                    severity: HealthSeverity::Info,
+                    code: "LOCKFILE_ENTRY_UNREACHABLE".into(),
+                    title: format!("{} 的锁文件包含未使用条目", project.name),
+                    description: format!(
+                        "有 {} 个锁文件条目无法从当前项目根依赖到达。",
+                        summary.unreachable_count
+                    ),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                    command: None,
+                });
+            }
+            if summary.cycle_count > 0 {
+                issues.push(HealthIssue {
+                    id: format!("dependency-cycles-{}", project.path),
+                    severity: HealthSeverity::Info,
+                    code: "DEPENDENCY_CYCLE_DETECTED".into(),
+                    title: format!("{} 的依赖图包含循环", project.name),
+                    description: format!(
+                        "检测到 {} 条循环回边，仅作只读提示。",
+                        summary.cycle_count
+                    ),
+                    manager_id: None,
+                    path: Some(project.path.clone()),
+                    command: None,
+                });
+            }
+        }
         for (index, warning) in project.warnings.iter().enumerate() {
             issues.push(HealthIssue {
                 id: format!("project-warning-{}-{}", project.path, index),
@@ -352,8 +423,9 @@ fn is_local_dependency(requirement: &str) -> bool {
 mod tests {
     use super::*;
     use crate::models::{
-        ManagerStatus, PackageManagerId, PackageScope, PathObservation, ProjectDependency,
-        ProjectMetadata, ProjectWorkspace, RuntimeRequirementAssessment, RuntimeRequirementStatus,
+        DependencyGraphSummary, ManagerStatus, PackageManagerId, PackageScope, PathObservation,
+        ProjectDependency, ProjectMetadata, ProjectWorkspace, RuntimeRequirementAssessment,
+        RuntimeRequirementStatus,
     };
 
     #[test]
@@ -415,6 +487,8 @@ mod tests {
                     resolution_checked: false,
                 }],
                 workspace: None,
+                dependency_graph_summary: None,
+                supply_chain_risk_summary: None,
                 warnings: vec![],
             },
             ProjectMetadata {
@@ -435,6 +509,8 @@ mod tests {
                     resolution_checked: false,
                 }],
                 workspace: None,
+                dependency_graph_summary: None,
+                supply_chain_risk_summary: None,
                 warnings: vec![],
             },
         ];
@@ -538,5 +614,51 @@ mod tests {
         assert!(issues
             .iter()
             .any(|issue| issue.code == "ACTIVE_RUNTIME_MISMATCH"));
+    }
+
+    #[test]
+    fn reports_all_dependency_graph_health_rules() {
+        let summary = |completeness| DependencyGraphSummary {
+            node_count: 8,
+            edge_count: 9,
+            direct_count: 2,
+            transitive_count: 5,
+            duplicate_version_count: 1,
+            unreachable_count: 2,
+            cycle_count: 1,
+            completeness,
+            sources: vec!["package-lock.json".into()],
+            source_digest: "digest".into(),
+        };
+        let project = |name: &str, completeness| ProjectMetadata {
+            name: name.into(),
+            path: format!("/tmp/{name}"),
+            ecosystems: vec!["JavaScript".into()],
+            lock_files: vec!["package-lock.json".into()],
+            runtime_requirements: vec![],
+            package_manager: Some("npm".into()),
+            dependencies: vec![],
+            workspace: None,
+            dependency_graph_summary: Some(summary(completeness)),
+            supply_chain_risk_summary: None,
+            warnings: vec![],
+        };
+        let projects = vec![
+            project("partial", DependencyGraphCompleteness::Partial),
+            project("invalid", DependencyGraphCompleteness::Invalid),
+        ];
+        let issues = build_health_report(&[], &[], &projects, &[], &[], &[]);
+        for code in [
+            "DEPENDENCY_GRAPH_PARTIAL",
+            "DEPENDENCY_GRAPH_INVALID",
+            "MULTIPLE_RESOLVED_VERSIONS",
+            "LOCKFILE_ENTRY_UNREACHABLE",
+            "DEPENDENCY_CYCLE_DETECTED",
+        ] {
+            assert!(
+                issues.iter().any(|issue| issue.code == code),
+                "缺少健康规则 {code}"
+            );
+        }
     }
 }

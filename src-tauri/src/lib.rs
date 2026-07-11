@@ -9,9 +9,10 @@ mod storage;
 
 use commands::{
     add_scan_root, cancel_environment_scan, compare_snapshots, export_environment_report,
-    export_snapshot_comparison_report, get_health_report, get_scan_logs, get_scan_settings,
-    list_packages, list_projects, list_snapshot_summaries, remove_scan_root, scan_environment,
-    update_scan_settings,
+    export_project_sbom, export_snapshot_comparison_report, get_health_report,
+    get_project_dependency_graph, get_project_supply_chain_report, get_scan_logs,
+    get_scan_settings, list_packages, list_projects, list_snapshot_summaries, remove_scan_root,
+    scan_environment, update_scan_settings,
 };
 use storage::Storage;
 use tauri::Manager;
@@ -41,6 +42,9 @@ pub fn run() {
             export_snapshot_comparison_report,
             get_health_report,
             get_scan_logs,
+            get_project_dependency_graph,
+            get_project_supply_chain_report,
+            export_project_sbom,
         ])
         .run(tauri::generate_context!())
         .expect("Easy Package 启动失败");

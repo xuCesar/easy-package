@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -61,6 +61,49 @@ const analyzeMockProjects = (projects: ProjectMetadata[]): ProjectAnalysis => {
     runtimeAssessments: mockScan.runtimeAssessments.filter((assessment) => projects.some((project) => project.path === assessment.projectPath)),
     healthIssues: mockScan.healthIssues,
     scanSettings: browserScanSettings,
+  };
+};
+
+const mockProjectDependencyGraph = (projectPath: string): ProjectDependencyGraph => {
+  const project = browserProjects.find((item) => item.path === projectPath);
+  if (!project) throw new Error("该路径不是已识别项目");
+  const rootId = `project:${project.name}`;
+  const supported = project.lockFiles.some((file) => ["package-lock.json", "pnpm-lock.yaml", "Cargo.lock"].includes(file));
+  const packageNodes = supported ? project.dependencies.map((dependency) => ({
+    id: `mock:${dependency.ecosystem}:${dependency.normalizedName}:${dependency.resolvedVersion ?? dependency.versionRequirement}`,
+    ecosystem: dependency.ecosystem,
+    name: dependency.name,
+    version: dependency.resolvedVersion ?? dependency.versionRequirement,
+    kind: "package" as const,
+    direct: true,
+    scopes: dependency.scopes,
+  })) : [];
+  const nodes = [{ id: rootId, ecosystem: "Project", name: project.name, version: "", kind: "project" as const, direct: false, scopes: [] }, ...packageNodes];
+  const edges = packageNodes.map((node) => ({ from: rootId, to: node.id, dependencyType: "runtime" }));
+  const completeness = supported ? "complete" as const : "unsupported" as const;
+  const sources = project.lockFiles.filter((file) => ["package-lock.json", "pnpm-lock.yaml", "Cargo.lock"].includes(file));
+  const summary = { nodeCount: nodes.length, edgeCount: edges.length, directCount: packageNodes.length, transitiveCount: 0, duplicateVersionCount: 0, unreachableCount: 0, cycleCount: 0, completeness, sources, sourceDigest: supported ? "mock-lock-digest" : "" };
+  return { projectName: project.name, projectPath, completeness, sources, sourceDigest: summary.sourceDigest, nodes, edges, warnings: supported ? [] : ["当前项目没有受支持的完整依赖图锁文件。"], summary };
+};
+
+const mockProjectSupplyChainReport = (projectPath: string): ProjectSupplyChainReport => {
+  const graph = mockProjectDependencyGraph(projectPath);
+  const project = browserProjects.find((item) => item.path === projectPath)!;
+  const findings = graph.completeness === "unsupported" && project.dependencies.length ? [{
+    id: `${projectPath}:LOCKFILE_MISSING`, code: "LOCKFILE_MISSING", severity: "warning" as const,
+    title: "缺少受支持的完整依赖锁文件", description: "项目声明了依赖，但无法从 npm、pnpm 或 Cargo 锁文件重建完整依赖图。",
+    projectPath, dependencyPath: [], evidence: project.lockFiles,
+  }] : graph.nodes.filter((node) => node.kind !== "project" && !node.packageUrl).map((node) => ({
+    id: `${projectPath}:PACKAGE_SOURCE_UNKNOWN:${node.id}`, code: "PACKAGE_SOURCE_UNKNOWN", severity: "info" as const,
+    title: "依赖来源无法规范化", description: "锁文件没有提供足够信息来生成 Package URL；这不等同于已确认存在风险。",
+    projectPath, nodeId: node.id, dependencyPath: [project.name, `${node.name}@${node.version}`], evidence: [`${node.name} ${node.version}`],
+  }));
+  const warningCount = findings.filter((finding) => finding.severity === "warning").length;
+  return {
+    projectName: project.name,
+    projectPath,
+    summary: { totalCount: findings.length, warningCount, infoCount: findings.length - warningCount, ruleIds: [...new Set(findings.map((finding) => finding.code))].sort() },
+    findings,
   };
 };
 
@@ -133,6 +176,15 @@ const mockApi: DevPkgApi = {
   async getScanLogs() {
     return mockScan.logs;
   },
+  async getProjectDependencyGraph(projectPath) {
+    return mockProjectDependencyGraph(projectPath);
+  },
+  async getProjectSupplyChainReport(projectPath) {
+    return mockProjectSupplyChainReport(projectPath);
+  },
+  async exportProjectSbom() {
+    return { saved: true };
+  },
 };
 
 const tauriApi: DevPkgApi = {
@@ -153,6 +205,9 @@ const tauriApi: DevPkgApi = {
   exportSnapshotComparisonReport: (format, baselineId, currentId) => invoke("export_snapshot_comparison_report", { format, baselineId, currentId }),
   getHealthReport: () => invoke<HealthIssue[]>("get_health_report"),
   getScanLogs: () => invoke<TaskLog[]>("get_scan_logs"),
+  getProjectDependencyGraph: (projectPath) => invoke<ProjectDependencyGraph>("get_project_dependency_graph", { projectPath }),
+  getProjectSupplyChainReport: (projectPath) => invoke<ProjectSupplyChainReport>("get_project_supply_chain_report", { projectPath }),
+  exportProjectSbom: (projectPath) => invoke("export_project_sbom", { projectPath }),
 };
 
 export const api: DevPkgApi = new Proxy(tauriApi, {

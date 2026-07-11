@@ -1,18 +1,73 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DependenciesPage } from "./DependenciesPage";
-import type { DependencyInsight } from "../types";
+import type { DependencyInsight, ProjectDependencyGraph, ProjectMetadata } from "../types";
 
 const insights: DependencyInsight[] = [
   { ecosystem: "JavaScript", name: "react", projectCount: 2, versionRequirements: ["^18", "^19"], resolvedVersions: ["18.3.1", "19.1.1"], hasVersionDivergence: true, hasResolvedVersionDivergence: true, hasResolutionRisk: true, hasHealthRisk: true, projects: [{ projectName: "web", projectPath: "/tmp/web", versionRequirement: "^19", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "package-lock.json" }, { projectName: "docs", projectPath: "/tmp/docs", versionRequirement: "^18", scopes: ["开发"], resolvedVersion: "18.3.1", resolutionSource: "package-lock.json" }] },
   { ecosystem: "Python", name: "httpx", projectCount: 1, versionRequirements: [">=0.28"], resolvedVersions: ["0.28.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "api", projectPath: "/tmp/api", versionRequirement: ">=0.28", scopes: ["运行"], resolvedVersion: "0.28.1", resolutionSource: "uv.lock" }] },
 ];
 
+const projects: ProjectMetadata[] = [{
+  name: "web",
+  path: "/tmp/web",
+  ecosystems: ["JavaScript"],
+  lockFiles: ["package-lock.json"],
+  runtimeRequirements: [],
+  packageManager: "npm",
+  dependencies: [],
+  dependencyGraphSummary: {
+    nodeCount: 4,
+    edgeCount: 3,
+    directCount: 2,
+    transitiveCount: 1,
+    duplicateVersionCount: 1,
+    unreachableCount: 0,
+    cycleCount: 0,
+    completeness: "complete",
+    sources: ["package-lock.json"],
+    sourceDigest: "abc123",
+  },
+  warnings: [],
+}];
+
+const graph: ProjectDependencyGraph = {
+  projectName: "web",
+  projectPath: "/tmp/web",
+  completeness: "complete",
+  sources: ["package-lock.json"],
+  sourceDigest: "abc123",
+  nodes: [
+    { id: "root", ecosystem: "Project", name: "web", version: "", kind: "project", direct: false, scopes: [] },
+    { id: "react-19", ecosystem: "JavaScript", name: "react", version: "19.1.1", kind: "package", direct: true, scopes: ["运行"] },
+    { id: "scheduler", ecosystem: "JavaScript", name: "scheduler", version: "0.26.0", kind: "package", direct: false, scopes: ["运行"] },
+    { id: "react-18", ecosystem: "JavaScript", name: "react", version: "18.3.1", kind: "package", direct: true, scopes: ["开发"] },
+  ],
+  edges: [
+    { from: "root", to: "react-19", dependencyType: "运行" },
+    { from: "react-19", to: "scheduler", dependencyType: "运行" },
+    { from: "root", to: "react-18", dependencyType: "开发" },
+  ],
+  warnings: [],
+  summary: projects[0].dependencyGraphSummary!,
+};
+
+function renderPage(overrides: Partial<React.ComponentProps<typeof DependenciesPage>> = {}) {
+  const props: React.ComponentProps<typeof DependenciesPage> = {
+    insights,
+    projects,
+    onLoadGraph: vi.fn().mockResolvedValue(graph),
+    onExportSbom: vi.fn().mockResolvedValue({ saved: true }),
+    ...overrides,
+  };
+  return { ...render(<DependenciesPage {...props} />), props };
+}
+
 afterEach(cleanup);
 
 describe("DependenciesPage", () => {
   it("按名称、生态和版本分歧筛选依赖，并展示项目明细", () => {
-    render(<DependenciesPage insights={insights} />);
+    renderPage();
     expect(screen.getByText("docs")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("搜索依赖名称"), { target: { value: "http" } });
     fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "Python" } });
@@ -39,7 +94,7 @@ describe("DependenciesPage", () => {
       { ecosystem: "Ruby", name: "rails", projectCount: 1, versionRequirements: ["~> 8.0"], resolvedVersions: ["8.0.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "rails", projectPath: "/tmp/rails", versionRequirement: "~> 8.0", scopes: ["运行"], resolvedVersion: "8.0.1", resolutionSource: "Gemfile.lock" }] },
       { ecosystem: "PHP", name: "symfony/http-foundation", projectCount: 1, versionRequirements: ["^7.2"], resolvedVersions: ["v7.2.1"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "api", projectPath: "/tmp/api", versionRequirement: "^7.2", scopes: ["运行"], resolvedVersion: "v7.2.1", resolutionSource: "composer.lock" }] },
     ];
-    render(<DependenciesPage insights={ecosystemInsights} />);
+    renderPage({ insights: ecosystemInsights });
     fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "JavaScript" } });
     expect(screen.getByText("bun.lock")).toBeInTheDocument();
     expect(screen.getByText("yarn.lock")).toBeInTheDocument();
@@ -52,5 +107,48 @@ describe("DependenciesPage", () => {
     expect(screen.getByText("Gemfile.lock")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("依赖生态"), { target: { value: "PHP" } });
     expect(screen.getByText("composer.lock")).toBeInTheDocument();
+  });
+
+  it("按需加载项目依赖图并筛选节点、展示最短路径", async () => {
+    const { props } = renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    expect(screen.getByText("尚未解析项目依赖图")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
+    await waitFor(() => expect(props.onLoadGraph).toHaveBeenCalledWith("/tmp/web"));
+    expect(screen.getByText("scheduler")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("依赖图范围"), { target: { value: "transitive" } });
+    expect(screen.getByText("scheduler")).toBeInTheDocument();
+    expect(screen.queryByText("18.3.1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /scheduler/ }));
+    expect(screen.getByText("web → react → scheduler")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("依赖图范围"), { target: { value: "duplicates" } });
+    expect(screen.getByText("18.3.1")).toBeInTheDocument();
+    expect(screen.queryByText("scheduler")).not.toBeInTheDocument();
+  });
+
+  it("展示 SBOM 导出的成功、取消与失败反馈", async () => {
+    const onExportSbom = vi.fn().mockResolvedValueOnce({ saved: true }).mockResolvedValueOnce({ saved: false }).mockRejectedValueOnce(new Error("保存失败"));
+    renderPage({ onExportSbom });
+    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
+    const exportButton = await screen.findByRole("button", { name: "导出 CycloneDX SBOM" });
+
+    fireEvent.click(exportButton);
+    expect(await screen.findByText("CycloneDX SBOM 已导出。")).toBeInTheDocument();
+    fireEvent.click(exportButton);
+    expect(await screen.findByText("已取消导出。")).toBeInTheDocument();
+    fireEvent.click(exportButton);
+    expect(await screen.findByText("保存失败")).toBeInTheDocument();
+  });
+
+  it("对不支持和无效依赖图禁用 SBOM 导出", async () => {
+    const unsupported = { ...graph, completeness: "unsupported" as const, nodes: [graph.nodes[0]], edges: [], sources: [], summary: { ...graph.summary, completeness: "unsupported" as const } };
+    renderPage({ onLoadGraph: vi.fn().mockResolvedValue(unsupported) });
+    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
+    expect(await screen.findByText("不支持")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出 CycloneDX SBOM" })).toBeDisabled();
   });
 });

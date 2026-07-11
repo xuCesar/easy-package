@@ -14,6 +14,10 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "运行时" }));
     expect(screen.getByRole("heading", { name: "运行时" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "供应链" }));
+    expect(screen.getByRole("heading", { name: "供应链" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
+    expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
   });
 
   it("软件包筛选展示空态", async () => {

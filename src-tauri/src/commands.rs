@@ -14,8 +14,8 @@ use tauri_plugin_dialog::DialogExt;
 use crate::{
     error::AppError,
     models::{
-        EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectMetadata,
-        ScanProgress, ScanSettings, TaskLog,
+        EnvironmentScan, HealthIssue, ManagedPackage, ProjectAnalysis, ProjectDependencyGraph,
+        ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, TaskLog,
     },
     scan,
     storage::Storage,
@@ -294,8 +294,98 @@ pub fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppErr
     storage.list_logs()
 }
 
+#[tauri::command]
+pub async fn get_project_dependency_graph(
+    project_path: String,
+    storage: State<'_, Storage>,
+) -> Result<ProjectDependencyGraph, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        build_project_dependency_graph_for_path(&storage, &project_path)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn get_project_supply_chain_report(
+    project_path: String,
+    storage: State<'_, Storage>,
+) -> Result<ProjectSupplyChainReport, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (project, graph) =
+            build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+        Ok(scan::supply_chain::build_supply_chain_report(
+            &project, &graph,
+        ))
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn export_project_sbom(
+    project_path: String,
+    app: AppHandle,
+    storage: State<'_, Storage>,
+) -> Result<scan::report::ReportExportResult, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (project, graph) =
+            build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+        let risk_report = scan::supply_chain::build_supply_chain_report(&project, &graph);
+        let content = scan::dependency_graph::build_cyclonedx_sbom_with_risk_summary(
+            &graph,
+            Some(&risk_report.summary),
+        )?;
+        save_report_with_dialog(
+            &app,
+            scan::report::ReportFormat::Json,
+            "easy-package-sbom.cdx.json",
+            content,
+        )
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+fn build_project_dependency_graph_for_path(
+    storage: &Storage,
+    project_path: &str,
+) -> Result<ProjectDependencyGraph, AppError> {
+    Ok(build_project_and_dependency_graph_for_path(storage, project_path)?.1)
+}
+
+fn build_project_and_dependency_graph_for_path(
+    storage: &Storage,
+    project_path: &str,
+) -> Result<(ProjectMetadata, ProjectDependencyGraph), AppError> {
+    let requested = PathBuf::from(project_path);
+    let canonical = requested
+        .canonicalize()
+        .map_err(|error| AppError::InvalidScanRoot(error.to_string()))?;
+    let roots = storage.list_scan_roots()?;
+    if !roots.iter().any(|root| canonical.starts_with(root)) {
+        return Err(AppError::InvalidScanRoot(
+            "依赖图项目必须位于已添加的扫描目录内".into(),
+        ));
+    }
+    let analysis = scan::projects_for_roots(storage)?;
+    let project = analysis
+        .projects
+        .into_iter()
+        .find(|project| PathBuf::from(&project.path) == canonical)
+        .ok_or_else(|| AppError::InvalidScanRoot("该路径不是已识别项目".into()))?;
+    let graph =
+        scan::dependency_graph::build_project_dependency_graph(&project, &AtomicBool::new(false))?;
+    Ok((project, graph))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use tempfile::tempdir;
 
     use super::*;
@@ -336,5 +426,37 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("基线快照必须早于当前快照"));
+    }
+
+    #[test]
+    fn dependency_graph_commands_reject_paths_outside_roots_and_non_projects() {
+        let directory = tempdir().unwrap();
+        let root = directory.path().join("root");
+        let outside = directory.path().join("outside");
+        let not_project = root.join("notes");
+        fs::create_dir_all(&not_project).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("package.json"), r#"{"name":"outside"}"#).unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        storage
+            .add_scan_root(&root.canonicalize().unwrap())
+            .unwrap();
+
+        let outside_error =
+            build_project_dependency_graph_for_path(&storage, outside.to_string_lossy().as_ref())
+                .unwrap_err()
+                .to_string();
+        assert!(outside_error.contains("必须位于已添加的扫描目录内"));
+
+        let non_project_error = build_project_dependency_graph_for_path(
+            &storage,
+            not_project.to_string_lossy().as_ref(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            non_project_error.contains("不是已识别项目"),
+            "意外错误：{non_project_error}"
+        );
     }
 }

@@ -156,6 +156,10 @@ pub struct ProjectMetadata {
     pub dependencies: Vec<ProjectDependency>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<ProjectWorkspaceRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependency_graph_summary: Option<DependencyGraphSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply_chain_risk_summary: Option<SupplyChainRiskSummary>,
     pub warnings: Vec<String>,
 }
 
@@ -282,6 +286,121 @@ pub struct ProjectDependency {
     pub resolution_source: Option<String>,
     #[serde(default)]
     pub resolution_checked: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DependencyGraphCompleteness {
+    Complete,
+    Partial,
+    Unsupported,
+    Invalid,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DependencyGraphNodeKind {
+    Project,
+    Package,
+    Local,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyGraphNode {
+    pub id: String,
+    pub ecosystem: String,
+    pub name: String,
+    pub version: String,
+    pub kind: DependencyGraphNodeKind,
+    pub direct: bool,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyGraphEdge {
+    pub from: String,
+    pub to: String,
+    pub dependency_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyGraphSummary {
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub direct_count: usize,
+    pub transitive_count: usize,
+    pub duplicate_version_count: usize,
+    pub unreachable_count: usize,
+    pub cycle_count: usize,
+    pub completeness: DependencyGraphCompleteness,
+    #[serde(default)]
+    pub sources: Vec<String>,
+    pub source_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDependencyGraph {
+    pub project_name: String,
+    pub project_path: String,
+    pub completeness: DependencyGraphCompleteness,
+    #[serde(default)]
+    pub sources: Vec<String>,
+    pub source_digest: String,
+    pub nodes: Vec<DependencyGraphNode>,
+    pub edges: Vec<DependencyGraphEdge>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    pub summary: DependencyGraphSummary,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum SupplyChainRiskSeverity {
+    Info,
+    Warning,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplyChainRiskFinding {
+    pub id: String,
+    pub code: String,
+    pub severity: SupplyChainRiskSeverity,
+    pub title: String,
+    pub description: String,
+    pub project_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    #[serde(default)]
+    pub dependency_path: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplyChainRiskSummary {
+    pub total_count: usize,
+    pub warning_count: usize,
+    pub info_count: usize,
+    #[serde(default)]
+    pub rule_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSupplyChainReport {
+    pub project_name: String,
+    pub project_path: String,
+    pub summary: SupplyChainRiskSummary,
+    pub findings: Vec<SupplyChainRiskFinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -539,6 +658,8 @@ mod tests {
         }))
         .unwrap();
         assert!(project.dependencies.is_empty());
+        assert!(project.dependency_graph_summary.is_none());
+        assert!(project.supply_chain_risk_summary.is_none());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-export type PageId = "overview" | "packages" | "projects" | "dependencies" | "runtimes" | "history" | "environment";
+export type PageId = "overview" | "packages" | "projects" | "dependencies" | "supplyChain" | "runtimes" | "history" | "environment";
 
 export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
 
@@ -54,6 +54,8 @@ export interface ProjectMetadata {
   packageManager?: string;
   dependencies: ProjectDependency[];
   workspace?: ProjectWorkspaceRef;
+  dependencyGraphSummary?: DependencyGraphSummary;
+  supplyChainRiskSummary?: SupplyChainRiskSummary;
   warnings: string[];
 }
 
@@ -79,6 +81,79 @@ export interface ProjectDependency {
   resolvedVersion?: string;
   resolutionSource?: string;
   resolutionChecked: boolean;
+}
+
+export type DependencyGraphCompleteness = "complete" | "partial" | "unsupported" | "invalid";
+export type DependencyGraphNodeKind = "project" | "package" | "local";
+
+export interface DependencyGraphNode {
+  id: string;
+  ecosystem: string;
+  name: string;
+  version: string;
+  kind: DependencyGraphNodeKind;
+  direct: boolean;
+  scopes: string[];
+  packageUrl?: string;
+}
+
+export interface DependencyGraphEdge {
+  from: string;
+  to: string;
+  dependencyType: string;
+}
+
+export interface DependencyGraphSummary {
+  nodeCount: number;
+  edgeCount: number;
+  directCount: number;
+  transitiveCount: number;
+  duplicateVersionCount: number;
+  unreachableCount: number;
+  cycleCount: number;
+  completeness: DependencyGraphCompleteness;
+  sources: string[];
+  sourceDigest: string;
+}
+
+export interface ProjectDependencyGraph {
+  projectName: string;
+  projectPath: string;
+  completeness: DependencyGraphCompleteness;
+  sources: string[];
+  sourceDigest: string;
+  nodes: DependencyGraphNode[];
+  edges: DependencyGraphEdge[];
+  warnings: string[];
+  summary: DependencyGraphSummary;
+}
+
+export type SupplyChainRiskSeverity = "info" | "warning";
+
+export interface SupplyChainRiskFinding {
+  id: string;
+  code: string;
+  severity: SupplyChainRiskSeverity;
+  title: string;
+  description: string;
+  projectPath: string;
+  nodeId?: string;
+  dependencyPath: string[];
+  evidence: string[];
+}
+
+export interface SupplyChainRiskSummary {
+  totalCount: number;
+  warningCount: number;
+  infoCount: number;
+  ruleIds: string[];
+}
+
+export interface ProjectSupplyChainReport {
+  projectName: string;
+  projectPath: string;
+  summary: SupplyChainRiskSummary;
+  findings: SupplyChainRiskFinding[];
 }
 
 export interface DependencyProjectUsage {
@@ -259,4 +334,7 @@ export interface DevPkgApi {
   exportSnapshotComparisonReport(format: ReportFormat, baselineId: number, currentId: number): Promise<ReportExportResult>;
   getHealthReport(): Promise<HealthIssue[]>;
   getScanLogs(): Promise<TaskLog[]>;
+  getProjectDependencyGraph(projectPath: string): Promise<ProjectDependencyGraph>;
+  getProjectSupplyChainReport(projectPath: string): Promise<ProjectSupplyChainReport>;
+  exportProjectSbom(projectPath: string): Promise<ReportExportResult>;
 }

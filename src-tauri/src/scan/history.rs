@@ -219,6 +219,18 @@ fn project_change_description(
     if previous.dependencies != current.dependencies {
         fields.push("直接依赖声明");
     }
+    if differs(
+        &previous.dependency_graph_summary,
+        &current.dependency_graph_summary,
+    )? {
+        fields.push("完整依赖图摘要");
+    }
+    if differs(
+        &previous.supply_chain_risk_summary,
+        &current.supply_chain_risk_summary,
+    )? {
+        fields.push("供应链风险摘要");
+    }
     if previous
         .workspace
         .as_ref()
@@ -409,5 +421,21 @@ mod tests {
             .unwrap()
             .changes
             .is_empty());
+    }
+
+    #[test]
+    fn detects_dependency_graph_and_supply_chain_summary_changes() {
+        let baseline = scan(json!({
+            "managers":[],"packages":[],"projects":[{"name":"app","path":"/tmp/app","ecosystems":["JavaScript"],"lockFiles":["package-lock.json"],"runtimeRequirements":[],"dependencies":[],"warnings":[]}],
+            "scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"old","partialFailures":0
+        }));
+        let current = scan(json!({
+            "managers":[],"packages":[],"projects":[{"name":"app","path":"/tmp/app","ecosystems":["JavaScript"],"lockFiles":["package-lock.json"],"runtimeRequirements":[],"dependencies":[],"dependencyGraphSummary":{"nodeCount":2,"edgeCount":1,"directCount":1,"transitiveCount":0,"duplicateVersionCount":0,"unreachableCount":0,"cycleCount":0,"completeness":"complete","sources":["package-lock.json"],"sourceDigest":"digest"},"supplyChainRiskSummary":{"totalCount":1,"warningCount":0,"infoCount":1,"ruleIds":["PACKAGE_SOURCE_UNKNOWN"]},"warnings":[]}],
+            "scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"new","partialFailures":0
+        }));
+        let comparison = compare_snapshots(1, &baseline, 2, &current).unwrap();
+        let description = &comparison.changes[0].description;
+        assert!(description.contains("完整依赖图摘要"));
+        assert!(description.contains("供应链风险摘要"));
     }
 }
