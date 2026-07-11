@@ -242,6 +242,29 @@ impl Storage {
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)
     }
+
+    pub fn has_incomplete_action(&self) -> Result<bool, AppError> {
+        Ok(self
+            .list_action_audit()?
+            .iter()
+            .any(|record| record.status == crate::models::PackageActionStatus::Running))
+    }
+
+    pub fn recover_incomplete_actions(&self) -> Result<usize, AppError> {
+        let mut recovered = 0;
+        for mut record in self.list_action_audit()? {
+            if record.status != crate::models::PackageActionStatus::Running {
+                continue;
+            }
+            record.status = crate::models::PackageActionStatus::Unknown;
+            record.error =
+                Some("应用在操作完成前退出；已重新扫描环境，但无法确认中断前已完成的步骤。".into());
+            record.finished_at = chrono::Utc::now().to_rfc3339();
+            self.save_action_audit(&record)?;
+            recovered += 1;
+        }
+        Ok(recovered)
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +309,33 @@ mod tests {
         let records = storage.list_action_audit().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].targets, vec!["jq"]);
+    }
+
+    #[test]
+    fn recovers_incomplete_action_after_a_successful_scan_boundary() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        storage
+            .save_action_audit(&PackageActionAuditRecord {
+                action_id: "action-running".into(),
+                plan_id: "plan-running".into(),
+                manager_id: PackageManagerId::Pnpm,
+                action: PackageAction::Upgrade,
+                targets: vec!["typescript".into()],
+                status: PackageActionStatus::Running,
+                command_preview: "pnpm update --global --ignore-scripts typescript".into(),
+                logs: vec![],
+                error: None,
+                started_at: "2026-07-11T00:00:00Z".into(),
+                finished_at: "2026-07-11T00:00:00Z".into(),
+            })
+            .unwrap();
+        assert!(storage.has_incomplete_action().unwrap());
+        assert_eq!(storage.recover_incomplete_actions().unwrap(), 1);
+        let record = storage.list_action_audit().unwrap().remove(0);
+        assert_eq!(record.status, PackageActionStatus::Unknown);
+        assert!(record.error.unwrap().contains("应用在操作完成前退出"));
+        assert!(!storage.has_incomplete_action().unwrap());
     }
 
     #[test]

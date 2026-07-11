@@ -95,6 +95,7 @@ pub async fn scan_environment(
         let scan =
             scan::scan_environment(&storage, &cancellation, &scan_id_for_progress, progress)?;
         storage.save_snapshot(&scan)?;
+        storage.recover_incomplete_actions()?;
         Ok(scan)
     })
     .await
@@ -311,7 +312,8 @@ pub fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppErr
 }
 
 #[tauri::command]
-pub async fn plan_homebrew_action(
+pub async fn plan_package_action(
+    manager_id: crate::models::PackageManagerId,
     action: PackageAction,
     targets: Vec<String>,
     storage: State<'_, Storage>,
@@ -320,7 +322,7 @@ pub async fn plan_homebrew_action(
     let storage = storage.inner().clone();
     let registry = registry.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        actions::create_homebrew_plan(&storage, &registry, action, targets)
+        actions::create_package_plan(&storage, &registry, manager_id, action, targets)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
@@ -357,13 +359,30 @@ pub async fn execute_package_action(
     let action_id_for_finish = action_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let started_at = Utc::now().to_rfc3339();
+        storage.save_action_audit(&PackageActionAuditRecord {
+            action_id: action_id.clone(),
+            plan_id: registered.plan.id.clone(),
+            manager_id: registered.plan.manager_id,
+            action: registered.plan.action,
+            targets: registered.plan.targets.clone(),
+            status: PackageActionStatus::Running,
+            command_preview: registered.plan.command_preview.clone(),
+            logs: Vec::new(),
+            error: None,
+            started_at: started_at.clone(),
+            // 运行中记录复用现有排序字段；最终结果会原位覆盖该时间。
+            finished_at: started_at.clone(),
+        })?;
         let baseline_summary = storage.list_snapshot_summaries()?.first().cloned();
         let baseline_scan = storage.latest_snapshot()?;
         emit_action_progress(
             &app,
             &action_id,
             PackageActionStatus::Running,
-            "开始执行已确认的 Homebrew 操作",
+            &format!(
+                "开始执行已确认的 {} 操作",
+                registered.plan.manager_id.as_str()
+            ),
             true,
         );
         let progress_app = app.clone();
@@ -445,7 +464,7 @@ pub async fn execute_package_action(
             result.status,
             match result.status {
                 PackageActionStatus::Succeeded => "操作完成，环境已重新扫描",
-                PackageActionStatus::Failed => "Homebrew 操作失败，环境已重新扫描",
+                PackageActionStatus::Failed => "包管理器操作失败，环境已重新扫描",
                 PackageActionStatus::Unknown => "操作状态未知，环境已重新扫描",
                 PackageActionStatus::Planned | PackageActionStatus::Running => {
                     "操作结束，环境已重新扫描"

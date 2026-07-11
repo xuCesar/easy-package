@@ -19,7 +19,7 @@ import type { PageId } from "./types";
 export function App() {
   const [page, setPage] = useState<PageId>("overview");
   const { data, isLoading, error, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport, getProjectDependencyGraph, getProjectSupplyChainReport, exportProjectSbom, applyEnvironment } = useDevPkg();
-  const packageActions = usePackageActions(applyEnvironment);
+  const packageActions = usePackageActions(applyEnvironment, data?.scannedAt);
   const history = useSnapshotHistory(data?.scannedAt);
 
   let content;

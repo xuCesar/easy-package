@@ -14,7 +14,7 @@ use commands::{
     execute_package_action, export_environment_report, export_project_sbom,
     export_snapshot_comparison_report, get_health_report, get_project_dependency_graph,
     get_project_supply_chain_report, get_scan_logs, get_scan_settings, list_package_action_audit,
-    list_packages, list_projects, list_snapshot_summaries, plan_homebrew_action, remove_scan_root,
+    list_packages, list_projects, list_snapshot_summaries, plan_package_action, remove_scan_root,
     scan_environment, update_scan_settings,
 };
 use storage::Storage;
@@ -50,7 +50,7 @@ pub fn run() {
             get_project_dependency_graph,
             get_project_supply_chain_report,
             export_project_sbom,
-            plan_homebrew_action,
+            plan_package_action,
             execute_package_action,
             cancel_package_action,
             list_package_action_audit,

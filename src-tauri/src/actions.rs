@@ -15,7 +15,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    adapters::runner::{redact_and_truncate, CommandRunner},
+    adapters::runner::{execution_trust, redact_and_truncate, CommandRunner},
     error::AppError,
     models::{
         ExecutionTrust, ManagerStatus, PackageAction, PackageActionPlan, PackageActionStatus,
@@ -42,6 +42,39 @@ pub struct ActionExecution {
     pub status: PackageActionStatus,
     pub logs: Vec<String>,
     pub error: Option<String>,
+}
+
+trait PackageActionRunner {
+    fn run(
+        &self,
+        executable: &Path,
+        args: &[String],
+        manager_name: &str,
+        cancelled: &AtomicBool,
+        on_log: &dyn Fn(String),
+    ) -> ActionExecution;
+}
+
+struct SystemPackageActionRunner;
+
+impl PackageActionRunner for SystemPackageActionRunner {
+    fn run(
+        &self,
+        executable: &Path,
+        args: &[String],
+        manager_name: &str,
+        cancelled: &AtomicBool,
+        on_log: &dyn Fn(String),
+    ) -> ActionExecution {
+        run_action_process(
+            executable,
+            args,
+            manager_name,
+            cancelled,
+            ACTION_TIMEOUT,
+            on_log,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -122,14 +155,26 @@ impl ActionRegistry {
     }
 }
 
-pub fn create_homebrew_plan(
+pub fn create_package_plan(
     storage: &Storage,
     registry: &ActionRegistry,
+    manager_id: PackageManagerId,
     action: PackageAction,
     targets: Vec<String>,
 ) -> Result<PackageActionPlan, AppError> {
     if !cfg!(target_os = "macos") {
-        return Err(AppError::Command("Homebrew 写操作当前仅支持 macOS".into()));
+        return Err(AppError::Command("软件包写操作当前仅支持 macOS".into()));
+    }
+    if !matches!(
+        manager_id,
+        PackageManagerId::Homebrew | PackageManagerId::Pnpm
+    ) {
+        return Err(AppError::Command("该包管理器暂不支持受控写操作".into()));
+    }
+    if storage.has_incomplete_action()? {
+        return Err(AppError::Command(
+            "PACKAGE_ACTION_RECOVERY_REQUIRED：上次操作可能中断，请先完成一次环境扫描".into(),
+        ));
     }
     let snapshot = storage
         .latest_snapshot()?
@@ -137,41 +182,58 @@ pub fn create_homebrew_plan(
     let manager = snapshot
         .managers
         .iter()
-        .find(|manager| manager.id == PackageManagerId::Homebrew)
-        .ok_or_else(|| AppError::Command("尚未发现 Homebrew".into()))?;
-    if !matches!(manager.status, ManagerStatus::Available)
-        || manager.execution_trust != ExecutionTrust::Managed
-    {
+        .find(|manager| manager.id == manager_id)
+        .ok_or_else(|| AppError::Command(format!("尚未发现 {}", manager_id.as_str())))?;
+    if !matches!(manager.status, ManagerStatus::Available) {
+        return Err(AppError::Command("包管理器可执行文件当前不可用".into()));
+    }
+    let trust_allowed = match manager_id {
+        PackageManagerId::Homebrew => manager.execution_trust == ExecutionTrust::Managed,
+        PackageManagerId::Pnpm => matches!(
+            manager.execution_trust,
+            ExecutionTrust::System | ExecutionTrust::Managed | ExecutionTrust::UserManaged
+        ),
+        _ => false,
+    };
+    if !trust_allowed {
         return Err(AppError::Command(
-            "Homebrew 可执行文件不可用或不在受信任的管理器目录中".into(),
+            "包管理器不在允许写操作的可信执行目录中".into(),
         ));
     }
     let executable = manager
         .executable_path
         .as_deref()
         .map(PathBuf::from)
-        .ok_or_else(|| AppError::Command("Homebrew 缺少可执行路径".into()))?;
-    validate_homebrew_executable(&executable)?;
+        .ok_or_else(|| AppError::Command("包管理器缺少可执行路径".into()))?;
+    match manager_id {
+        PackageManagerId::Homebrew => validate_homebrew_executable(&executable)?,
+        PackageManagerId::Pnpm => validate_pnpm_executable(&executable)?,
+        _ => unreachable!(),
+    }
 
     let installed = snapshot
         .packages
         .iter()
-        .filter(|package| package.manager_id == PackageManagerId::Homebrew)
+        .filter(|package| package.manager_id == manager_id)
         .map(|package| package.name.as_str())
         .collect::<Vec<_>>();
-    let specification = build_homebrew_spec(action, targets, &installed)?;
+    let specification = match manager_id {
+        PackageManagerId::Homebrew => build_homebrew_spec(action, targets, &installed)?,
+        PackageManagerId::Pnpm => build_pnpm_spec(action, targets, &installed)?,
+        _ => unreachable!(),
+    };
     let runner = CommandRunner::default();
     let mut warnings = specification.warnings;
     let mut preview_lines = Vec::new();
 
-    match action {
-        PackageAction::Install => {
+    match (manager_id, action) {
+        (PackageManagerId::Homebrew, PackageAction::Install) => {
             let target = &specification.targets[0];
             preview_lines.push(format!(
                 "Formula 名称已通过严格语法校验：{target}；存在性由 Homebrew 执行时验证。"
             ));
         }
-        PackageAction::Uninstall => {
+        (PackageManagerId::Homebrew, PackageAction::Uninstall) => {
             let target = &specification.targets[0];
             let output = runner.run_cancellable(
                 &executable,
@@ -196,7 +258,7 @@ pub fn create_homebrew_plan(
                 preview_lines.push("未发现依赖该 Formula 的已安装包。".into());
             }
         }
-        PackageAction::Cleanup => {
+        (PackageManagerId::Homebrew, PackageAction::Cleanup) => {
             let output = runner.run_cancellable(
                 &executable,
                 &["cleanup", "--dry-run"],
@@ -213,12 +275,45 @@ pub fn create_homebrew_plan(
                 preview_lines.push("Homebrew 未报告可清理内容。".into());
             }
         }
-        PackageAction::Upgrade => {
+        (PackageManagerId::Homebrew, PackageAction::Upgrade) => {
             preview_lines.push(format!(
                 "将升级 {} 个已安装 Formula。",
                 specification.targets.len()
             ));
         }
+        (PackageManagerId::Pnpm, PackageAction::Install) => preview_lines.push(format!(
+            "包名已通过严格校验：{}；固定禁用 lifecycle scripts。",
+            specification.targets[0]
+        )),
+        (PackageManagerId::Pnpm, PackageAction::Upgrade) => preview_lines.push(format!(
+            "将升级 {} 个已扫描的 pnpm 全局包；固定禁用 lifecycle scripts。",
+            specification.targets.len()
+        )),
+        (PackageManagerId::Pnpm, PackageAction::Uninstall) => preview_lines.push(format!(
+            "将移除已扫描的 pnpm 全局包 {}；固定禁用 lifecycle scripts。",
+            specification.targets[0]
+        )),
+        (PackageManagerId::Pnpm, PackageAction::Cleanup) => {
+            let output =
+                runner.run_cancellable(&executable, &["store", "path"], &AtomicBool::new(false));
+            if !output.success {
+                return Err(AppError::Command(format!(
+                    "无法确认 pnpm store 路径：{}",
+                    output.combined_output()
+                )));
+            }
+            preview_lines.push(format!(
+                "共享 store：{}",
+                redact_and_truncate(output.stdout.trim())
+            ));
+            if let Some(size) = manager.cache_size_bytes {
+                preview_lines.push(format!("当前扫描缓存大小：{} bytes", size));
+            }
+            warnings.push(
+                "pnpm store prune 没有可靠的 dry-run；被清理内容可能需要后续重新下载。".into(),
+            );
+        }
+        _ => unreachable!(),
     }
 
     let id = Uuid::new_v4().to_string();
@@ -229,7 +324,7 @@ pub fn create_homebrew_plan(
     );
     let plan = PackageActionPlan {
         id: id.clone(),
-        manager_id: PackageManagerId::Homebrew,
+        manager_id,
         action,
         targets: specification.targets,
         command_preview,
@@ -251,17 +346,38 @@ pub fn execute_registered_plan(
     cancelled: &AtomicBool,
     on_log: &dyn Fn(String),
 ) -> ActionExecution {
-    run_action_process(
+    let validation = match registered.plan.manager_id {
+        PackageManagerId::Homebrew => validate_homebrew_executable(&registered.executable),
+        PackageManagerId::Pnpm => validate_pnpm_executable(&registered.executable),
+        _ => Err(AppError::Command("该包管理器不支持受控写操作".into())),
+    };
+    if let Err(error) = validation {
+        return ActionExecution {
+            status: PackageActionStatus::Failed,
+            logs: Vec::new(),
+            error: Some(error.to_string()),
+        };
+    }
+    execute_with_runner(registered, cancelled, on_log, &SystemPackageActionRunner)
+}
+
+fn execute_with_runner(
+    registered: &RegisteredPlan,
+    cancelled: &AtomicBool,
+    on_log: &dyn Fn(String),
+    runner: &dyn PackageActionRunner,
+) -> ActionExecution {
+    runner.run(
         &registered.executable,
         &registered.args,
+        registered.plan.manager_id.as_str(),
         cancelled,
-        ACTION_TIMEOUT,
         on_log,
     )
 }
 
 #[derive(Debug)]
-struct HomebrewSpec {
+struct ActionSpec {
     targets: Vec<String>,
     args: Vec<String>,
     warnings: Vec<String>,
@@ -271,7 +387,7 @@ fn build_homebrew_spec(
     action: PackageAction,
     targets: Vec<String>,
     installed: &[&str],
-) -> Result<HomebrewSpec, AppError> {
+) -> Result<ActionSpec, AppError> {
     let expected = match action {
         PackageAction::Install | PackageAction::Uninstall => 1..=1,
         PackageAction::Upgrade => 1..=MAX_BATCH_TARGETS,
@@ -330,7 +446,97 @@ fn build_homebrew_spec(
     };
     let mut args = vec![command.into()];
     args.extend(normalized.iter().cloned());
-    Ok(HomebrewSpec {
+    Ok(ActionSpec {
+        targets: normalized,
+        args,
+        warnings,
+    })
+}
+
+fn build_pnpm_spec(
+    action: PackageAction,
+    targets: Vec<String>,
+    installed: &[&str],
+) -> Result<ActionSpec, AppError> {
+    let expected = match action {
+        PackageAction::Install | PackageAction::Uninstall => 1..=1,
+        PackageAction::Upgrade => 1..=MAX_BATCH_TARGETS,
+        PackageAction::Cleanup => 0..=0,
+    };
+    if !expected.contains(&targets.len()) {
+        return Err(AppError::Command(match action {
+            PackageAction::Install => "安装操作必须且只能指定一个 pnpm 包".into(),
+            PackageAction::Upgrade => {
+                format!("升级操作必须指定 1 至 {MAX_BATCH_TARGETS} 个 pnpm 全局包")
+            }
+            PackageAction::Uninstall => "卸载操作必须且只能指定一个 pnpm 全局包".into(),
+            PackageAction::Cleanup => "pnpm store 清理不能指定软件包".into(),
+        }));
+    }
+
+    let mut normalized = Vec::new();
+    for target in targets {
+        let target = target.trim().to_string();
+        if !is_valid_pnpm_package_name(&target) {
+            return Err(AppError::Command(format!("pnpm 包名不合法：{target}")));
+        }
+        if !normalized.contains(&target) {
+            normalized.push(target);
+        }
+    }
+    if matches!(action, PackageAction::Upgrade | PackageAction::Uninstall) {
+        if let Some(target) = normalized
+            .iter()
+            .find(|target| !installed.contains(&target.as_str()))
+        {
+            return Err(AppError::Command(format!(
+                "只能{}扫描结果中的 pnpm 全局包：{target}",
+                if action == PackageAction::Upgrade {
+                    "升级"
+                } else {
+                    "卸载"
+                }
+            )));
+        }
+    }
+
+    let mut warnings = vec![
+        "该操作会修改本机 pnpm 全局环境，无法保证自动回滚。".into(),
+        "执行固定使用 --ignore-scripts，不运行软件包 lifecycle scripts。".into(),
+        "操作期间请勿退出应用；异常退出后必须先重新扫描。".into(),
+    ];
+    if action == PackageAction::Install && installed.contains(&normalized[0].as_str()) {
+        warnings.push("目标包已经存在，pnpm 可能不会产生变化。".into());
+    }
+    if action == PackageAction::Cleanup {
+        warnings.push("pnpm store 可能被多个项目共享；清理后部分内容需要重新下载。".into());
+    }
+
+    let args = match action {
+        PackageAction::Install => vec![
+            "add".into(),
+            "--global".into(),
+            "--ignore-scripts".into(),
+            normalized[0].clone(),
+        ],
+        PackageAction::Upgrade => {
+            let mut args = vec![
+                "update".into(),
+                "--global".into(),
+                "--ignore-scripts".into(),
+            ];
+            args.extend(normalized.iter().cloned());
+            args
+        }
+        PackageAction::Uninstall => vec![
+            "remove".into(),
+            "--global".into(),
+            "--ignore-scripts".into(),
+            normalized[0].clone(),
+        ],
+        PackageAction::Cleanup => vec!["store".into(), "prune".into()],
+    };
+    Ok(ActionSpec {
         targets: normalized,
         args,
         warnings,
@@ -357,6 +563,28 @@ fn validate_homebrew_executable(executable: &Path) -> Result<(), AppError> {
     }
 }
 
+fn validate_pnpm_executable(executable: &Path) -> Result<(), AppError> {
+    if executable.file_name().and_then(|name| name.to_str()) != Some("pnpm") {
+        return Err(AppError::Command(
+            "pnpm 写操作仅允许扫描得到的 pnpm 可执行文件".into(),
+        ));
+    }
+    let canonical = executable
+        .canonicalize()
+        .map_err(|error| AppError::Command(format!("无法验证 pnpm 路径：{error}")))?;
+    if !canonical.is_file()
+        || !matches!(
+            execution_trust(&canonical, &[]),
+            ExecutionTrust::System | ExecutionTrust::Managed | ExecutionTrust::UserManaged
+        )
+    {
+        return Err(AppError::Command(
+            "pnpm 可执行文件不在允许写操作的可信目录中".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn is_valid_formula_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
@@ -369,6 +597,29 @@ fn is_valid_formula_name(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"/@+_.-".contains(&byte))
+}
+
+fn is_valid_pnpm_package_name(value: &str) -> bool {
+    if value.is_empty() || value.len() > 214 || value.starts_with('.') || value.contains("..") {
+        return false;
+    }
+    let valid_segment = |segment: &str| {
+        !segment.is_empty()
+            && segment.len() <= 128
+            && segment
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+    };
+    if let Some(scoped) = value.strip_prefix('@') {
+        let mut parts = scoped.split('/');
+        matches!((parts.next(), parts.next(), parts.next()), (Some(scope), Some(name), None) if valid_segment(scope) && valid_segment(name))
+    } else {
+        !value.contains('/') && !value.contains('@') && valid_segment(value)
+    }
 }
 
 fn plan_is_fresh(plan: &PackageActionPlan) -> bool {
@@ -400,6 +651,7 @@ fn parse_homebrew_dependents(output: &str) -> Vec<String> {
 fn run_action_process(
     executable: &Path,
     args: &[String],
+    manager_name: &str,
     cancelled: &AtomicBool,
     timeout: Duration,
     on_log: &dyn Fn(String),
@@ -458,7 +710,10 @@ fn run_action_process(
             Ok(Some(exit)) => {
                 break (
                     PackageActionStatus::Failed,
-                    Some(format!("Homebrew 退出码：{}", exit.code().unwrap_or(-1))),
+                    Some(format!(
+                        "{manager_name} 退出码：{}",
+                        exit.code().unwrap_or(-1)
+                    )),
                 )
             }
             Ok(None) => thread::sleep(Duration::from_millis(100)),
@@ -513,6 +768,40 @@ fn drain_progress(
 mod tests {
     use super::*;
 
+    struct FakeRunner {
+        status: PackageActionStatus,
+        calls: Mutex<Vec<(String, Vec<String>)>>,
+    }
+
+    impl PackageActionRunner for FakeRunner {
+        fn run(
+            &self,
+            _executable: &Path,
+            args: &[String],
+            manager_name: &str,
+            cancelled: &AtomicBool,
+            on_log: &dyn Fn(String),
+        ) -> ActionExecution {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((manager_name.into(), args.to_vec()));
+            if cancelled.load(Ordering::SeqCst) {
+                return ActionExecution {
+                    status: PackageActionStatus::Unknown,
+                    logs: vec![],
+                    error: Some("模拟取消；状态未知".into()),
+                };
+            }
+            on_log("模拟执行完成".into());
+            ActionExecution {
+                status: self.status,
+                logs: vec!["模拟执行完成".into()],
+                error: (self.status == PackageActionStatus::Failed).then(|| "模拟失败".into()),
+            }
+        }
+    }
+
     #[test]
     fn builds_only_explicit_homebrew_command_shapes() {
         let installed = ["git", "ripgrep", "node@22"];
@@ -532,6 +821,113 @@ mod tests {
         assert_eq!(uninstall.args, vec!["uninstall", "node@22"]);
         let cleanup = build_homebrew_spec(PackageAction::Cleanup, vec![], &installed).unwrap();
         assert_eq!(cleanup.args, vec!["cleanup"]);
+    }
+
+    #[test]
+    fn builds_only_explicit_pnpm_global_command_shapes() {
+        let installed = ["typescript", "@scope/tool"];
+        let install =
+            build_pnpm_spec(PackageAction::Install, vec!["eslint".into()], &installed).unwrap();
+        assert_eq!(
+            install.args,
+            vec!["add", "--global", "--ignore-scripts", "eslint"]
+        );
+        let upgrade = build_pnpm_spec(
+            PackageAction::Upgrade,
+            vec!["typescript".into(), "@scope/tool".into()],
+            &installed,
+        )
+        .unwrap();
+        assert_eq!(
+            upgrade.args,
+            vec![
+                "update",
+                "--global",
+                "--ignore-scripts",
+                "typescript",
+                "@scope/tool"
+            ]
+        );
+        let uninstall = build_pnpm_spec(
+            PackageAction::Uninstall,
+            vec!["@scope/tool".into()],
+            &installed,
+        )
+        .unwrap();
+        assert_eq!(
+            uninstall.args,
+            vec!["remove", "--global", "--ignore-scripts", "@scope/tool"]
+        );
+        let cleanup = build_pnpm_spec(PackageAction::Cleanup, vec![], &installed).unwrap();
+        assert_eq!(cleanup.args, vec!["store", "prune"]);
+    }
+
+    #[test]
+    fn generic_action_engine_accepts_a_fake_runner_without_spawning_package_managers() {
+        let spec = build_pnpm_spec(PackageAction::Install, vec!["eslint".into()], &[]).unwrap();
+        let registered = RegisteredPlan {
+            plan: PackageActionPlan {
+                id: "plan-fake".into(),
+                manager_id: PackageManagerId::Pnpm,
+                action: PackageAction::Install,
+                targets: spec.targets,
+                command_preview: "pnpm add --global --ignore-scripts eslint".into(),
+                warnings: spec.warnings,
+                preview_lines: vec![],
+                requires_network: true,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            executable: "/not/executed/pnpm".into(),
+            args: spec.args,
+        };
+        let runner = FakeRunner {
+            status: PackageActionStatus::Succeeded,
+            calls: Mutex::new(vec![]),
+        };
+        let progress = Mutex::new(vec![]);
+        let result = execute_with_runner(
+            &registered,
+            &AtomicBool::new(false),
+            &|line| progress.lock().unwrap().push(line),
+            &runner,
+        );
+        assert_eq!(result.status, PackageActionStatus::Succeeded);
+        assert_eq!(*progress.lock().unwrap(), vec!["模拟执行完成"]);
+        assert_eq!(
+            *runner.calls.lock().unwrap(),
+            vec![(
+                "pnpm".into(),
+                vec![
+                    "add".into(),
+                    "--global".into(),
+                    "--ignore-scripts".into(),
+                    "eslint".into()
+                ]
+            )]
+        );
+    }
+
+    #[test]
+    fn rejects_pnpm_specs_urls_paths_flags_and_unscanned_mutations() {
+        for target in [
+            "--force",
+            "pkg@next",
+            "@scope/pkg@1",
+            "https://example.com/pkg.tgz",
+            "file:../pkg",
+            "github:user/repo",
+            "../pkg",
+            "@scope",
+            "@scope/",
+        ] {
+            assert!(build_pnpm_spec(PackageAction::Install, vec![target.into()], &[]).is_err());
+        }
+        assert!(build_pnpm_spec(
+            PackageAction::Uninstall,
+            vec!["unknown".into()],
+            &["typescript"]
+        )
+        .is_err());
     }
 
     #[test]
@@ -632,6 +1028,7 @@ mod tests {
         let success = run_action_process(
             Path::new("/bin/echo"),
             &["installed jq".into()],
+            "test-manager",
             &AtomicBool::new(false),
             Duration::from_secs(2),
             &|line| streamed.lock().unwrap().push(line),
@@ -643,6 +1040,7 @@ mod tests {
         let failed = run_action_process(
             Path::new("/usr/bin/false"),
             &[],
+            "test-manager",
             &AtomicBool::new(false),
             Duration::from_secs(2),
             &|_| {},
@@ -657,6 +1055,7 @@ mod tests {
         let result = run_action_process(
             Path::new("/bin/sleep"),
             &["2".into()],
+            "test-manager",
             &AtomicBool::new(false),
             Duration::from_millis(30),
             &|_| {},
@@ -677,6 +1076,7 @@ mod tests {
         let result = run_action_process(
             Path::new("/bin/sleep"),
             &["2".into()],
+            "test-manager",
             &cancelled,
             Duration::from_secs(2),
             &|_| {},

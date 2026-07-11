@@ -257,7 +257,7 @@ export type PackageActionStatus = "planned" | "running" | "succeeded" | "failed"
 
 export interface PackageActionPlan {
   id: string;
-  managerId: "homebrew";
+  managerId: "homebrew" | "pnpm";
   action: PackageAction;
   targets: string[];
   commandPreview: string;
@@ -278,7 +278,7 @@ export interface PackageActionProgress {
 export interface PackageActionResult {
   actionId: string;
   planId: string;
-  managerId: "homebrew";
+  managerId: "homebrew" | "pnpm";
   action: PackageAction;
   targets: string[];
   status: PackageActionStatus;
@@ -294,7 +294,7 @@ export interface PackageActionResult {
 export interface PackageActionAuditRecord {
   actionId: string;
   planId: string;
-  managerId: "homebrew";
+  managerId: "homebrew" | "pnpm";
   action: PackageAction;
   targets: string[];
   status: PackageActionStatus;
@@ -390,7 +390,7 @@ export interface DevPkgApi {
   getProjectDependencyGraph(projectPath: string): Promise<ProjectDependencyGraph>;
   getProjectSupplyChainReport(projectPath: string): Promise<ProjectSupplyChainReport>;
   exportProjectSbom(projectPath: string): Promise<ReportExportResult>;
-  planHomebrewAction(action: PackageAction, targets: string[]): Promise<PackageActionPlan>;
+  planPackageAction(managerId: "homebrew" | "pnpm", action: PackageAction, targets: string[]): Promise<PackageActionPlan>;
   executePackageAction(planId: string): Promise<PackageActionResult>;
   cancelPackageAction(actionId: string): Promise<void>;
   listenToPackageActionProgress(listener: (progress: PackageActionProgress) => void): Promise<() => void>;

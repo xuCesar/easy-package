@@ -19,7 +19,7 @@ const initialState: PackageActionState = {
   isExecuting: false,
 };
 
-export function usePackageActions(onEnvironmentUpdated: (environment: EnvironmentScan) => void) {
+export function usePackageActions(onEnvironmentUpdated: (environment: EnvironmentScan) => void, scanVersion?: string) {
   const [state, setState] = useState(initialState);
   const activeActionId = useRef<string | undefined>(undefined);
 
@@ -34,6 +34,9 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
 
   useEffect(() => {
     void loadAudit();
+  }, [loadAudit, scanVersion]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void api.listenToPackageActionProgress((progress) => {
       activeActionId.current = progress.actionId;
@@ -42,12 +45,12 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
       unlisten = cleanup;
     });
     return () => unlisten?.();
-  }, [loadAudit]);
+  }, []);
 
-  const createPlan = useCallback(async (action: PackageAction, targets: string[]) => {
+  const createPlan = useCallback(async (managerId: "homebrew" | "pnpm", action: PackageAction, targets: string[]) => {
     setState((current) => ({ ...current, plan: undefined, result: undefined, progress: [], isPlanning: true, error: undefined }));
     try {
-      const plan = await api.planHomebrewAction(action, targets);
+      const plan = await api.planPackageAction(managerId, action, targets);
       setState((current) => ({ ...current, plan, isPlanning: false }));
       return plan;
     } catch (error) {

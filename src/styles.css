@@ -282,6 +282,7 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .write-boundary-banner div { display: grid; gap: 4px; }
 .write-boundary-banner strong { font-size: 11px; }
 .write-boundary-banner span { color: #c6a968; font-size: 10px; line-height: 1.5; }
+.action-manager-tabs { width: fit-content; margin-bottom: 10px; }
 .action-tabs { margin-bottom: 18px; }
 .action-builder, .action-plan, .action-progress-panel, .action-result { margin-bottom: 18px; }
 .action-builder__body { padding: 18px 20px; display: grid; gap: 16px; }
@@ -289,6 +290,8 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .action-input input, .action-input select { width: min(520px, 100%); min-height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px; outline: 0; color: var(--text); background: #09141f; }
 .action-input small, .formula-selection small { color: var(--text-3); font-size: 9px; line-height: 1.5; }
 .action-builder__body > .button { width: fit-content; }
+.audit-filter { display: flex; align-items: center; gap: 8px; }
+.audit-filter select { min-height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); background: var(--surface-2); font-size: 10px; }
 .formula-selection { display: grid; gap: 13px; }
 .formula-selection > div:first-child { display: grid; gap: 5px; }
 .formula-selection strong { font-size: 11px; }

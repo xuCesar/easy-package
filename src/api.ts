@@ -50,15 +50,21 @@ const emitMockActionProgress = (progress: PackageActionProgress) => {
 
 const actionLabel: Record<PackageAction, string> = { install: "install", upgrade: "upgrade", uninstall: "uninstall", cleanup: "cleanup" };
 
-const createMockActionPlan = (action: PackageAction, targets: string[]): PackageActionPlan => {
+const createMockActionPlan = (managerId: "homebrew" | "pnpm", action: PackageAction, targets: string[]): PackageActionPlan => {
   const id = crypto.randomUUID();
-  const warnings = ["该操作会修改本机 Homebrew 环境，无法保证自动回滚。", "操作期间请勿退出应用；若应用异常退出，请重新启动并刷新扫描确认实际状态。"];
-  if (action === "cleanup") warnings.push("缓存清理会删除 Homebrew 判定为可安全移除的旧下载和版本。");
+  const managerName = managerId === "homebrew" ? "Homebrew" : "pnpm";
+  const warnings = [`该操作会修改本机 ${managerName} 环境，无法保证自动回滚。`, "操作期间请勿退出应用；若应用异常退出，请重新启动并刷新扫描确认实际状态。"];
+  if (managerId === "pnpm") warnings.push("固定使用 --ignore-scripts，不运行软件包 lifecycle scripts。");
+  if (action === "cleanup") warnings.push(managerId === "homebrew" ? "缓存清理会删除 Homebrew 判定为可安全移除的旧下载和版本。" : "pnpm store 可能被多个项目共享；清理后可能需要重新下载依赖。");
+  const executable = managerId === "homebrew" ? "/opt/homebrew/bin/brew" : "~/.local/share/pnpm/pnpm";
+  const args = managerId === "homebrew"
+    ? `${actionLabel[action]}${targets.length ? ` ${targets.join(" ")}` : ""}`
+    : action === "cleanup" ? "store prune" : `${action === "install" ? "add" : action === "upgrade" ? "update" : "remove"} --global --ignore-scripts ${targets.join(" ")}`;
   const plan = {
-    id, managerId: "homebrew" as const, action, targets,
-    commandPreview: `/opt/homebrew/bin/brew ${actionLabel[action]}${targets.length ? ` ${targets.join(" ")}` : ""}`,
+    id, managerId, action, targets,
+    commandPreview: `${executable} ${args}`,
     warnings,
-    previewLines: action === "cleanup" ? ["Would remove: ~/Library/Caches/Homebrew/downloads/example.tar.gz"] : action === "uninstall" ? ["未发现依赖该 Formula 的已安装包。"] : action === "install" ? [`Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。`] : ["待升级 Formula 均来自当前扫描结果。"],
+    previewLines: managerId === "pnpm" && action === "cleanup" ? ["共享 store：~/.local/share/pnpm/store", "当前扫描缓存大小：3840000000 bytes"] : action === "cleanup" ? ["Would remove: ~/Library/Caches/Homebrew/downloads/example.tar.gz"] : action === "uninstall" ? [managerId === "homebrew" ? "未发现依赖该 Formula 的已安装包。" : `将移除 pnpm 全局包 ${targets[0]}。`] : action === "install" ? [managerId === "homebrew" ? `Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。` : `包名已通过严格校验：${targets[0]}；固定禁用 lifecycle scripts。`] : [`待升级 ${managerName} 软件包均来自当前扫描结果。`],
     requiresNetwork: action === "install" || action === "upgrade",
     createdAt: new Date().toISOString(),
   };
@@ -75,8 +81,8 @@ const mockActionComparison = (plan: PackageActionPlan): SnapshotComparison => ({
   changes: [{
     kind: plan.action === "install" ? "added" : plan.action === "uninstall" ? "removed" : "changed",
     entity: plan.action === "cleanup" ? "manager" : "package",
-    key: `homebrew:${plan.targets[0] ?? "cache"}`,
-    title: plan.action === "cleanup" ? "Homebrew 缓存信息已变化" : `${plan.targets[0]} 已${plan.action === "install" ? "安装" : plan.action === "uninstall" ? "移除" : "升级"}`,
+    key: `${plan.managerId}:${plan.targets[0] ?? "cache"}`,
+    title: plan.action === "cleanup" ? `${plan.managerId === "homebrew" ? "Homebrew" : "pnpm"} 缓存信息已变化` : `${plan.targets[0]} 已${plan.action === "install" ? "安装" : plan.action === "uninstall" ? "移除" : "升级"}`,
     description: "浏览器预览使用固定结果，不会修改本机环境。",
   }],
 });
@@ -226,9 +232,9 @@ const mockApi: DevPkgApi = {
   async exportProjectSbom() {
     return { saved: true };
   },
-  async planHomebrewAction(action, targets) {
+  async planPackageAction(managerId, action, targets) {
     await wait(80);
-    return createMockActionPlan(action, targets);
+    return createMockActionPlan(managerId, action, targets);
   },
   async executePackageAction(planId) {
     const plan = mockActionPlans.get(planId);
@@ -236,18 +242,19 @@ const mockApi: DevPkgApi = {
     mockActionPlans.delete(planId);
     const actionId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    for (const message of ["开始执行已确认的 Homebrew 操作", `brew ${actionLabel[plan.action]} 正在运行`, "正在重新扫描本机环境并计算变化"]) {
+    const managerName = plan.managerId === "homebrew" ? "Homebrew" : "pnpm";
+    for (const message of [`开始执行已确认的 ${managerName} 操作`, `${plan.managerId} ${actionLabel[plan.action]} 正在运行`, "正在重新扫描本机环境并计算变化"]) {
       emitMockActionProgress({ actionId, status: "running", message, cancellable: message !== "正在重新扫描本机环境并计算变化", timestamp: new Date().toISOString() });
       await wait(100);
       if (cancelledMockActions.delete(actionId)) {
-        const result: PackageActionResult = { actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: "unknown", commandPreview: plan.commandPreview, logs: [message], error: "操作已终止；包管理器状态未知，已强制重新扫描。", comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
+        const result: PackageActionResult = { actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: "unknown", commandPreview: plan.commandPreview, logs: [message], error: "操作已终止；包管理器状态未知，已强制重新扫描。", comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
         mockActionAudit.unshift({ ...result, comparison: undefined, environment: undefined } as PackageActionAuditRecord);
         emitMockActionProgress({ actionId, status: "unknown", message: "操作状态未知，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
         return result;
       }
     }
-    const result: PackageActionResult = { actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: "succeeded", commandPreview: plan.commandPreview, logs: [`brew ${actionLabel[plan.action]} 完成`], comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
-    mockActionAudit.unshift({ actionId, planId, managerId: "homebrew", action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, startedAt, finishedAt: result.finishedAt });
+    const result: PackageActionResult = { actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: "succeeded", commandPreview: plan.commandPreview, logs: [`${plan.managerId} ${actionLabel[plan.action]} 完成`], comparison: mockActionComparison(plan), environment: { ...mockScan, scannedAt: new Date().toISOString() }, startedAt, finishedAt: new Date().toISOString() };
+    mockActionAudit.unshift({ actionId, planId, managerId: plan.managerId, action: plan.action, targets: plan.targets, status: result.status, commandPreview: result.commandPreview, logs: result.logs, startedAt, finishedAt: result.finishedAt });
     emitMockActionProgress({ actionId, status: "succeeded", message: "操作完成，环境已重新扫描", cancellable: false, timestamp: result.finishedAt });
     return result;
   },
@@ -284,7 +291,7 @@ const tauriApi: DevPkgApi = {
   getProjectDependencyGraph: (projectPath) => invoke<ProjectDependencyGraph>("get_project_dependency_graph", { projectPath }),
   getProjectSupplyChainReport: (projectPath) => invoke<ProjectSupplyChainReport>("get_project_supply_chain_report", { projectPath }),
   exportProjectSbom: (projectPath) => invoke("export_project_sbom", { projectPath }),
-  planHomebrewAction: (action, targets) => invoke<PackageActionPlan>("plan_homebrew_action", { action, targets }),
+  planPackageAction: (managerId, action, targets) => invoke<PackageActionPlan>("plan_package_action", { managerId, action, targets }),
   executePackageAction: (planId) => invoke<PackageActionResult>("execute_package_action", { planId }),
   cancelPackageAction: (actionId) => invoke<void>("cancel_package_action", { actionId }),
   async listenToPackageActionProgress(listener) {

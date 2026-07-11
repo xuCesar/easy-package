@@ -6,6 +6,7 @@ import type { PackageActionPlan, PackageActionResult } from "../types";
 const packages = [
   { id: "homebrew:git", managerId: "homebrew" as const, name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system" as const, updateStatus: "available" as const },
   { id: "homebrew:ripgrep", managerId: "homebrew" as const, name: "ripgrep", version: "14.1.1", latestVersion: "14.1.1", scope: "system" as const, updateStatus: "upToDate" as const },
+  { id: "pnpm:typescript", managerId: "pnpm" as const, name: "typescript", version: "5.8.3", latestVersion: "5.9.3", scope: "global" as const, updateStatus: "available" as const },
 ];
 
 const plan: PackageActionPlan = {
@@ -35,13 +36,13 @@ describe("ActionCenterPage", () => {
     const { rerender } = render(<ActionCenterPage {...baseProps} />);
     fireEvent.change(screen.getByLabelText("待安装 Formula"), { target: { value: "jq" } });
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
-    expect(baseProps.onCreatePlan).toHaveBeenCalledWith("install", ["jq"]);
+    expect(baseProps.onCreatePlan).toHaveBeenCalledWith("homebrew", "install", ["jq"]);
 
     rerender(<ActionCenterPage {...baseProps} plan={plan} />);
     expect(screen.getByText("/opt/homebrew/bin/brew install jq")).toBeInTheDocument();
     const execute = screen.getByRole("button", { name: "确认并执行" });
     expect(execute).toBeDisabled();
-    fireEvent.click(screen.getByLabelText(/我已核对目标/));
+    fireEvent.click(screen.getByLabelText(/我已核对管理器/));
     expect(execute).toBeEnabled();
     fireEvent.click(execute);
     expect(baseProps.onExecute).toHaveBeenCalledOnce();
@@ -52,12 +53,34 @@ describe("ActionCenterPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "升级" }));
     fireEvent.click(screen.getByLabelText(/git/));
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
-    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("upgrade", ["git"]);
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("homebrew", "upgrade", ["git"]);
 
     fireEvent.click(screen.getByRole("tab", { name: "卸载" }));
     fireEvent.change(screen.getByLabelText("待卸载 Formula"), { target: { value: "ripgrep" } });
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
-    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("uninstall", ["ripgrep"]);
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("homebrew", "uninstall", ["ripgrep"]);
+  });
+
+  it("为 pnpm 生成固定禁用脚本的全局包计划", () => {
+    render(<ActionCenterPage {...baseProps} />);
+    fireEvent.click(screen.getByRole("tab", { name: "pnpm" }));
+    fireEvent.change(screen.getByLabelText("待安装 pnpm 全局包"), { target: { value: "eslint" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("pnpm", "install", ["eslint"]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "升级" }));
+    fireEvent.click(screen.getByLabelText(/typescript/));
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("pnpm", "upgrade", ["typescript"]);
+  });
+
+  it("阻止中断操作恢复前生成新计划并支持审计筛选", () => {
+    const interrupted = { ...plan, actionId: "action-running", planId: plan.id, status: "running" as const, logs: [], startedAt: "2026-07-11T00:00:00Z", finishedAt: "2026-07-11T00:00:00Z" };
+    render(<ActionCenterPage {...baseProps} audit={[interrupted]} />);
+    expect(screen.getByText(/上次操作可能中断/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成操作计划" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("审计管理器筛选"), { target: { value: "pnpm" } });
+    expect(screen.getByText("没有匹配的写操作记录")).toBeInTheDocument();
   });
 
   it("展示清理预览、执行进度、状态未知结果和审计记录", () => {
