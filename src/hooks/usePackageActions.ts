@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { EnvironmentScan, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult } from "../types";
+import type { EnvironmentScan, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, WritableManagerId } from "../types";
 
 interface PackageActionState {
   plan?: PackageActionPlan;
@@ -47,7 +47,7 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
     return () => unlisten?.();
   }, []);
 
-  const createPlan = useCallback(async (managerId: "homebrew" | "pnpm", action: PackageAction, targets: string[]) => {
+  const createPlan = useCallback(async (managerId: WritableManagerId, action: PackageAction, targets: string[]) => {
     setState((current) => ({ ...current, plan: undefined, result: undefined, progress: [], isPlanning: true, error: undefined }));
     try {
       const plan = await api.planPackageAction(managerId, action, targets);

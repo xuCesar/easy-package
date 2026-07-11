@@ -8,7 +8,7 @@ use std::{
         mpsc, Arc, Mutex,
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use chrono::Utc;
@@ -35,6 +35,23 @@ pub struct RegisteredPlan {
     pub plan: PackageActionPlan,
     pub executable: PathBuf,
     pub args: Vec<String>,
+    environment: Vec<(String, String)>,
+    executable_fingerprint: Option<ExecutableFingerprint>,
+    npm_context: Option<NpmExecutionContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExecutableFingerprint {
+    canonical_path: PathBuf,
+    size: u64,
+    modified_at: Option<SystemTime>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NpmExecutionContext {
+    node_fingerprint: ExecutableFingerprint,
+    prefix: PathBuf,
+    cache: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +66,7 @@ trait PackageActionRunner {
         &self,
         executable: &Path,
         args: &[String],
+        environment: &[(String, String)],
         manager_name: &str,
         cancelled: &AtomicBool,
         on_log: &dyn Fn(String),
@@ -62,6 +80,7 @@ impl PackageActionRunner for SystemPackageActionRunner {
         &self,
         executable: &Path,
         args: &[String],
+        environment: &[(String, String)],
         manager_name: &str,
         cancelled: &AtomicBool,
         on_log: &dyn Fn(String),
@@ -69,6 +88,7 @@ impl PackageActionRunner for SystemPackageActionRunner {
         run_action_process(
             executable,
             args,
+            environment,
             manager_name,
             cancelled,
             ACTION_TIMEOUT,
@@ -167,7 +187,7 @@ pub fn create_package_plan(
     }
     if !matches!(
         manager_id,
-        PackageManagerId::Homebrew | PackageManagerId::Pnpm
+        PackageManagerId::Homebrew | PackageManagerId::Npm | PackageManagerId::Pnpm
     ) {
         return Err(AppError::Command("该包管理器暂不支持受控写操作".into()));
     }
@@ -189,9 +209,9 @@ pub fn create_package_plan(
     }
     let trust_allowed = match manager_id {
         PackageManagerId::Homebrew => manager.execution_trust == ExecutionTrust::Managed,
-        PackageManagerId::Pnpm => matches!(
+        PackageManagerId::Npm | PackageManagerId::Pnpm => matches!(
             manager.execution_trust,
-            ExecutionTrust::System | ExecutionTrust::Managed | ExecutionTrust::UserManaged
+            ExecutionTrust::Managed | ExecutionTrust::UserManaged
         ),
         _ => false,
     };
@@ -207,6 +227,10 @@ pub fn create_package_plan(
         .ok_or_else(|| AppError::Command("包管理器缺少可执行路径".into()))?;
     match manager_id {
         PackageManagerId::Homebrew => validate_homebrew_executable(&executable)?,
+        PackageManagerId::Npm => {
+            validate_npm_executable(&executable)?;
+            validate_npm_active_node(&snapshot, &executable)?;
+        }
         PackageManagerId::Pnpm => validate_pnpm_executable(&executable)?,
         _ => unreachable!(),
     }
@@ -219,12 +243,14 @@ pub fn create_package_plan(
         .collect::<Vec<_>>();
     let specification = match manager_id {
         PackageManagerId::Homebrew => build_homebrew_spec(action, targets, &installed)?,
+        PackageManagerId::Npm => build_npm_spec(action, targets, &installed)?,
         PackageManagerId::Pnpm => build_pnpm_spec(action, targets, &installed)?,
         _ => unreachable!(),
     };
     let runner = CommandRunner::default();
     let mut warnings = specification.warnings;
     let mut preview_lines = Vec::new();
+    let mut npm_context = None;
 
     match (manager_id, action) {
         (PackageManagerId::Homebrew, PackageAction::Install) => {
@@ -281,6 +307,39 @@ pub fn create_package_plan(
                 specification.targets.len()
             ));
         }
+        (PackageManagerId::Npm, npm_action) => {
+            let (node_path, prefix, cache) = npm_preflight(&runner, &executable)?;
+            npm_context = Some(NpmExecutionContext {
+                node_fingerprint: capture_executable_fingerprint(&node_path)?,
+                prefix: prefix.clone(),
+                cache: cache.clone(),
+            });
+            preview_lines.push(format!("关联 Node.js：{}", node_path.to_string_lossy()));
+            preview_lines.push(format!("全局 prefix：{}", readable_action_path(&prefix)));
+            preview_lines.push(format!("缓存目录：{}", readable_action_path(&cache)));
+            match npm_action {
+                PackageAction::Install => preview_lines.push(format!(
+                    "包名已通过严格校验：{}；固定禁用 lifecycle scripts。",
+                    specification.targets[0]
+                )),
+                PackageAction::Upgrade => preview_lines.push(format!(
+                    "将升级 {} 个已扫描的 npm 全局包；固定禁用 lifecycle scripts。",
+                    specification.targets.len()
+                )),
+                PackageAction::Uninstall => preview_lines.push(format!(
+                    "将移除已扫描的 npm 全局包 {}；固定禁用 lifecycle scripts。",
+                    specification.targets[0]
+                )),
+                PackageAction::Cleanup => preview_lines.push(
+                    "仅执行 npm cache verify：校验缓存索引并回收无用内容，不强制清空缓存。".into(),
+                ),
+            }
+            if path_looks_read_only(&prefix) {
+                warnings.push(
+                    "npm global prefix 当前显示为只读；操作可能失败，应用不会请求 sudo。".into(),
+                );
+            }
+        }
         (PackageManagerId::Pnpm, PackageAction::Install) => preview_lines.push(format!(
             "包名已通过严格校验：{}；固定禁用 lifecycle scripts。",
             specification.targets[0]
@@ -335,6 +394,9 @@ pub fn create_package_plan(
     };
     registry.register(RegisteredPlan {
         plan: plan.clone(),
+        executable_fingerprint: Some(capture_executable_fingerprint(&executable)?),
+        npm_context,
+        environment: action_environment(manager_id),
         executable,
         args: specification.args,
     })?;
@@ -348,6 +410,7 @@ pub fn execute_registered_plan(
 ) -> ActionExecution {
     let validation = match registered.plan.manager_id {
         PackageManagerId::Homebrew => validate_homebrew_executable(&registered.executable),
+        PackageManagerId::Npm => validate_npm_executable(&registered.executable),
         PackageManagerId::Pnpm => validate_pnpm_executable(&registered.executable),
         _ => Err(AppError::Command("该包管理器不支持受控写操作".into())),
     };
@@ -357,6 +420,46 @@ pub fn execute_registered_plan(
             logs: Vec::new(),
             error: Some(error.to_string()),
         };
+    }
+    if let Some(expected) = registered.executable_fingerprint.as_ref() {
+        if let Err(error) = verify_executable_fingerprint(&registered.executable, expected) {
+            return ActionExecution {
+                status: PackageActionStatus::Failed,
+                logs: Vec::new(),
+                error: Some(error.to_string()),
+            };
+        }
+    }
+    if let Some(expected) = registered.npm_context.as_ref() {
+        let runner = CommandRunner::default();
+        let current =
+            npm_preflight(&runner, &registered.executable).and_then(|(node, prefix, cache)| {
+                Ok(NpmExecutionContext {
+                    node_fingerprint: capture_executable_fingerprint(&node)?,
+                    prefix,
+                    cache,
+                })
+            });
+        match current {
+            Ok(current) if &current == expected => {}
+            Ok(_) => {
+                return ActionExecution {
+                    status: PackageActionStatus::Failed,
+                    logs: Vec::new(),
+                    error: Some(
+                        "npm 的 Node.js、global prefix 或 cache 在确认后发生变化，请重新生成计划"
+                            .into(),
+                    ),
+                }
+            }
+            Err(error) => {
+                return ActionExecution {
+                    status: PackageActionStatus::Failed,
+                    logs: Vec::new(),
+                    error: Some(error.to_string()),
+                }
+            }
+        }
     }
     execute_with_runner(registered, cancelled, on_log, &SystemPackageActionRunner)
 }
@@ -370,6 +473,7 @@ fn execute_with_runner(
     runner.run(
         &registered.executable,
         &registered.args,
+        &registered.environment,
         registered.plan.manager_id.as_str(),
         cancelled,
         on_log,
@@ -477,7 +581,7 @@ fn build_pnpm_spec(
     let mut normalized = Vec::new();
     for target in targets {
         let target = target.trim().to_string();
-        if !is_valid_pnpm_package_name(&target) {
+        if !is_valid_registry_package_name(&target) {
             return Err(AppError::Command(format!("pnpm 包名不合法：{target}")));
         }
         if !normalized.contains(&target) {
@@ -498,6 +602,11 @@ fn build_pnpm_spec(
                 }
             )));
         }
+    }
+    if action != PackageAction::Cleanup && normalized.iter().any(|target| target == "pnpm") {
+        return Err(AppError::Command(
+            "不允许通过 pnpm 写操作修改 pnpm 自身；请使用独立运行时管理流程".into(),
+        ));
     }
 
     let mut warnings = vec![
@@ -543,6 +652,100 @@ fn build_pnpm_spec(
     })
 }
 
+fn build_npm_spec(
+    action: PackageAction,
+    targets: Vec<String>,
+    installed: &[&str],
+) -> Result<ActionSpec, AppError> {
+    let expected = match action {
+        PackageAction::Install | PackageAction::Uninstall => 1..=1,
+        PackageAction::Upgrade => 1..=MAX_BATCH_TARGETS,
+        PackageAction::Cleanup => 0..=0,
+    };
+    if !expected.contains(&targets.len()) {
+        return Err(AppError::Command(match action {
+            PackageAction::Install => "安装操作必须且只能指定一个 npm 包".into(),
+            PackageAction::Upgrade => {
+                format!("升级操作必须指定 1 至 {MAX_BATCH_TARGETS} 个 npm 全局包")
+            }
+            PackageAction::Uninstall => "卸载操作必须且只能指定一个 npm 全局包".into(),
+            PackageAction::Cleanup => "npm 缓存校验不能指定软件包".into(),
+        }));
+    }
+    let mut normalized = Vec::new();
+    for target in targets {
+        let target = target.trim().to_string();
+        if !is_valid_registry_package_name(&target) {
+            return Err(AppError::Command(format!("npm 包名不合法：{target}")));
+        }
+        if !normalized.contains(&target) {
+            normalized.push(target);
+        }
+    }
+    if matches!(action, PackageAction::Upgrade | PackageAction::Uninstall) {
+        if let Some(target) = normalized
+            .iter()
+            .find(|target| !installed.contains(&target.as_str()))
+        {
+            return Err(AppError::Command(format!(
+                "只能{}扫描结果中的 npm 全局包：{target}",
+                if action == PackageAction::Upgrade {
+                    "升级"
+                } else {
+                    "卸载"
+                }
+            )));
+        }
+    }
+    if action != PackageAction::Cleanup && normalized.iter().any(|target| target == "npm") {
+        return Err(AppError::Command(
+            "不允许通过 npm 写操作修改 npm 自身；请使用独立 Node.js 运行时管理流程".into(),
+        ));
+    }
+    let mut warnings = vec![
+        "该操作会修改本机 npm 全局环境，无法保证自动回滚。".into(),
+        "执行固定使用 --ignore-scripts，不运行软件包 lifecycle scripts。".into(),
+        "部分 CLI 依赖安装脚本，禁用脚本后功能可能不完整。".into(),
+        "操作期间请勿退出应用；异常退出后必须先重新扫描。".into(),
+    ];
+    if action == PackageAction::Install && installed.contains(&normalized[0].as_str()) {
+        warnings.push("目标包已经存在，npm 可能不会产生变化。".into());
+    }
+    if action == PackageAction::Cleanup {
+        warnings
+            .push("npm cache verify 会校验缓存索引并回收无用内容，但不会执行强制完整清空。".into());
+    }
+    let args = match action {
+        PackageAction::Install => vec![
+            "install".into(),
+            "--global".into(),
+            "--ignore-scripts".into(),
+            normalized[0].clone(),
+        ],
+        PackageAction::Upgrade => {
+            let mut args = vec![
+                "update".into(),
+                "--global".into(),
+                "--ignore-scripts".into(),
+            ];
+            args.extend(normalized.iter().cloned());
+            args
+        }
+        PackageAction::Uninstall => vec![
+            "uninstall".into(),
+            "--global".into(),
+            "--ignore-scripts".into(),
+            normalized[0].clone(),
+        ],
+        PackageAction::Cleanup => vec!["cache".into(), "verify".into()],
+    };
+    Ok(ActionSpec {
+        targets: normalized,
+        args,
+        warnings,
+    })
+}
+
 fn validate_homebrew_executable(executable: &Path) -> Result<(), AppError> {
     let canonical = executable
         .canonicalize()
@@ -559,6 +762,48 @@ fn validate_homebrew_executable(executable: &Path) -> Result<(), AppError> {
     } else {
         Err(AppError::Command(
             "Homebrew 写操作仅允许受信任的标准安装路径".into(),
+        ))
+    }
+}
+
+fn action_environment(manager_id: PackageManagerId) -> Vec<(String, String)> {
+    if manager_id == PackageManagerId::Homebrew {
+        vec![
+            ("HOMEBREW_NO_AUTO_UPDATE".into(), "1".into()),
+            ("HOMEBREW_NO_ANALYTICS".into(), "1".into()),
+            ("HOMEBREW_NO_ENV_HINTS".into(), "1".into()),
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
+fn capture_executable_fingerprint(path: &Path) -> Result<ExecutableFingerprint, AppError> {
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|error| AppError::Command(format!("无法验证包管理器路径：{error}")))?;
+    let metadata = canonical_path
+        .metadata()
+        .map_err(|error| AppError::Command(format!("无法读取包管理器文件信息：{error}")))?;
+    if !metadata.is_file() {
+        return Err(AppError::Command("包管理器路径不是普通文件".into()));
+    }
+    Ok(ExecutableFingerprint {
+        canonical_path,
+        size: metadata.len(),
+        modified_at: metadata.modified().ok(),
+    })
+}
+
+fn verify_executable_fingerprint(
+    path: &Path,
+    expected: &ExecutableFingerprint,
+) -> Result<(), AppError> {
+    if &capture_executable_fingerprint(path)? == expected {
+        Ok(())
+    } else {
+        Err(AppError::Command(
+            "包管理器可执行文件在计划确认后发生变化，请重新生成计划".into(),
         ))
     }
 }
@@ -585,6 +830,131 @@ fn validate_pnpm_executable(executable: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_npm_executable(executable: &Path) -> Result<(), AppError> {
+    if executable.file_name().and_then(|name| name.to_str()) != Some("npm") {
+        return Err(AppError::Command(
+            "npm 写操作仅允许扫描得到的 npm 可执行文件".into(),
+        ));
+    }
+    let canonical = executable
+        .canonicalize()
+        .map_err(|error| AppError::Command(format!("无法验证 npm 路径：{error}")))?;
+    let npm_trust = execution_trust(&canonical, &[]);
+    if !canonical.is_file()
+        || !matches!(
+            npm_trust,
+            ExecutionTrust::Managed | ExecutionTrust::UserManaged
+        )
+    {
+        return Err(AppError::Command(
+            "npm 可执行文件不在允许写操作的可信目录中".into(),
+        ));
+    }
+    let node = executable
+        .parent()
+        .map(|directory| directory.join("node"))
+        .ok_or_else(|| AppError::Command("无法定位 npm 关联的 Node.js".into()))?;
+    let node_canonical = node.canonicalize().map_err(|_| {
+        AppError::Command("npm 同目录缺少 Node.js；为避免 PATH 运行时错配，已拒绝写操作".into())
+    })?;
+    if !node_canonical.is_file() || execution_trust(&node_canonical, &[]) != npm_trust {
+        return Err(AppError::Command(
+            "npm 与同目录 Node.js 的信任来源不一致，已拒绝写操作".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_npm_active_node(
+    snapshot: &crate::models::EnvironmentScan,
+    executable: &Path,
+) -> Result<(), AppError> {
+    let sibling = executable
+        .parent()
+        .map(|directory| directory.join("node"))
+        .and_then(|path| path.canonicalize().ok())
+        .ok_or_else(|| AppError::Command("无法验证 npm 同目录 Node.js".into()))?;
+    let active = snapshot
+        .path_observations
+        .iter()
+        .find(|observation| observation.command == "node")
+        .and_then(|observation| observation.active_path.as_deref())
+        .map(PathBuf::from)
+        .and_then(|path| path.canonicalize().ok())
+        .ok_or_else(|| AppError::Command("扫描快照缺少可验证的 PATH Node.js".into()))?;
+    if active != sibling {
+        return Err(AppError::Command(format!(
+            "npm 关联 Node.js 与 PATH 当前 Node.js 不一致：{}；请先解决运行时冲突",
+            readable_action_path(&active)
+        )));
+    }
+    Ok(())
+}
+
+fn npm_preflight(
+    runner: &CommandRunner,
+    executable: &Path,
+) -> Result<(PathBuf, PathBuf, PathBuf), AppError> {
+    let node = executable
+        .parent()
+        .map(|directory| directory.join("node"))
+        .ok_or_else(|| AppError::Command("无法定位 npm 关联的 Node.js".into()))?;
+    let prefix = npm_config_path(runner, executable, "prefix")?;
+    let cache = npm_config_path(runner, executable, "cache")?;
+    Ok((node, prefix, cache))
+}
+
+fn npm_config_path(
+    runner: &CommandRunner,
+    executable: &Path,
+    key: &str,
+) -> Result<PathBuf, AppError> {
+    let output =
+        runner.run_cancellable(executable, &["config", "get", key], &AtomicBool::new(false));
+    if !output.success {
+        return Err(AppError::Command(format!(
+            "无法读取 npm {key}：{}",
+            output.combined_output()
+        )));
+    }
+    let value = output.stdout.trim();
+    if value.is_empty() || value.lines().count() != 1 {
+        return Err(AppError::Command(format!("npm {key} 返回了无效路径")));
+    }
+    let path = PathBuf::from(value);
+    if !path.is_absolute() || !is_allowed_npm_data_path(&path) {
+        return Err(AppError::Command(format!(
+            "npm {key} 不在允许的用户或受管理目录中：{}",
+            redact_and_truncate(value)
+        )));
+    }
+    Ok(path)
+}
+
+fn is_allowed_npm_data_path(path: &Path) -> bool {
+    path.starts_with("/opt/homebrew")
+        || path.starts_with("/usr/local")
+        || dirs::home_dir().is_some_and(|home| path.starts_with(home))
+}
+
+fn path_looks_read_only(path: &Path) -> bool {
+    path.metadata()
+        .ok()
+        .or_else(|| path.parent().and_then(|parent| parent.metadata().ok()))
+        .map(|metadata| metadata.permissions().readonly())
+        .unwrap_or(false)
+}
+
+fn readable_action_path(path: &Path) -> String {
+    let value = path.to_string_lossy().into_owned();
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(relative) = path.strip_prefix(home) {
+            return format!("~/{}", relative.to_string_lossy());
+        }
+    }
+    value
+}
+
 fn is_valid_formula_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
@@ -599,7 +969,7 @@ fn is_valid_formula_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"/@+_.-".contains(&byte))
 }
 
-fn is_valid_pnpm_package_name(value: &str) -> bool {
+fn is_valid_registry_package_name(value: &str) -> bool {
     if value.is_empty() || value.len() > 214 || value.starts_with('.') || value.contains("..") {
         return false;
     }
@@ -651,6 +1021,7 @@ fn parse_homebrew_dependents(output: &str) -> Vec<String> {
 fn run_action_process(
     executable: &Path,
     args: &[String],
+    environment: &[(String, String)],
     manager_name: &str,
     cancelled: &AtomicBool,
     timeout: Duration,
@@ -659,9 +1030,7 @@ fn run_action_process(
     let mut child = match Command::new(executable)
         .args(args)
         .env("NO_COLOR", "1")
-        .env("HOMEBREW_NO_AUTO_UPDATE", "1")
-        .env("HOMEBREW_NO_ANALYTICS", "1")
-        .env("HOMEBREW_NO_ENV_HINTS", "1")
+        .envs(environment.iter().cloned())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -778,6 +1147,7 @@ mod tests {
             &self,
             _executable: &Path,
             args: &[String],
+            _environment: &[(String, String)],
             manager_name: &str,
             cancelled: &AtomicBool,
             on_log: &dyn Fn(String),
@@ -863,6 +1233,125 @@ mod tests {
     }
 
     #[test]
+    fn builds_only_explicit_npm_global_command_shapes() {
+        let installed = ["typescript", "@scope/tool"];
+        let install =
+            build_npm_spec(PackageAction::Install, vec!["eslint".into()], &installed).unwrap();
+        assert_eq!(
+            install.args,
+            vec!["install", "--global", "--ignore-scripts", "eslint"]
+        );
+        let upgrade = build_npm_spec(
+            PackageAction::Upgrade,
+            vec!["typescript".into(), "@scope/tool".into()],
+            &installed,
+        )
+        .unwrap();
+        assert_eq!(
+            upgrade.args,
+            vec![
+                "update",
+                "--global",
+                "--ignore-scripts",
+                "typescript",
+                "@scope/tool"
+            ]
+        );
+        let uninstall = build_npm_spec(
+            PackageAction::Uninstall,
+            vec!["@scope/tool".into()],
+            &installed,
+        )
+        .unwrap();
+        assert_eq!(
+            uninstall.args,
+            vec!["uninstall", "--global", "--ignore-scripts", "@scope/tool"]
+        );
+        let cleanup = build_npm_spec(PackageAction::Cleanup, vec![], &installed).unwrap();
+        assert_eq!(cleanup.args, vec!["cache", "verify"]);
+    }
+
+    #[test]
+    fn rejects_npm_specs_urls_paths_flags_and_unscanned_mutations() {
+        for target in [
+            "--force",
+            "pkg@next",
+            "@scope/pkg@1",
+            "https://example.com/pkg.tgz",
+            "file:../pkg",
+            "workspace:*",
+            "github:user/repo",
+            "../pkg",
+        ] {
+            assert!(build_npm_spec(PackageAction::Install, vec![target.into()], &[]).is_err());
+        }
+        assert!(build_npm_spec(
+            PackageAction::Upgrade,
+            vec!["unknown".into()],
+            &["typescript"]
+        )
+        .is_err());
+        assert!(build_npm_spec(PackageAction::Install, vec!["npm".into()], &[]).is_err());
+    }
+
+    #[test]
+    fn isolates_manager_environment_and_detects_executable_changes() {
+        assert!(action_environment(PackageManagerId::Npm).is_empty());
+        assert!(action_environment(PackageManagerId::Pnpm).is_empty());
+        assert!(action_environment(PackageManagerId::Homebrew)
+            .iter()
+            .any(|(key, _)| key == "HOMEBREW_NO_AUTO_UPDATE"));
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("tool");
+        std::fs::write(&executable, "first").unwrap();
+        let before = capture_executable_fingerprint(&executable).unwrap();
+        std::fs::write(&executable, "second-longer").unwrap();
+        let after = capture_executable_fingerprint(&executable).unwrap();
+        assert_ne!(before, after);
+        assert!(verify_executable_fingerprint(&executable, &before).is_err());
+    }
+
+    #[test]
+    fn restricts_npm_data_paths_to_user_and_managed_roots() {
+        assert!(is_allowed_npm_data_path(Path::new("/opt/homebrew/lib")));
+        assert!(is_allowed_npm_data_path(Path::new(
+            "/usr/local/lib/node_modules"
+        )));
+        assert!(!is_allowed_npm_data_path(Path::new(
+            "/usr/lib/node_modules"
+        )));
+        assert!(!is_allowed_npm_data_path(Path::new("/tmp/npm-prefix")));
+    }
+
+    #[test]
+    fn rejects_npm_when_path_node_differs_from_its_sibling_runtime() {
+        let directory = tempfile::tempdir().unwrap();
+        let npm_directory = directory.path().join("npm-bin");
+        let other_directory = directory.path().join("other-bin");
+        std::fs::create_dir_all(&npm_directory).unwrap();
+        std::fs::create_dir_all(&other_directory).unwrap();
+        let npm = npm_directory.join("npm");
+        let sibling_node = npm_directory.join("node");
+        let other_node = other_directory.join("node");
+        for path in [&npm, &sibling_node, &other_node] {
+            std::fs::write(path, "fixture").unwrap();
+        }
+        let scan = |active: &Path| {
+            serde_json::from_value::<crate::models::EnvironmentScan>(serde_json::json!({
+                "managers": [], "packages": [], "projects": [], "scanRoots": [],
+                "healthIssues": [], "logs": [], "pathObservations": [{
+                    "command": "node", "activePath": active, "alternatives": [], "hasConflict": false
+                }],
+                "scannedAt": "2026-07-11T00:00:00Z", "partialFailures": 0
+            }))
+            .unwrap()
+        };
+        assert!(validate_npm_active_node(&scan(&sibling_node), &npm).is_ok());
+        assert!(validate_npm_active_node(&scan(&other_node), &npm).is_err());
+    }
+
+    #[test]
     fn generic_action_engine_accepts_a_fake_runner_without_spawning_package_managers() {
         let spec = build_pnpm_spec(PackageAction::Install, vec!["eslint".into()], &[]).unwrap();
         let registered = RegisteredPlan {
@@ -879,6 +1368,9 @@ mod tests {
             },
             executable: "/not/executed/pnpm".into(),
             args: spec.args,
+            environment: vec![],
+            executable_fingerprint: None,
+            npm_context: None,
         };
         let runner = FakeRunner {
             status: PackageActionStatus::Succeeded,
@@ -928,6 +1420,7 @@ mod tests {
             &["typescript"]
         )
         .is_err());
+        assert!(build_pnpm_spec(PackageAction::Install, vec!["pnpm".into()], &[]).is_err());
     }
 
     #[test]
@@ -985,6 +1478,9 @@ mod tests {
                 plan,
                 executable: "/bin/echo".into(),
                 args: vec!["cleanup".into()],
+                environment: vec![],
+                executable_fingerprint: None,
+                npm_context: None,
             })
             .unwrap();
         assert!(registry.take("plan-1").is_ok());
@@ -1016,6 +1512,9 @@ mod tests {
                 plan,
                 executable: "/bin/echo".into(),
                 args: vec!["cleanup".into()],
+                environment: vec![],
+                executable_fingerprint: None,
+                npm_context: None,
             })
             .unwrap();
         assert!(registry.take("expired").is_err());
@@ -1028,6 +1527,7 @@ mod tests {
         let success = run_action_process(
             Path::new("/bin/echo"),
             &["installed jq".into()],
+            &[],
             "test-manager",
             &AtomicBool::new(false),
             Duration::from_secs(2),
@@ -1039,6 +1539,7 @@ mod tests {
 
         let failed = run_action_process(
             Path::new("/usr/bin/false"),
+            &[],
             &[],
             "test-manager",
             &AtomicBool::new(false),
@@ -1055,6 +1556,7 @@ mod tests {
         let result = run_action_process(
             Path::new("/bin/sleep"),
             &["2".into()],
+            &[],
             "test-manager",
             &AtomicBool::new(false),
             Duration::from_millis(30),
@@ -1076,6 +1578,7 @@ mod tests {
         let result = run_action_process(
             Path::new("/bin/sleep"),
             &["2".into()],
+            &[],
             "test-manager",
             &cancelled,
             Duration::from_secs(2),

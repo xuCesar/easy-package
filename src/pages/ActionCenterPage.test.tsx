@@ -6,6 +6,7 @@ import type { PackageActionPlan, PackageActionResult } from "../types";
 const packages = [
   { id: "homebrew:git", managerId: "homebrew" as const, name: "git", version: "2.49.0", latestVersion: "2.50.1", scope: "system" as const, updateStatus: "available" as const },
   { id: "homebrew:ripgrep", managerId: "homebrew" as const, name: "ripgrep", version: "14.1.1", latestVersion: "14.1.1", scope: "system" as const, updateStatus: "upToDate" as const },
+  { id: "npm:npm-check-updates", managerId: "npm" as const, name: "npm-check-updates", version: "18.0.0", latestVersion: "19.0.0", scope: "global" as const, updateStatus: "available" as const },
   { id: "pnpm:typescript", managerId: "pnpm" as const, name: "typescript", version: "5.8.3", latestVersion: "5.9.3", scope: "global" as const, updateStatus: "available" as const },
 ];
 
@@ -72,6 +73,19 @@ describe("ActionCenterPage", () => {
     fireEvent.click(screen.getByLabelText(/typescript/));
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
     expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("pnpm", "upgrade", ["typescript"]);
+  });
+
+  it("为 npm 生成受控全局包计划并区分缓存校验语义", () => {
+    render(<ActionCenterPage {...baseProps} />);
+    fireEvent.click(screen.getByRole("tab", { name: "npm" }));
+    fireEvent.change(screen.getByLabelText("待安装 npm 全局包"), { target: { value: "eslint" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("npm", "install", ["eslint"]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "缓存校验与回收" }));
+    expect(screen.getByText(/不会执行 npm cache clean --force/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("npm", "cleanup", []);
   });
 
   it("阻止中断操作恢复前生成新计划并支持审计筛选", () => {

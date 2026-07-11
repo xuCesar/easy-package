@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog } from "./types";
+import type { DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog, WritableManagerId } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -50,21 +50,30 @@ const emitMockActionProgress = (progress: PackageActionProgress) => {
 
 const actionLabel: Record<PackageAction, string> = { install: "install", upgrade: "upgrade", uninstall: "uninstall", cleanup: "cleanup" };
 
-const createMockActionPlan = (managerId: "homebrew" | "pnpm", action: PackageAction, targets: string[]): PackageActionPlan => {
+const createMockActionPlan = (managerId: WritableManagerId, action: PackageAction, targets: string[]): PackageActionPlan => {
   const id = crypto.randomUUID();
-  const managerName = managerId === "homebrew" ? "Homebrew" : "pnpm";
+  const managerName = managerId === "homebrew" ? "Homebrew" : managerId;
   const warnings = [`该操作会修改本机 ${managerName} 环境，无法保证自动回滚。`, "操作期间请勿退出应用；若应用异常退出，请重新启动并刷新扫描确认实际状态。"];
-  if (managerId === "pnpm") warnings.push("固定使用 --ignore-scripts，不运行软件包 lifecycle scripts。");
-  if (action === "cleanup") warnings.push(managerId === "homebrew" ? "缓存清理会删除 Homebrew 判定为可安全移除的旧下载和版本。" : "pnpm store 可能被多个项目共享；清理后可能需要重新下载依赖。");
-  const executable = managerId === "homebrew" ? "/opt/homebrew/bin/brew" : "~/.local/share/pnpm/pnpm";
+  if (managerId !== "homebrew") warnings.push("固定使用 --ignore-scripts，不运行软件包 lifecycle scripts。");
+  if (action === "cleanup") warnings.push(managerId === "homebrew" ? "缓存清理会删除 Homebrew 判定为可安全移除的旧下载和版本。" : managerId === "pnpm" ? "pnpm store 可能被多个项目共享；清理后可能需要重新下载依赖。" : "npm cache verify 会校验并回收缓存，但不会强制清空。");
+  const executable = managerId === "homebrew" ? "/opt/homebrew/bin/brew" : managerId === "pnpm" ? "~/.local/share/pnpm/pnpm" : "/opt/homebrew/bin/npm";
   const args = managerId === "homebrew"
     ? `${actionLabel[action]}${targets.length ? ` ${targets.join(" ")}` : ""}`
-    : action === "cleanup" ? "store prune" : `${action === "install" ? "add" : action === "upgrade" ? "update" : "remove"} --global --ignore-scripts ${targets.join(" ")}`;
+    : managerId === "pnpm"
+      ? action === "cleanup" ? "store prune" : `${action === "install" ? "add" : action === "upgrade" ? "update" : "remove"} --global --ignore-scripts ${targets.join(" ")}`
+      : action === "cleanup" ? "cache verify" : `${action === "install" ? "install" : action === "upgrade" ? "update" : "uninstall"} --global --ignore-scripts ${targets.join(" ")}`;
+  const previewLines = managerId === "npm"
+    ? ["关联 Node.js：/opt/homebrew/bin/node", "全局 prefix：/opt/homebrew", "缓存目录：~/.npm", action === "cleanup" ? "仅执行 npm cache verify：校验缓存索引并回收无用内容，不强制清空缓存。" : `包名已通过严格校验：${targets[0] ?? "已扫描目标"}；固定禁用 lifecycle scripts。`]
+    : managerId === "pnpm" && action === "cleanup" ? ["共享 store：~/.local/share/pnpm/store", "当前扫描缓存大小：3840000000 bytes"]
+      : action === "cleanup" ? ["Would remove: ~/Library/Caches/Homebrew/downloads/example.tar.gz"]
+        : action === "uninstall" ? [managerId === "homebrew" ? "未发现依赖该 Formula 的已安装包。" : `将移除 pnpm 全局包 ${targets[0]}。`]
+          : action === "install" ? [managerId === "homebrew" ? `Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。` : `包名已通过严格校验：${targets[0]}；固定禁用 lifecycle scripts。`]
+            : [`待升级 ${managerName} 软件包均来自当前扫描结果。`];
   const plan = {
     id, managerId, action, targets,
     commandPreview: `${executable} ${args}`,
     warnings,
-    previewLines: managerId === "pnpm" && action === "cleanup" ? ["共享 store：~/.local/share/pnpm/store", "当前扫描缓存大小：3840000000 bytes"] : action === "cleanup" ? ["Would remove: ~/Library/Caches/Homebrew/downloads/example.tar.gz"] : action === "uninstall" ? [managerId === "homebrew" ? "未发现依赖该 Formula 的已安装包。" : `将移除 pnpm 全局包 ${targets[0]}。`] : action === "install" ? [managerId === "homebrew" ? `Formula 名称已通过严格语法校验：${targets[0]}；存在性由 Homebrew 执行时验证。` : `包名已通过严格校验：${targets[0]}；固定禁用 lifecycle scripts。`] : [`待升级 ${managerName} 软件包均来自当前扫描结果。`],
+    previewLines,
     requiresNetwork: action === "install" || action === "upgrade",
     createdAt: new Date().toISOString(),
   };
@@ -82,7 +91,7 @@ const mockActionComparison = (plan: PackageActionPlan): SnapshotComparison => ({
     kind: plan.action === "install" ? "added" : plan.action === "uninstall" ? "removed" : "changed",
     entity: plan.action === "cleanup" ? "manager" : "package",
     key: `${plan.managerId}:${plan.targets[0] ?? "cache"}`,
-    title: plan.action === "cleanup" ? `${plan.managerId === "homebrew" ? "Homebrew" : "pnpm"} 缓存信息已变化` : `${plan.targets[0]} 已${plan.action === "install" ? "安装" : plan.action === "uninstall" ? "移除" : "升级"}`,
+    title: plan.action === "cleanup" ? `${plan.managerId === "homebrew" ? "Homebrew" : plan.managerId} 缓存信息已变化` : `${plan.targets[0]} 已${plan.action === "install" ? "安装" : plan.action === "uninstall" ? "移除" : "升级"}`,
     description: "浏览器预览使用固定结果，不会修改本机环境。",
   }],
 });
@@ -242,7 +251,7 @@ const mockApi: DevPkgApi = {
     mockActionPlans.delete(planId);
     const actionId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    const managerName = plan.managerId === "homebrew" ? "Homebrew" : "pnpm";
+    const managerName = plan.managerId === "homebrew" ? "Homebrew" : plan.managerId;
     for (const message of [`开始执行已确认的 ${managerName} 操作`, `${plan.managerId} ${actionLabel[plan.action]} 正在运行`, "正在重新扫描本机环境并计算变化"]) {
       emitMockActionProgress({ actionId, status: "running", message, cancellable: message !== "正在重新扫描本机环境并计算变化", timestamp: new Date().toISOString() });
       await wait(100);

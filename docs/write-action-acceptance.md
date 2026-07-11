@@ -1,6 +1,6 @@
 # 受控写操作验收
 
-真实包管理器修改不得在日常开发机或 GitHub Actions Runner 上执行。使用可回滚的 macOS 虚拟机或专用测试用户，并先记录初始 Homebrew Formula、pnpm 全局包和共享 store 状态。
+真实包管理器修改不得在日常开发机或 GitHub Actions Runner 上执行。使用可回滚的 macOS 虚拟机或专用测试用户，并先记录初始 Homebrew Formula、npm/pnpm 全局包和缓存状态。每轮结果复制到 `write-action-acceptance-record.md`，未填写证据时不得视为真实验收通过。
 
 ## 自动门禁
 
@@ -13,15 +13,16 @@ pnpm build:desktop
 
 ## 手动矩阵
 
-对 Homebrew 和 pnpm 分别验证：
+对 Homebrew、npm 和 pnpm 分别验证：
 
 1. 生成安装计划，核对可执行路径、固定参数、网络提示和二次确认。
 2. 执行一个可安全移除的测试包，确认前后快照和审计记录一致。
 3. 生成升级计划并验证最多 20 个已扫描目标的限制。
 4. 生成卸载计划，确认只能选择已扫描包；Homebrew 还应展示依赖方预检。
-5. 清理前核对 Homebrew dry-run 或 pnpm 共享 store 路径与扫描大小。
+5. 缓存维护前核对 Homebrew dry-run、pnpm 共享 store，或 npm 的 Node、global prefix 与 cache 路径；npm 只允许 `cache verify`。
 6. 在测试操作中执行取消，确认结果为“状态未知”且完成强制复扫。
 7. 在操作运行时终止应用，重启后确认新操作被阻塞；成功扫描后遗留审计变为“状态未知”。
-8. 验证 pnpm 拒绝 `pkg@tag`、URL、Git、本地路径和以 `-` 开头的目标，命令始终包含 `--ignore-scripts`。
+8. 验证 npm/pnpm 拒绝 `pkg@tag`、URL、Git、workspace、本地路径和以 `-` 开头的目标，命令始终包含 `--ignore-scripts`，并拒绝修改管理器自身。
+9. 修改 npm 的 PATH Node、global prefix 或 cache 配置，确认旧计划被拒绝且要求重新预检。
 
 验收结束后移除测试包并再次扫描。若快照与包管理器实际状态不一致，停止发布并保留审计与脱敏日志用于排查。
