@@ -2,11 +2,15 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
-import type { ActionCapability, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, WritableManagerId } from "../types";
+import type { ActionCapability, CatalogSearchResponse, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ScanSettings, WritableManagerId } from "../types";
 
 interface ActionCenterPageProps {
   packages: ManagedPackage[];
+  scanSettings: ScanSettings;
   capabilities: ActionCapability[];
+  catalogResponse?: CatalogSearchResponse;
+  isCatalogSearching: boolean;
+  catalogError?: string;
   plan?: PackageActionPlan;
   result?: PackageActionResult;
   audit: PackageActionAuditRecord[];
@@ -15,6 +19,9 @@ interface ActionCenterPageProps {
   isExecuting: boolean;
   isReconciling: boolean;
   error?: string;
+  onSearchCatalog: (managerId: WritableManagerId, query: string) => Promise<CatalogSearchResponse | undefined>;
+  onCancelCatalogSearch: () => Promise<void>;
+  onClearCatalogSearch: () => void;
   onCreatePlan: (managerId: WritableManagerId, action: PackageAction, targets: string[]) => Promise<PackageActionPlan | undefined>;
   onExecute: () => Promise<void>;
   onCancel: () => Promise<void>;
@@ -32,6 +39,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
   const [managerId, setManagerId] = useState<WritableManagerId>("homebrew");
   const [action, setAction] = useState<PackageAction>("install");
   const [installTarget, setInstallTarget] = useState("");
+  const [catalogQuery, setCatalogQuery] = useState("");
   const [upgradeTargets, setUpgradeTargets] = useState<string[]>([]);
   const [uninstallTarget, setUninstallTarget] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -56,15 +64,23 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
     setInstallTarget("");
     setUpgradeTargets([]);
     setUninstallTarget("");
+    setCatalogQuery("");
+    props.onClearCatalogSearch();
     resetPlan();
   };
   const changeAction = (next: PackageAction) => {
     setAction(next);
+    if (next !== "install") props.onClearCatalogSearch();
     resetPlan();
   };
   const createPlan = async () => {
     setConfirmed(false);
     await props.onCreatePlan(managerId, action, targets);
+  };
+  const searchCatalog = () => void props.onSearchCatalog(managerId, catalogQuery);
+  const selectCatalogResult = (name: string) => {
+    setInstallTarget(name);
+    resetPlan();
   };
 
   return (
@@ -85,7 +101,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
       <section className="panel action-builder" aria-label="操作预检设置">
         <div className="panel__header"><h2>{actionDisplay(managerId, action)} {managerName} {subjectName}</h2><span className={`manager-chip manager-chip--${managerId}`}>{managerName}</span></div>
         <div className="action-builder__body">
-          {action === "install" ? <label className="action-input">{subjectName} 名称<input aria-label={`待安装${managerId === "homebrew" ? " Formula" : ` ${managerName} 全局包`}`} value={installTarget} onChange={(event) => setInstallTarget(event.target.value)} placeholder={managerId === "homebrew" ? "例如 jq 或 user/tap/formula" : "例如 eslint 或 @scope/tool"} disabled={props.isExecuting} /><small>{managerId === "homebrew" ? "名称会经过严格语法校验，存在性由 Homebrew 执行时验证。" : "仅接受普通包名或 @scope/name；拒绝版本、tag、URL、Git、workspace 和本地路径来源。"}</small></label> : null}
+          {action === "install" ? <><label className="action-input">{subjectName} 名称<input aria-label={`待安装${managerId === "homebrew" ? " Formula" : ` ${managerName} 全局包`}`} value={installTarget} onChange={(event) => setInstallTarget(event.target.value)} placeholder={managerId === "homebrew" ? "例如 jq 或 user/tap/formula" : "例如 eslint 或 @scope/tool"} disabled={props.isExecuting} /><small>{managerId === "homebrew" ? "名称会经过严格语法校验，存在性由 Homebrew 执行时验证。" : "仅接受普通包名或 @scope/name；拒绝版本、tag、URL、Git、workspace 和本地路径来源。"}</small></label><div className="catalog-search" aria-label="软件包目录搜索"><div><strong>从 {managerName} 目录搜索</strong><small>{props.scanSettings.networkPolicy === "registry" ? "仅使用固定只读搜索命令；搜索结果只会填入安装目标。" : "当前为离线策略；请先在项目页允许访问软件源。"}</small></div><div className="catalog-search__controls"><input aria-label={`${managerName} 目录搜索词`} value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="至少输入 2 个字符" disabled={props.isExecuting || props.isCatalogSearching} /><button className="button button--secondary" onClick={searchCatalog} disabled={props.isExecuting || props.isCatalogSearching || catalogQuery.trim().length < 2}>{props.isCatalogSearching ? "正在搜索…" : "搜索目录"}</button>{props.isCatalogSearching ? <button className="button button--secondary" onClick={() => void props.onCancelCatalogSearch()}>取消搜索</button> : null}</div>{props.catalogError ? <p className="catalog-search__message catalog-search__message--error">{props.catalogError}</p> : null}{props.catalogResponse ? <div className="catalog-search__results"><p className={props.catalogResponse.status === "ready" ? "catalog-search__message" : "catalog-search__message catalog-search__message--error"}>{props.catalogResponse.message}{props.catalogResponse.blockerCode ? <code>{props.catalogResponse.blockerCode}</code> : null}</p>{props.catalogResponse.status === "ready" && props.catalogResponse.results.length === 0 ? <p className="catalog-search__empty">没有安全且可用于安装的匹配结果。</p> : null}{props.catalogResponse.results.map((result) => <article key={`${result.managerId}:${result.name}`}><div><strong>{result.name}</strong><span>{result.version ? `目录版本 ${result.version}` : "目录未提供版本"}{result.installed ? ` · 已安装 ${result.installedVersion ?? ""}` : ""}</span>{result.description ? <small>{result.description}</small> : null}</div><button className="button button--secondary" onClick={() => selectCatalogResult(result.name)} disabled={props.isExecuting}>{result.name === installTarget ? "已选中" : "用作安装目标"}</button></article>)}</div> : null}</div></> : null}
           {action === "upgrade" ? <div className="formula-selection"><div><strong>选择待升级{subjectName}</strong><small>最多选择 20 个当前扫描到的已安装包。</small></div>{packages.length ? <div className="formula-checks">{packages.map((pkg) => <label key={pkg.id}><input type="checkbox" checked={upgradeTargets.includes(pkg.name)} onChange={(event) => setUpgradeTargets((current) => event.target.checked ? [...current, pkg.name] : current.filter((name) => name !== pkg.name))} disabled={props.isExecuting} /><span><strong>{pkg.name}</strong><code>{pkg.latestVersion ? `${pkg.version} → ${pkg.latestVersion}` : `${pkg.version} · 更新状态未知`}</code></span></label>)}</div> : <EmptyState icon="packages" title={`没有已安装的 ${managerName} ${subjectName}`} description="先刷新环境扫描，或选择其他管理器。" />}</div> : null}
           {action === "uninstall" ? <label className="action-input">已安装{subjectName}<select aria-label={`待卸载${managerId === "homebrew" ? " Formula" : ` ${managerName} 全局包`}`} value={uninstallTarget} onChange={(event) => setUninstallTarget(event.target.value)} disabled={props.isExecuting}><option value="">选择{subjectName}</option>{packages.map((pkg) => <option key={pkg.id} value={pkg.name}>{pkg.name} · {pkg.version}</option>)}</select><small>{managerId === "homebrew" ? "预检会检查已安装依赖方，Homebrew 仍可能拒绝不安全卸载。" : `只允许移除本次扫描识别到的 ${managerName} 全局包，并固定禁用 lifecycle scripts。`}</small></label> : null}
           {action === "cleanup" ? <div className="cleanup-description"><Icon name="packages" /><div><strong>{managerId === "npm" ? "缓存校验与回收" : `预览 ${managerName} 缓存清理`}</strong><p>{managerId === "homebrew" ? "先执行 brew cleanup --dry-run，确认后仅调用 brew cleanup。" : managerId === "pnpm" ? "展示共享 store 路径和当前扫描大小；确认后仅调用 pnpm store prune，不直接删除目录。" : "读取 Node、global prefix 与 cache 路径后，仅调用 npm cache verify；不会执行 npm cache clean --force。"}</p></div></div> : null}

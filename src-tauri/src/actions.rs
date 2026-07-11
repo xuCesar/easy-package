@@ -15,6 +15,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 mod capabilities;
+pub mod catalog;
 mod reconcile;
 
 pub use capabilities::package_action_capabilities;
@@ -975,7 +976,7 @@ fn readable_action_path(path: &Path) -> String {
     value
 }
 
-fn is_valid_formula_name(value: &str) -> bool {
+pub(crate) fn is_valid_formula_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value
@@ -989,7 +990,7 @@ fn is_valid_formula_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"/@+_.-".contains(&byte))
 }
 
-fn is_valid_registry_package_name(value: &str) -> bool {
+pub(crate) fn is_valid_registry_package_name(value: &str) -> bool {
     if value.is_empty() || value.len() > 214 || value.starts_with('.') || value.contains("..") {
         return false;
     }

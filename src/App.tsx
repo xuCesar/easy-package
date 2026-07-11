@@ -14,12 +14,14 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { SupplyChainPage } from "./pages/SupplyChainPage";
 import { ActionCenterPage } from "./pages/ActionCenterPage";
 import { usePackageActions } from "./hooks/usePackageActions";
+import { useCatalogSearch } from "./hooks/useCatalogSearch";
 import type { PageId } from "./types";
 
 export function App() {
   const [page, setPage] = useState<PageId>("overview");
   const { data, isLoading, error, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport, getProjectDependencyGraph, getProjectSupplyChainReport, exportProjectSbom, applyEnvironment } = useDevPkg();
   const packageActions = usePackageActions(applyEnvironment, data?.scannedAt);
+  const catalogSearch = useCatalogSearch();
   const history = useSnapshotHistory(data?.scannedAt);
 
   let content;
@@ -35,7 +37,7 @@ export function App() {
         {!isTauriRuntime() ? <div className="runtime-banner"><Icon name="info" /><span>浏览器预览：当前展示模拟数据，不会读取本机包管理器、项目目录或 SQLite 快照。</span></div> : null}
         {page === "overview" ? <OverviewPage data={data} isLoading={isLoading} scanProgress={scanProgress} comparison={history.comparison} onRefresh={() => void refresh()} onCancel={() => void cancelScan()} onNavigate={setPage} /> : null}
         {page === "packages" ? <PackagesPage packages={data.packages} /> : null}
-        {page === "actions" ? <ActionCenterPage packages={data.packages} capabilities={packageActions.capabilities} plan={packageActions.plan} result={packageActions.result} audit={packageActions.audit} progress={packageActions.progress} isPlanning={packageActions.isPlanning} isExecuting={packageActions.isExecuting} isReconciling={packageActions.isReconciling} error={packageActions.error} onCreatePlan={packageActions.createPlan} onExecute={packageActions.executePlan} onCancel={packageActions.cancelAction} onReconcile={packageActions.reconcileAction} onClearPlan={packageActions.clearPlan} /> : null}
+        {page === "actions" ? <ActionCenterPage packages={data.packages} scanSettings={data.scanSettings} capabilities={packageActions.capabilities} catalogResponse={catalogSearch.response} isCatalogSearching={catalogSearch.isSearching} catalogError={catalogSearch.error} plan={packageActions.plan} result={packageActions.result} audit={packageActions.audit} progress={packageActions.progress} isPlanning={packageActions.isPlanning} isExecuting={packageActions.isExecuting} isReconciling={packageActions.isReconciling} error={packageActions.error} onSearchCatalog={catalogSearch.search} onCancelCatalogSearch={catalogSearch.cancel} onClearCatalogSearch={catalogSearch.clear} onCreatePlan={packageActions.createPlan} onExecute={packageActions.executePlan} onCancel={packageActions.cancelAction} onReconcile={packageActions.reconcileAction} onClearPlan={packageActions.clearPlan} /> : null}
         {page === "projects" ? <ProjectsPage projects={data.projects} workspaces={data.workspaces} scanRoots={data.scanRoots} scanSettings={data.scanSettings} onAddRoot={addRoot} onRemoveRoot={removeRoot} onUpdateSettings={updateScanSettings} onExportReport={exportEnvironmentReport} onRefresh={() => void refresh()} /> : null}
         {page === "dependencies" ? <DependenciesPage insights={data.dependencyInsights} projects={data.projects} onLoadGraph={getProjectDependencyGraph} onExportSbom={exportProjectSbom} /> : null}
         {page === "supplyChain" ? <SupplyChainPage projects={data.projects} onLoadReport={getProjectSupplyChainReport} onExportSbom={exportProjectSbom} /> : null}

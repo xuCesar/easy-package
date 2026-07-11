@@ -14,14 +14,14 @@ use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
 use crate::{
-    actions::{self, ActionRegistry},
+    actions::{self, catalog::CatalogRegistry, ActionRegistry},
     error::AppError,
     models::{
-        ActionCapability, EnvironmentScan, HealthIssue, ManagedPackage, ObservedActionOutcome,
-        PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress,
-        PackageActionReconciliationResult, PackageActionResult, PackageActionStatus,
-        ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport,
-        ScanProgress, ScanSettings, TaskLog,
+        ActionCapability, CatalogSearchResponse, EnvironmentScan, HealthIssue, ManagedPackage,
+        ObservedActionOutcome, PackageAction, PackageActionAuditRecord, PackageActionPlan,
+        PackageActionProgress, PackageActionReconciliationResult, PackageActionResult,
+        PackageActionStatus, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata,
+        ProjectSupplyChainReport, ScanProgress, ScanSettings, TaskLog,
     },
     operation_guard::OperationCoordinator,
     scan,
@@ -112,6 +112,40 @@ pub async fn scan_environment(
 #[tauri::command]
 pub fn cancel_environment_scan(scan_id: String, registry: State<'_, ScanRegistry>) {
     registry.cancel(&scan_id);
+}
+
+#[tauri::command]
+pub async fn search_package_catalog(
+    search_id: String,
+    manager_id: crate::models::PackageManagerId,
+    query: String,
+    storage: State<'_, Storage>,
+    registry: State<'_, CatalogRegistry>,
+) -> Result<CatalogSearchResponse, AppError> {
+    let cancellation = registry.begin(&search_id)?;
+    let storage = storage.inner().clone();
+    let registry = registry.inner().clone();
+    let registry_for_search = registry.clone();
+    let search_id_for_finish = search_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        actions::catalog::search(
+            &storage,
+            &registry_for_search,
+            search_id,
+            manager_id,
+            query,
+            &cancellation,
+        )
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()));
+    registry.finish(&search_id_for_finish);
+    result?
+}
+
+#[tauri::command]
+pub fn cancel_package_catalog_search(search_id: String, registry: State<'_, CatalogRegistry>) {
+    registry.cancel(&search_id);
 }
 
 #[tauri::command]

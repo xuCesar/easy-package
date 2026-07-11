@@ -135,6 +135,59 @@ pub struct ManagedPackage {
     pub update_status: UpdateStatus,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CatalogSearchStatus {
+    Ready,
+    Offline,
+    InvalidQuery,
+    ManagerUnavailable,
+    UntrustedExecutable,
+    Cancelled,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CatalogSearchBlockerCode {
+    NetworkPolicyOffline,
+    InvalidQuery,
+    UnsupportedManager,
+    MissingScan,
+    ManagerUnavailable,
+    UntrustedExecutable,
+    Cancelled,
+    SearchFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSearchResult {
+    pub manager_id: PackageManagerId,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSearchResponse {
+    pub search_id: String,
+    pub manager_id: PackageManagerId,
+    pub query: String,
+    pub status: CatalogSearchStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocker_code: Option<CatalogSearchBlockerCode>,
+    pub message: String,
+    #[serde(default)]
+    pub results: Vec<CatalogSearchResult>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeRequirement {

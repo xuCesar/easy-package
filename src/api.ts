@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ActionCapability, DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog, WritableManagerId } from "./types";
+import type { ActionCapability, CatalogSearchResponse, DependencyInsight, DevPkgApi, EnvironmentScan, HealthIssue, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport, ScanProgress, ScanSettings, SnapshotComparison, SnapshotSummary, TaskLog, WritableManagerId } from "./types";
 import { mockProjects, mockScan } from "./mock-data";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -37,6 +37,7 @@ const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
 const cancelledMockScans = new Set<string>();
 const mockActionProgressListeners = new Set<(progress: PackageActionProgress) => void>();
 const cancelledMockActions = new Set<string>();
+const cancelledMockCatalogSearches = new Set<string>();
 const mockActionAudit: PackageActionAuditRecord[] = [];
 const mockActionPlans = new Map<string, PackageActionPlan>();
 
@@ -242,6 +243,26 @@ const mockApi: DevPkgApi = {
   async exportProjectSbom() {
     return { saved: true };
   },
+  async searchPackageCatalog(searchId, managerId, query): Promise<CatalogSearchResponse> {
+    if (browserScanSettings.networkPolicy !== "registry") {
+      return { searchId, managerId, query, status: "offline", blockerCode: "NETWORK_POLICY_OFFLINE", message: "当前联网策略为离线。请在项目页将联网策略切换为“允许访问软件源”后再搜索。", results: [] };
+    }
+    await wait(120);
+    if (cancelledMockCatalogSearches.delete(searchId)) {
+      return { searchId, managerId, query, status: "cancelled", blockerCode: "CANCELLED", message: "目录搜索已取消，未生成安装计划。", results: [] };
+    }
+    const all = managerId === "homebrew"
+      ? [{ name: "ripgrep", description: "Search tool", version: "14.1.1" }, { name: "jq", description: "Command-line JSON processor", version: "1.8.1" }]
+      : [{ name: "eslint", description: "JavaScript linter", version: "9.30.0" }, { name: "@typescript-eslint/parser", description: "TypeScript parser for ESLint", version: "8.35.0" }];
+    const results = all.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())).map((item) => {
+      const installed = mockScan.packages.find((pkg) => pkg.managerId === managerId && pkg.name === item.name);
+      return { managerId, ...item, installed: Boolean(installed), installedVersion: installed?.version };
+    });
+    return { searchId, managerId, query, status: "ready", message: "浏览器预览使用固定目录结果；选择结果只会填入安装目标。", results };
+  },
+  async cancelPackageCatalogSearch(searchId) {
+    cancelledMockCatalogSearches.add(searchId);
+  },
   async planPackageAction(managerId, action, targets) {
     await wait(80);
     return createMockActionPlan(managerId, action, targets);
@@ -321,6 +342,8 @@ const tauriApi: DevPkgApi = {
   getProjectDependencyGraph: (projectPath) => invoke<ProjectDependencyGraph>("get_project_dependency_graph", { projectPath }),
   getProjectSupplyChainReport: (projectPath) => invoke<ProjectSupplyChainReport>("get_project_supply_chain_report", { projectPath }),
   exportProjectSbom: (projectPath) => invoke("export_project_sbom", { projectPath }),
+  searchPackageCatalog: (searchId, managerId, query) => invoke<CatalogSearchResponse>("search_package_catalog", { searchId, managerId, query }),
+  cancelPackageCatalogSearch: (searchId) => invoke<void>("cancel_package_catalog_search", { searchId }),
   planPackageAction: (managerId, action, targets) => invoke<PackageActionPlan>("plan_package_action", { managerId, action, targets }),
   getPackageActionCapabilities: () => invoke<ActionCapability[]>("get_package_action_capabilities"),
   executePackageAction: (planId) => invoke<PackageActionResult>("execute_package_action", { planId }),

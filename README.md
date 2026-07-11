@@ -16,6 +16,7 @@ Easy Package 是一个 macOS 本机开发环境管理器 MVP。它使用 Tauri 2
 - 环境页会解析 node、npm、pnpm、Python/pip、Ruby/gem、PHP、Composer 的 PATH 优先级与候选来源，并只读标记命令冲突、运行时路径不一致和重复 Node 全局工具。
 - “运行时”页面只读发现 Node.js、Python 与 Rust 的当前及本地安装，识别 nvm、fnm、Volta、asdf、mise、pyenv、uv 与 rustup 来源，并关联项目运行时声明；复杂版本范围只展示，不推测兼容性。
 - “操作中心”支持 Homebrew Formula、npm 与 pnpm 全局包的安装、单个或批量升级、卸载和缓存维护：后端先生成一次性操作计划，展示固定命令、联网需求和风险，经用户二次确认后才执行。
+- 安装模式可在用户主动将联网策略设为“允许 registry 检查”后，使用受信任的 Homebrew、npm 或 pnpm 可执行文件搜索软件包目录。搜索固定限制 20 条、20 秒超时、支持取消，并仅在内存中缓存 5 分钟；搜索结果只会填入安装目标，绝不会直接安装或写入 SQLite。
 - Homebrew 写操作仅允许 `/opt/homebrew/bin/brew` 或 `/usr/local/bin/brew`；npm/pnpm 仅允许扫描得到且位于受管理或已识别用户工具目录中的可执行文件。计划会记录可执行文件指纹，执行前再次验证路径、大小和修改时间。
 - npm 写操作还要求同目录 Node.js 与 PATH 当前 Node.js 一致，预检并锁定 global prefix 和 cache 路径；任一执行上下文在确认后变化都会拒绝操作。
 - pnpm 安装只接受普通包名或 `@scope/name`，拒绝版本表达式、URL、Git 与本地路径来源；安装、升级和卸载固定带 `--ignore-scripts`，缓存清理仅调用 `pnpm store prune`。

@@ -258,6 +258,27 @@ export type WritableManagerId = "homebrew" | "npm" | "pnpm";
 export type ActionCheckStatus = "pass" | "warning" | "blocked";
 export type ActionBlockerCode = "READY" | "UNSUPPORTED_PLATFORM" | "MISSING_SCAN" | "RECOVERY_REQUIRED" | "MANAGER_UNAVAILABLE" | "UNTRUSTED_EXECUTABLE" | "RUNTIME_CONFLICT" | "UNSAFE_DATA_PATH" | "PERMISSION_RISK" | "NETWORK_REQUIRED" | "SCRIPTS_DISABLED" | "CACHE_SEMANTICS";
 export type ObservedActionOutcome = "applied" | "notApplied" | "ambiguous";
+export type CatalogSearchStatus = "ready" | "offline" | "invalidQuery" | "managerUnavailable" | "untrustedExecutable" | "cancelled" | "error";
+export type CatalogSearchBlockerCode = "NETWORK_POLICY_OFFLINE" | "INVALID_QUERY" | "UNSUPPORTED_MANAGER" | "MISSING_SCAN" | "MANAGER_UNAVAILABLE" | "UNTRUSTED_EXECUTABLE" | "CANCELLED" | "SEARCH_FAILED";
+
+export interface CatalogSearchResult {
+  managerId: WritableManagerId;
+  name: string;
+  description?: string;
+  version?: string;
+  installed: boolean;
+  installedVersion?: string;
+}
+
+export interface CatalogSearchResponse {
+  searchId: string;
+  managerId: WritableManagerId;
+  query: string;
+  status: CatalogSearchStatus;
+  blockerCode?: CatalogSearchBlockerCode;
+  message: string;
+  results: CatalogSearchResult[];
+}
 
 export interface ActionPreflightCheck {
   code: ActionBlockerCode;
@@ -420,6 +441,8 @@ export interface DevPkgApi {
   getProjectDependencyGraph(projectPath: string): Promise<ProjectDependencyGraph>;
   getProjectSupplyChainReport(projectPath: string): Promise<ProjectSupplyChainReport>;
   exportProjectSbom(projectPath: string): Promise<ReportExportResult>;
+  searchPackageCatalog(searchId: string, managerId: WritableManagerId, query: string): Promise<CatalogSearchResponse>;
+  cancelPackageCatalogSearch(searchId: string): Promise<void>;
   planPackageAction(managerId: WritableManagerId, action: PackageAction, targets: string[]): Promise<PackageActionPlan>;
   getPackageActionCapabilities(): Promise<ActionCapability[]>;
   executePackageAction(planId: string): Promise<PackageActionResult>;

@@ -17,12 +17,17 @@ const plan: PackageActionPlan = {
 
 const baseProps = {
   packages,
+  scanSettings: { ignoredPaths: [], maxDepth: 6, defaultIgnoredDirectoryNames: [], networkPolicy: "registry" as const },
   capabilities: (["homebrew", "npm", "pnpm"] as const).flatMap((managerId) => (["install", "upgrade", "uninstall", "cleanup"] as const).map((action) => ({ managerId, action, ready: true, checks: [{ code: "READY" as const, status: "pass" as const, title: "基础条件已满足", detail: "仍需二次确认。" }] }))),
   audit: [],
   progress: [],
   isPlanning: false,
   isExecuting: false,
   isReconciling: false,
+  isCatalogSearching: false,
+  onSearchCatalog: vi.fn().mockResolvedValue(undefined),
+  onCancelCatalogSearch: vi.fn().mockResolvedValue(undefined),
+  onClearCatalogSearch: vi.fn(),
   onCreatePlan: vi.fn().mockResolvedValue(plan),
   onExecute: vi.fn().mockResolvedValue(undefined),
   onCancel: vi.fn().mockResolvedValue(undefined),
@@ -89,6 +94,24 @@ describe("ActionCenterPage", () => {
     expect(screen.getByText(/不会执行 npm cache clean --force/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
     expect(baseProps.onCreatePlan).toHaveBeenLastCalledWith("npm", "cleanup", []);
+  });
+
+  it("目录搜索结果仅填充安装目标，仍需生成计划", () => {
+    const catalogResponse = { searchId: "search-1", managerId: "homebrew" as const, query: "jq", status: "ready" as const, message: "目录搜索仅用于选择安装目标；不会生成计划或执行安装。", results: [{ managerId: "homebrew" as const, name: "jq", description: "JSON processor", version: "1.8.1", installed: false }] };
+    render(<ActionCenterPage {...baseProps} catalogResponse={catalogResponse} />);
+    fireEvent.change(screen.getByLabelText("Homebrew 目录搜索词"), { target: { value: "jq" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索目录" }));
+    expect(baseProps.onSearchCatalog).toHaveBeenCalledWith("homebrew", "jq");
+    fireEvent.click(screen.getByRole("button", { name: "用作安装目标" }));
+    expect(screen.getByLabelText("待安装 Formula")).toHaveValue("jq");
+    expect(baseProps.onCreatePlan).not.toHaveBeenCalled();
+  });
+
+  it("在离线策略下展示稳定目录搜索阻塞码", () => {
+    const catalogResponse = { searchId: "search-1", managerId: "npm" as const, query: "eslint", status: "offline" as const, blockerCode: "NETWORK_POLICY_OFFLINE" as const, message: "当前联网策略为离线。", results: [] };
+    render(<ActionCenterPage {...baseProps} scanSettings={{ ...baseProps.scanSettings, networkPolicy: "offline" }} catalogResponse={catalogResponse} />);
+    expect(screen.getByText("NETWORK_POLICY_OFFLINE")).toBeInTheDocument();
+    expect(screen.getByText(/当前为离线策略/)).toBeInTheDocument();
   });
 
   it("阻止中断操作恢复前生成新计划并支持审计筛选", () => {

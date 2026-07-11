@@ -297,6 +297,20 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .action-input input, .action-input select { width: min(520px, 100%); min-height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px; outline: 0; color: var(--text); background: #09141f; }
 .action-input small, .formula-selection small { color: var(--text-3); font-size: 9px; line-height: 1.5; }
 .action-builder__body > .button { width: fit-content; }
+.catalog-search { padding: 13px; display: grid; gap: 11px; border: 1px solid var(--border-soft); border-radius: 7px; background: #09141f; }
+.catalog-search > div:first-child { display: grid; gap: 5px; }
+.catalog-search strong { font-size: 11px; }
+.catalog-search small, .catalog-search__empty { margin: 0; color: var(--text-3); font-size: 9px; line-height: 1.5; }
+.catalog-search__controls { display: flex; align-items: center; gap: 8px; }
+.catalog-search__controls input { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--surface-2); }
+.catalog-search__message { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 9px; line-height: 1.5; }
+.catalog-search__message--error { color: #e7a4ad; }
+.catalog-search__message code { color: var(--text-3); font-size: 8px; }
+.catalog-search__results { display: grid; gap: 8px; }
+.catalog-search__results article { min-height: 54px; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.catalog-search__results article > div { min-width: 0; display: grid; gap: 3px; }
+.catalog-search__results article strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-search__results article span { color: var(--text-3); font-size: 9px; }
 .audit-filter { display: flex; align-items: center; gap: 8px; }
 .audit-filter select { min-height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); background: var(--surface-2); font-size: 10px; }
 .formula-selection { display: grid; gap: 13px; }
