@@ -62,6 +62,32 @@ impl ScanRegistry {
     }
 }
 
+/// 项目重扫（添加/移除目录、设置变更、列表刷新）与环境扫描、写操作互斥，
+/// 并携带真实取消令牌，避免并发文件树遍历与 SQLite 写入。
+fn begin_project_rescan(
+    registry: &ScanRegistry,
+    coordinator: &OperationCoordinator,
+) -> Result<(String, Arc<AtomicBool>), AppError> {
+    let operation_id = format!("project-rescan-{}", Uuid::new_v4());
+    coordinator.begin_scan(&operation_id)?;
+    match registry.begin(&operation_id) {
+        Ok(cancellation) => Ok((operation_id, cancellation)),
+        Err(error) => {
+            coordinator.finish(&operation_id);
+            Err(error)
+        }
+    }
+}
+
+fn finish_project_rescan(
+    registry: &ScanRegistry,
+    coordinator: &OperationCoordinator,
+    operation_id: &str,
+) {
+    registry.finish(operation_id);
+    coordinator.finish(operation_id);
+}
+
 #[tauri::command]
 pub async fn scan_environment(
     scan_id: String,
@@ -171,17 +197,28 @@ pub async fn list_packages(storage: State<'_, Storage>) -> Result<Vec<ManagedPac
 }
 
 #[tauri::command]
-pub async fn list_projects(storage: State<'_, Storage>) -> Result<Vec<ProjectMetadata>, AppError> {
+pub async fn list_projects(
+    storage: State<'_, Storage>,
+    registry: State<'_, ScanRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
+) -> Result<Vec<ProjectMetadata>, AppError> {
+    let (operation_id, cancellation) = begin_project_rescan(&registry, &coordinator)?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || Ok(scan::projects_for_roots(&storage)?.projects))
-        .await
-        .map_err(|error| AppError::Command(error.to_string()))?
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        Ok(scan::projects_for_roots(&storage, &cancellation)?.projects)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()));
+    finish_project_rescan(&registry, &coordinator, &operation_id);
+    result?
 }
 
 #[tauri::command]
 pub async fn add_scan_root(
     path: String,
     storage: State<'_, Storage>,
+    registry: State<'_, ScanRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
 ) -> Result<ProjectAnalysis, AppError> {
     let path = PathBuf::from(path);
     if !path.is_dir() {
@@ -192,19 +229,24 @@ pub async fn add_scan_root(
     let canonical = path
         .canonicalize()
         .map_err(|error| AppError::InvalidScanRoot(error.to_string()))?;
+    let (operation_id, cancellation) = begin_project_rescan(&registry, &coordinator)?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         storage.add_scan_root(&canonical)?;
-        scan::projects_for_roots(&storage)
+        scan::projects_for_roots(&storage, &cancellation)
     })
     .await
-    .map_err(|error| AppError::Command(error.to_string()))?
+    .map_err(|error| AppError::Command(error.to_string()));
+    finish_project_rescan(&registry, &coordinator, &operation_id);
+    result?
 }
 
 #[tauri::command]
 pub async fn remove_scan_root(
     path: String,
     storage: State<'_, Storage>,
+    registry: State<'_, ScanRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
 ) -> Result<ProjectAnalysis, AppError> {
     let path = PathBuf::from(path);
     let normalized = if path.exists() {
@@ -212,8 +254,9 @@ pub async fn remove_scan_root(
     } else {
         path
     };
+    let (operation_id, cancellation) = begin_project_rescan(&registry, &coordinator)?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         storage.remove_scan_root(&normalized)?;
         let roots = storage.list_scan_roots()?;
         let mut settings = storage.scan_settings()?;
@@ -222,10 +265,12 @@ pub async fn remove_scan_root(
             roots.iter().any(|root| ignored.starts_with(root))
         });
         storage.save_scan_settings(&settings)?;
-        scan::projects_for_roots(&storage)
+        scan::projects_for_roots(&storage, &cancellation)
     })
     .await
-    .map_err(|error| AppError::Command(error.to_string()))?
+    .map_err(|error| AppError::Command(error.to_string()));
+    finish_project_rescan(&registry, &coordinator, &operation_id);
+    result?
 }
 
 #[tauri::command]
@@ -237,16 +282,21 @@ pub fn get_scan_settings(storage: State<'_, Storage>) -> Result<ScanSettings, Ap
 pub async fn update_scan_settings(
     settings: ScanSettings,
     storage: State<'_, Storage>,
+    registry: State<'_, ScanRegistry>,
+    coordinator: State<'_, OperationCoordinator>,
 ) -> Result<ProjectAnalysis, AppError> {
+    let (operation_id, cancellation) = begin_project_rescan(&registry, &coordinator)?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let roots = storage.list_scan_roots()?;
         let settings = scan::projects::normalize_scan_settings(settings, &roots)?;
         storage.save_scan_settings(&settings)?;
-        scan::projects_for_roots(&storage)
+        scan::projects_for_roots(&storage, &cancellation)
     })
     .await
-    .map_err(|error| AppError::Command(error.to_string()))?
+    .map_err(|error| AppError::Command(error.to_string()));
+    finish_project_rescan(&registry, &coordinator, &operation_id);
+    result?
 }
 
 #[tauri::command]
@@ -780,7 +830,8 @@ fn build_project_and_dependency_graph_for_path(
             "依赖图项目必须位于已添加的扫描目录内".into(),
         ));
     }
-    let analysis = scan::projects_for_roots(storage)?;
+    let never_cancelled = AtomicBool::new(false);
+    let analysis = scan::projects_for_roots(storage, &never_cancelled)?;
     let project = analysis
         .projects
         .into_iter()
@@ -798,6 +849,67 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn project_rescan_is_mutually_exclusive_with_scans_and_actions() {
+        let registry = ScanRegistry::default();
+        let coordinator = OperationCoordinator::default();
+        let (operation_id, cancellation) = begin_project_rescan(&registry, &coordinator).unwrap();
+        assert!(!cancellation.load(Ordering::SeqCst));
+
+        assert_eq!(
+            registry.begin("scan-x").unwrap_err().code(),
+            "SCAN_ALREADY_RUNNING"
+        );
+        assert_eq!(
+            coordinator
+                .begin_package_action("action-x")
+                .unwrap_err()
+                .code(),
+            "SCAN_ALREADY_RUNNING"
+        );
+
+        finish_project_rescan(&registry, &coordinator, &operation_id);
+        assert!(registry.begin("scan-x").is_ok());
+        registry.finish("scan-x");
+    }
+
+    #[test]
+    fn running_scan_blocks_project_rescans() {
+        let registry = ScanRegistry::default();
+        let coordinator = OperationCoordinator::default();
+        coordinator.begin_scan("scan-1").unwrap();
+        registry.begin("scan-1").unwrap();
+
+        assert_eq!(
+            begin_project_rescan(&registry, &coordinator)
+                .unwrap_err()
+                .code(),
+            "SCAN_ALREADY_RUNNING"
+        );
+
+        registry.finish("scan-1");
+        coordinator.finish("scan-1");
+        let (operation_id, _cancellation) = begin_project_rescan(&registry, &coordinator).unwrap();
+        finish_project_rescan(&registry, &coordinator, &operation_id);
+    }
+
+    #[test]
+    fn projects_for_roots_honors_external_cancellation() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        let root = directory.path().join("code");
+        fs::create_dir_all(root.join("app")).unwrap();
+        fs::write(root.join("app/package.json"), "{\"name\":\"app\"}").unwrap();
+        storage.add_scan_root(&root).unwrap();
+
+        let cancelled = AtomicBool::new(true);
+        let error = scan::projects_for_roots(&storage, &cancelled).unwrap_err();
+        assert!(matches!(error, AppError::ScanCancelled));
+
+        let active = AtomicBool::new(false);
+        assert!(scan::projects_for_roots(&storage, &active).is_ok());
+    }
 
     #[test]
     fn cancels_registered_scan_session() {

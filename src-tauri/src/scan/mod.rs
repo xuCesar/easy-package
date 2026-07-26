@@ -222,10 +222,13 @@ fn source_for_path(
     (None, None)
 }
 
-pub fn projects_for_roots(storage: &Storage) -> Result<ProjectAnalysis, AppError> {
+pub fn projects_for_roots(
+    storage: &Storage,
+    cancelled: &AtomicBool,
+) -> Result<ProjectAnalysis, AppError> {
     let roots = storage.list_scan_roots()?;
     let settings = storage.scan_settings()?;
-    let mut analysis = analyze_projects(&roots, &settings, &AtomicBool::new(false))?;
+    let mut analysis = analyze_projects(&roots, &settings, cancelled)?;
     let snapshot = storage.latest_snapshot()?;
     let installations = snapshot
         .as_ref()
