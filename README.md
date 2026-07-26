@@ -41,6 +41,21 @@ Easy Package 是一个 macOS 本机开发环境管理器 MVP。它使用 Tauri 2
 - 可通过系统保存对话框导出 CycloneDX 1.6 SBOM；导出内容不包含本机路径，并只附带离线结构性风险摘要，不查询或伪造漏洞、许可证与修复版本。
 - 扫描快照、扫描根目录、原始本机路径和诊断日志只保存在本机 SQLite 中；导出报告会脱敏主目录路径。
 
+## 下载与安装
+
+从 [GitHub Releases](https://github.com/xuCesar/easy-package/releases) 下载最新的 `EasyPackage-*-macos.dmg`,拖入「应用程序」即可。
+
+当前发行版**未做 Apple 签名与公证**(暂不使用付费开发者证书),macOS 首次打开会被 Gatekeeper 拦截,选择其一放行:
+
+- 双击打开被拒后,前往「系统设置 → 隐私与安全性」,点击「仍要打开」;
+- 或在终端执行:
+
+```bash
+xattr -d com.apple.quarantine "/Applications/Easy Package.app"
+```
+
+发布方式:推送 `v*` 标签会触发 Release workflow,在 macOS runner 上跑完整质量门禁后构建 DMG 并创建 draft release;确认草稿内容后手动发布。
+
 ## 本地开发
 
 要求：Node.js、pnpm 11、Rust 1.84+，以及 Tauri 2 的 macOS 系统依赖。
