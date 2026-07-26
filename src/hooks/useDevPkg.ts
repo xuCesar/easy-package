@@ -22,11 +22,13 @@ export const useDevPkg = () => {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void api.listenToScanProgress((progress) => {
-      if (progress.scanId === activeScanId.current) setScanProgress(progress);
-    }).then((cleanup) => {
-      unlisten = cleanup;
-    });
+    void api
+      .listenToScanProgress((progress) => {
+        if (progress.scanId === activeScanId.current) setScanProgress(progress);
+      })
+      .then((cleanup) => {
+        unlisten = cleanup;
+      });
     return () => unlisten?.();
   }, []);
 
@@ -64,22 +66,48 @@ export const useDevPkg = () => {
 
   const addRoot = useCallback(async (path: string) => {
     const analysis = await api.addScanRoot(path);
-    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.includes(path) ? current.data.scanRoots : [...current.data.scanRoots, path] } } : current);
+    setState((current) =>
+      current.data
+        ? {
+            ...current,
+            data: {
+              ...current.data,
+              ...analysis,
+              scanRoots: current.data.scanRoots.includes(path)
+                ? current.data.scanRoots
+                : [...current.data.scanRoots, path],
+            },
+          }
+        : current,
+    );
   }, []);
 
   const removeRoot = useCallback(async (path: string) => {
     const analysis = await api.removeScanRoot(path);
-    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.filter((root) => root !== path) } } : current);
+    setState((current) =>
+      current.data
+        ? {
+            ...current,
+            data: { ...current.data, ...analysis, scanRoots: current.data.scanRoots.filter((root) => root !== path) },
+          }
+        : current,
+    );
   }, []);
 
   const updateScanSettings = useCallback(async (settings: ScanSettings) => {
     const analysis = await api.updateScanSettings(settings);
-    setState((current) => current.data ? { ...current, data: { ...current.data, ...analysis } } : current);
+    setState((current) => (current.data ? { ...current, data: { ...current.data, ...analysis } } : current));
   }, []);
 
   const exportEnvironmentReport = useCallback((format: ReportFormat) => api.exportEnvironmentReport(format), []);
-  const getProjectDependencyGraph = useCallback((projectPath: string) => api.getProjectDependencyGraph(projectPath), []);
-  const getProjectSupplyChainReport = useCallback((projectPath: string) => api.getProjectSupplyChainReport(projectPath), []);
+  const getProjectDependencyGraph = useCallback(
+    (projectPath: string) => api.getProjectDependencyGraph(projectPath),
+    [],
+  );
+  const getProjectSupplyChainReport = useCallback(
+    (projectPath: string) => api.getProjectSupplyChainReport(projectPath),
+    [],
+  );
   const exportProjectSbom = useCallback((projectPath: string) => api.exportProjectSbom(projectPath), []);
   const applyEnvironment = useCallback((data: EnvironmentScan) => {
     setState({ data, isLoading: false });
@@ -89,5 +117,19 @@ export const useDevPkg = () => {
     if (activeScanId.current) await api.cancelEnvironmentScan(activeScanId.current);
   }, []);
 
-  return { ...state, scanProgress, notice, refresh, cancelScan, addRoot, removeRoot, updateScanSettings, exportEnvironmentReport, getProjectDependencyGraph, getProjectSupplyChainReport, exportProjectSbom, applyEnvironment };
+  return {
+    ...state,
+    scanProgress,
+    notice,
+    refresh,
+    cancelScan,
+    addRoot,
+    removeRoot,
+    updateScanSettings,
+    exportEnvironmentReport,
+    getProjectDependencyGraph,
+    getProjectSupplyChainReport,
+    exportProjectSbom,
+    applyEnvironment,
+  };
 };

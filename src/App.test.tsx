@@ -11,7 +11,9 @@ describe("App", () => {
     expect(screen.getByText("正在扫描本机环境")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "诊断" }));
     fireEvent.click(screen.getByRole("button", { name: "运行时" }));
@@ -23,7 +25,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
     fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "管理操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "缓存清理" }));
@@ -39,7 +43,9 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" })).toHaveAttribute("aria-current", "page");
+    expect(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }),
+    ).toHaveAttribute("aria-current", "page");
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "概览" }));
     expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "安全操作模式" }));
@@ -49,7 +55,9 @@ describe("App", () => {
   it("软件包页可更新筛选可一键预填批量升级计划", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });
 
     const bridgeButton = screen.getByRole("button", { name: "批量生成升级计划（1）" });
@@ -69,7 +77,9 @@ describe("App", () => {
   it("无可写管理器可更新包时批量升级入口禁用", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "pip" } });
 
     expect(screen.getByRole("button", { name: "批量生成升级计划" })).toBeDisabled();
@@ -78,7 +88,9 @@ describe("App", () => {
   it("软件包筛选展示空态", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     fireEvent.change(screen.getByPlaceholderText("搜索软件包"), { target: { value: "not-a-real-package" } });
     expect(await screen.findByText("没有匹配的软件包")).toBeInTheDocument();
   });
@@ -86,7 +98,9 @@ describe("App", () => {
   it("按文本、管理器和更新状态组合筛选软件包", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
     fireEvent.change(screen.getByPlaceholderText("搜索软件包"), { target: { value: "type" } });
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "npm" } });
     fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });
@@ -99,7 +113,9 @@ describe("App", () => {
   it("可按 RubyGems 和 Composer 筛选只读全局包", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
 
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "rubygems" } });
     expect(screen.getByText("rake")).toBeInTheDocument();

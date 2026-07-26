@@ -1,4 +1,4 @@
-import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
+import { Component, type ErrorInfo, Fragment, type ReactNode } from "react";
 import { Icon } from "./Icon";
 
 interface ErrorBoundaryProps {
@@ -40,8 +40,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <h1>界面渲染出现异常</h1>
               <p>{this.state.error.message || "发生未知渲染错误，应用界面已停止更新。"}</p>
               <div className="app-state__actions">
-                <button className="button button--primary" onClick={this.reset}>返回概览</button>
-                <button className="button button--secondary" onClick={this.reload}>重新加载</button>
+                <button className="button button--primary" onClick={this.reset}>
+                  返回概览
+                </button>
+                <button className="button button--secondary" onClick={this.reload}>
+                  重新加载
+                </button>
               </div>
             </div>
           </main>

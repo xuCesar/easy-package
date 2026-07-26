@@ -31,7 +31,16 @@ export function buildProjectAnalysisOptions(
     const rootProject = relatedProjects.find((project) => project.path === workspace.path);
     const representativeProject = rootProject ?? relatedProjects[0];
     if (!representativeProject) return [];
-    return [{ name: rootProject?.name ?? workspace.name, project: representativeProject, projects: relatedProjects, supplyChainRiskSummary: aggregateSupplyChainRiskSummaries(relatedProjects), isIgnored: isIgnoredScanPath(representativeProject.path, scanRoots, ignoredDirectoryNames), isWorkspace: true }];
+    return [
+      {
+        name: rootProject?.name ?? workspace.name,
+        project: representativeProject,
+        projects: relatedProjects,
+        supplyChainRiskSummary: aggregateSupplyChainRiskSummaries(relatedProjects),
+        isIgnored: isIgnoredScanPath(representativeProject.path, scanRoots, ignoredDirectoryNames),
+        isWorkspace: true,
+      },
+    ];
   });
   const standaloneOptions = projects
     .filter((project) => !workspaceMemberPaths.has(project.path))
@@ -59,7 +68,9 @@ export function defaultAnalysisProjectPath(options: ProjectAnalysisOption[]): st
 }
 
 function aggregateSupplyChainRiskSummaries(projects: ProjectMetadata[]): ProjectMetadata["supplyChainRiskSummary"] {
-  const summaries = projects.flatMap((project) => project.supplyChainRiskSummary ? [project.supplyChainRiskSummary] : []);
+  const summaries = projects.flatMap((project) =>
+    project.supplyChainRiskSummary ? [project.supplyChainRiskSummary] : [],
+  );
   if (!summaries.length) return undefined;
   return {
     totalCount: summaries.reduce((total, summary) => total + summary.totalCount, 0),

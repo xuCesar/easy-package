@@ -9,8 +9,20 @@ describe("LogsPage", () => {
   it("按类别和状态筛选扫描日志", () => {
     const logs = [
       ...mockScan.logs,
-      { id: "manager-success", category: "manager" as const, status: "success" as const, message: "Homebrew 检测完成", timestamp: "2026-07-12T00:00:00.000Z" },
-      { id: "manager-warning", category: "manager" as const, status: "warning" as const, message: "npm 缓存目录部分不可访问", timestamp: "2026-07-12T00:01:00.000Z" },
+      {
+        id: "manager-success",
+        category: "manager" as const,
+        status: "success" as const,
+        message: "Homebrew 检测完成",
+        timestamp: "2026-07-12T00:00:00.000Z",
+      },
+      {
+        id: "manager-warning",
+        category: "manager" as const,
+        status: "warning" as const,
+        message: "npm 缓存目录部分不可访问",
+        timestamp: "2026-07-12T00:01:00.000Z",
+      },
     ];
     render(<LogsPage logs={logs} />);
 

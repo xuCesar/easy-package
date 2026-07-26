@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildUpgradePlanPrefill, UPGRADE_PLAN_TARGET_LIMIT } from "./upgradePlanBridge";
 import type { ManagedPackage } from "../types";
+import { buildUpgradePlanPrefill, UPGRADE_PLAN_TARGET_LIMIT } from "./upgradePlanBridge";
 
 function pkg(overrides: Partial<ManagedPackage> & Pick<ManagedPackage, "id" | "managerId" | "name">): ManagedPackage {
   return { version: "1.0.0", latestVersion: "1.1.0", scope: "global", updateStatus: "available", ...overrides };
@@ -45,7 +45,9 @@ describe("buildUpgradePlanPrefill", () => {
   });
 
   it("超过 20 个目标时截断并记录数量", () => {
-    const packages = Array.from({ length: UPGRADE_PLAN_TARGET_LIMIT + 3 }, (_, index) => pkg({ id: `homebrew:tool-${index}`, managerId: "homebrew", name: `tool-${index}` }));
+    const packages = Array.from({ length: UPGRADE_PLAN_TARGET_LIMIT + 3 }, (_, index) =>
+      pkg({ id: `homebrew:tool-${index}`, managerId: "homebrew", name: `tool-${index}` }),
+    );
 
     const prefill = buildUpgradePlanPrefill(packages);
 

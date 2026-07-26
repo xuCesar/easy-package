@@ -105,7 +105,9 @@ async function createSession() {
 
 async function run() {
   if (process.platform === "darwin") {
-    throw new Error("tauri-driver 当前不支持 macOS；原生 E2E 请在 Linux CI 运行，macOS 使用 pnpm check 和 pnpm build:desktop 验证。");
+    throw new Error(
+      "tauri-driver 当前不支持 macOS；原生 E2E 请在 Linux CI 运行，macOS 使用 pnpm check 和 pnpm build:desktop 验证。",
+    );
   }
   await mkdir(artifactDirectory, { recursive: true });
   const driverLog = [];

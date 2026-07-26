@@ -37,7 +37,7 @@ export function buildUpgradePlanPrefill(packages: ManagedPackage[]): UpgradePlan
   let selected: WritableManagerId | undefined;
   for (const managerId of writableManagerOrder) {
     const count = grouped.get(managerId)?.length ?? 0;
-    if (count > (selected ? grouped.get(selected)?.length ?? 0 : 0)) {
+    if (count > (selected ? (grouped.get(selected)?.length ?? 0) : 0)) {
       selected = managerId;
     }
   }
@@ -47,7 +47,9 @@ export function buildUpgradePlanPrefill(packages: ManagedPackage[]): UpgradePlan
 
   const candidates = grouped.get(selected) ?? [];
   const targets = candidates.slice(0, UPGRADE_PLAN_TARGET_LIMIT);
-  const otherWritableCount = [...grouped.entries()].filter(([managerId]) => managerId !== selected).reduce((total, [, names]) => total + names.length, 0);
+  const otherWritableCount = [...grouped.entries()]
+    .filter(([managerId]) => managerId !== selected)
+    .reduce((total, [, names]) => total + names.length, 0);
 
   return {
     managerId: selected,

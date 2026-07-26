@@ -1,8 +1,28 @@
-export type PageId = "overview" | "packages" | "actions" | "projects" | "analysis" | "runtimes" | "history" | "environment" | "logs" | "settings";
+export type PageId =
+  | "overview"
+  | "packages"
+  | "actions"
+  | "projects"
+  | "analysis"
+  | "runtimes"
+  | "history"
+  | "environment"
+  | "logs"
+  | "settings";
 
 export type ProjectAnalysisView = "index" | "graph" | "supplyChain";
 
-export type PackageManagerId = "homebrew" | "npm" | "pnpm" | "uv" | "pip" | "yarn" | "bun" | "cargo" | "rubygems" | "composer";
+export type PackageManagerId =
+  | "homebrew"
+  | "npm"
+  | "pnpm"
+  | "uv"
+  | "pip"
+  | "yarn"
+  | "bun"
+  | "cargo"
+  | "rubygems"
+  | "composer";
 
 export type ManagerStatus = "available" | "unavailable" | "error" | "blocked" | "unsupported";
 export type ExecutionTrust = "system" | "managed" | "userManaged" | "unverified" | "notApplicable";
@@ -258,10 +278,37 @@ export type PackageAction = "install" | "upgrade" | "uninstall" | "cleanup";
 export type PackageActionStatus = "planned" | "running" | "succeeded" | "failed" | "unknown";
 export type WritableManagerId = "homebrew" | "npm" | "pnpm";
 export type ActionCheckStatus = "pass" | "warning" | "blocked";
-export type ActionBlockerCode = "READY" | "UNSUPPORTED_PLATFORM" | "MISSING_SCAN" | "RECOVERY_REQUIRED" | "MANAGER_UNAVAILABLE" | "UNTRUSTED_EXECUTABLE" | "RUNTIME_CONFLICT" | "UNSAFE_DATA_PATH" | "PERMISSION_RISK" | "NETWORK_REQUIRED" | "SCRIPTS_DISABLED" | "CACHE_SEMANTICS";
+export type ActionBlockerCode =
+  | "READY"
+  | "UNSUPPORTED_PLATFORM"
+  | "MISSING_SCAN"
+  | "RECOVERY_REQUIRED"
+  | "MANAGER_UNAVAILABLE"
+  | "UNTRUSTED_EXECUTABLE"
+  | "RUNTIME_CONFLICT"
+  | "UNSAFE_DATA_PATH"
+  | "PERMISSION_RISK"
+  | "NETWORK_REQUIRED"
+  | "SCRIPTS_DISABLED"
+  | "CACHE_SEMANTICS";
 export type ObservedActionOutcome = "applied" | "notApplied" | "ambiguous";
-export type CatalogSearchStatus = "ready" | "offline" | "invalidQuery" | "managerUnavailable" | "untrustedExecutable" | "cancelled" | "error";
-export type CatalogSearchBlockerCode = "NETWORK_POLICY_OFFLINE" | "INVALID_QUERY" | "UNSUPPORTED_MANAGER" | "MISSING_SCAN" | "MANAGER_UNAVAILABLE" | "UNTRUSTED_EXECUTABLE" | "CANCELLED" | "SEARCH_FAILED";
+export type CatalogSearchStatus =
+  | "ready"
+  | "offline"
+  | "invalidQuery"
+  | "managerUnavailable"
+  | "untrustedExecutable"
+  | "cancelled"
+  | "error";
+export type CatalogSearchBlockerCode =
+  | "NETWORK_POLICY_OFFLINE"
+  | "INVALID_QUERY"
+  | "UNSUPPORTED_MANAGER"
+  | "MISSING_SCAN"
+  | "MANAGER_UNAVAILABLE"
+  | "UNTRUSTED_EXECUTABLE"
+  | "CANCELLED"
+  | "SEARCH_FAILED";
 
 export interface CatalogSearchResult {
   managerId: WritableManagerId;
@@ -437,7 +484,11 @@ export interface DevPkgApi {
   exportEnvironmentReport(format: ReportFormat): Promise<ReportExportResult>;
   listSnapshotSummaries(): Promise<SnapshotSummary[]>;
   compareSnapshots(baselineId: number, currentId: number): Promise<SnapshotComparison>;
-  exportSnapshotComparisonReport(format: ReportFormat, baselineId: number, currentId: number): Promise<ReportExportResult>;
+  exportSnapshotComparisonReport(
+    format: ReportFormat,
+    baselineId: number,
+    currentId: number,
+  ): Promise<ReportExportResult>;
   getHealthReport(): Promise<HealthIssue[]>;
   getScanLogs(): Promise<TaskLog[]>;
   getProjectDependencyGraph(projectPath: string): Promise<ProjectDependencyGraph>;

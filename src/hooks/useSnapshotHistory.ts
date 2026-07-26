@@ -9,7 +9,7 @@ interface SnapshotHistoryState {
   error?: string;
 }
 
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function useSnapshotHistory(scannedAt?: string) {
   const [state, setState] = useState<SnapshotHistoryState>({ summaries: [], isLoading: false });
@@ -18,9 +18,8 @@ export function useSnapshotHistory(scannedAt?: string) {
     setState((current) => ({ ...current, isLoading: true, error: undefined }));
     try {
       const summaries = await api.listSnapshotSummaries();
-      const comparison = summaries.length > 1
-        ? await api.compareSnapshots(summaries[1].id, summaries[0].id)
-        : undefined;
+      const comparison =
+        summaries.length > 1 ? await api.compareSnapshots(summaries[1].id, summaries[0].id) : undefined;
       setState({ summaries, comparison, isLoading: false });
     } catch (error) {
       setState((current) => ({ ...current, isLoading: false, error: errorMessage(error) }));
@@ -38,7 +37,8 @@ export function useSnapshotHistory(scannedAt?: string) {
   }, []);
 
   const exportComparison = useCallback(
-    (format: ReportFormat, baselineId: number, currentId: number) => api.exportSnapshotComparisonReport(format, baselineId, currentId),
+    (format: ReportFormat, baselineId: number, currentId: number) =>
+      api.exportSnapshotComparisonReport(format, baselineId, currentId),
     [],
   );
 

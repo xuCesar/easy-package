@@ -19,7 +19,7 @@ interface Deferred<T> {
   reject: (reason: unknown) => void;
 }
 
-const createDeferred = <T,>(): Deferred<T> => {
+const createDeferred = <T>(): Deferred<T> => {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
@@ -29,7 +29,13 @@ const createDeferred = <T,>(): Deferred<T> => {
   return { promise, resolve, reject };
 };
 
-const fakeScan = { managers: [], packages: [], projects: [], healthIssues: [], scanRoots: [] } as unknown as EnvironmentScan;
+const fakeScan = {
+  managers: [],
+  packages: [],
+  projects: [],
+  healthIssues: [],
+  scanRoots: [],
+} as unknown as EnvironmentScan;
 
 describe("useDevPkg 扫描竞态", () => {
   let scanCalls: Array<{ scanId: string; deferred: Deferred<EnvironmentScan> }>;

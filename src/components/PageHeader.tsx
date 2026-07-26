@@ -9,7 +9,10 @@ interface PageHeaderProps {
 export function PageHeader({ title, description, actions }: PageHeaderProps) {
   return (
     <header className="page-header">
-      <div><h1>{title}</h1><p>{description}</p></div>
+      <div>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
       {actions ? <div className="page-header__actions">{actions}</div> : null}
     </header>
   );

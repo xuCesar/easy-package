@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HistoryPage } from "./HistoryPage";
 import type { SnapshotComparison, SnapshotSummary } from "../types";
+import { HistoryPage } from "./HistoryPage";
 
 const summaries: SnapshotSummary[] = [
   { id: 2, scannedAt: "2026-07-11T09:00:00Z", managerCount: 3, packageCount: 8, projectCount: 2, healthIssueCount: 1 },
@@ -16,7 +16,13 @@ const comparison: SnapshotComparison = {
   changedCount: 1,
   changes: [
     { kind: "added", entity: "package", key: "npm:test", title: "新增软件包：test", description: "npm · 1.0" },
-    { kind: "changed", entity: "project", key: "/tmp/app", title: "项目元数据已变化：app", description: "锁文件已变化。" },
+    {
+      kind: "changed",
+      entity: "project",
+      key: "/tmp/app",
+      title: "项目元数据已变化：app",
+      description: "锁文件已变化。",
+    },
     { kind: "removed", entity: "health", key: "legacy", title: "健康提示已消失：旧版", description: "已消失。" },
   ],
 };
@@ -26,7 +32,15 @@ afterEach(cleanup);
 describe("HistoryPage", () => {
   it("按类型筛选变化，并比较指定快照", async () => {
     const onCompare = vi.fn().mockResolvedValue(comparison);
-    render(<HistoryPage summaries={summaries} comparison={comparison} isLoading={false} onCompare={onCompare} onExport={vi.fn()} />);
+    render(
+      <HistoryPage
+        summaries={summaries}
+        comparison={comparison}
+        isLoading={false}
+        onCompare={onCompare}
+        onExport={vi.fn()}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("变化类型"), { target: { value: "package" } });
     expect(screen.getByText("新增软件包：test")).toBeInTheDocument();
@@ -38,7 +52,15 @@ describe("HistoryPage", () => {
 
   it("拒绝倒序快照并处理变化报告导出", async () => {
     const onExport = vi.fn().mockResolvedValue({ saved: true });
-    render(<HistoryPage summaries={summaries} comparison={comparison} isLoading={false} onCompare={vi.fn()} onExport={onExport} />);
+    render(
+      <HistoryPage
+        summaries={summaries}
+        comparison={comparison}
+        isLoading={false}
+        onCompare={vi.fn()}
+        onExport={onExport}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("当前快照"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "比较快照" }));

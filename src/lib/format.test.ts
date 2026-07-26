@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { filterPackages, formatBytes, managerLabel } from "./format";
 import { mockScan } from "../mock-data";
+import { filterPackages, formatBytes, managerLabel } from "./format";
 
 describe("filterPackages", () => {
   it("按名称、管理器和状态组合过滤", () => {
-    expect(filterPackages(mockScan.packages, { query: "type", manager: "npm", status: "available" }).map((pkg) => pkg.name)).toEqual(["typescript"]);
+    expect(
+      filterPackages(mockScan.packages, { query: "type", manager: "npm", status: "available" }).map((pkg) => pkg.name),
+    ).toEqual(["typescript"]);
   });
 
   it("空条件返回所有包", () => {
-    expect(filterPackages(mockScan.packages, { query: "", manager: "all", status: "all" })).toHaveLength(mockScan.packages.length);
+    expect(filterPackages(mockScan.packages, { query: "", manager: "all", status: "all" })).toHaveLength(
+      mockScan.packages.length,
+    );
   });
 });
 

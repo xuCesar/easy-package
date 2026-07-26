@@ -18,7 +18,13 @@ export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
     if (issue.severity === "info") {
       continue;
     }
-    items.push({ id: `health:${issue.id}`, severity: issue.severity, title: issue.title, detail: issue.description, target: "environment" });
+    items.push({
+      id: `health:${issue.id}`,
+      severity: issue.severity,
+      title: issue.title,
+      detail: issue.description,
+      target: "environment",
+    });
   }
 
   for (const assessment of data.runtimeAssessments) {

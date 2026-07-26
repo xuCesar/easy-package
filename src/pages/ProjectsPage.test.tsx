@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProjectsPage } from "./ProjectsPage";
 import type { ProjectMetadata } from "../types";
+import { ProjectsPage } from "./ProjectsPage";
 
 const project: ProjectMetadata = {
   name: "demo-app",
@@ -10,7 +10,18 @@ const project: ProjectMetadata = {
   lockFiles: ["pnpm-lock.yaml"],
   runtimeRequirements: [{ runtime: "Node.js", requirement: ">=22" }],
   packageManager: "pnpm@11",
-  dependencies: [{ ecosystem: "JavaScript", name: "react", normalizedName: "react", versionRequirement: "^19.0.0", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "pnpm-lock.yaml", resolutionChecked: true }],
+  dependencies: [
+    {
+      ecosystem: "JavaScript",
+      name: "react",
+      normalizedName: "react",
+      versionRequirement: "^19.0.0",
+      scopes: ["运行"],
+      resolvedVersion: "19.1.1",
+      resolutionSource: "pnpm-lock.yaml",
+      resolutionChecked: true,
+    },
+  ],
   warnings: [],
 };
 
@@ -66,8 +77,20 @@ describe("ProjectsPage", () => {
 
   it("将工作区聚合为一个项目并在详情展示成员", () => {
     const rootProject = { ...project, name: "suite", path: "/tmp/suite" };
-    const member = { ...project, name: "@suite/admin", path: "/tmp/suite/apps/admin", workspace: { name: "suite", path: "/tmp/suite", ecosystem: "JavaScript" } };
-    render(<ProjectsPage {...pageProps} projects={[rootProject, member]} workspaces={[{ name: "suite", path: "/tmp/suite", ecosystem: "JavaScript", memberPaths: [member.path] }]} scanRoots={[rootProject.path]} />);
+    const member = {
+      ...project,
+      name: "@suite/admin",
+      path: "/tmp/suite/apps/admin",
+      workspace: { name: "suite", path: "/tmp/suite", ecosystem: "JavaScript" },
+    };
+    render(
+      <ProjectsPage
+        {...pageProps}
+        projects={[rootProject, member]}
+        workspaces={[{ name: "suite", path: "/tmp/suite", ecosystem: "JavaScript", memberPaths: [member.path] }]}
+        scanRoots={[rootProject.path]}
+      />,
+    );
 
     expect(screen.getAllByRole("button", { name: /查看项目/ })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "查看项目 suite" }));
@@ -79,7 +102,14 @@ describe("ProjectsPage", () => {
   it("过滤旧快照中默认忽略目录下的伪项目", () => {
     const rootProject = { ...project, name: "suite", path: "/tmp/suite" };
     const generated = { ...project, name: "types", path: "/tmp/suite/apps/admin/.next/types" };
-    render(<ProjectsPage {...pageProps} projects={[rootProject, generated]} scanRoots={[rootProject.path]} ignoredDirectoryNames={["node_modules", ".git", "dist"]} />);
+    render(
+      <ProjectsPage
+        {...pageProps}
+        projects={[rootProject, generated]}
+        scanRoots={[rootProject.path]}
+        ignoredDirectoryNames={["node_modules", ".git", "dist"]}
+      />,
+    );
 
     expect(screen.getByRole("button", { name: "查看项目 suite" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查看项目 types" })).not.toBeInTheDocument();
