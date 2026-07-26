@@ -34,7 +34,8 @@ describe("collectAttentionItems", () => {
     expect(items[0].severity).toBe("error");
     expect(items[0].target).toBe("environment");
     expect(items[2].target).toBe("runtimes");
-    expect(items[3].target).toBe("supplyChain");
+    expect(items[3].target).toBe("analysis");
+    expect(items[3].analysisView).toBe("supplyChain");
     expect(items[3].title).toBe("api-lab 存在 1 项供应链风险");
   });
 

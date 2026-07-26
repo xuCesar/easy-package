@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DependenciesPage } from "./DependenciesPage";
-import type { DependencyInsight, ProjectDependencyGraph, ProjectMetadata } from "../types";
+import { ProjectAnalysisPage } from "./ProjectAnalysisPage";
+import type { DependencyInsight, ProjectAnalysisView, ProjectDependencyGraph, ProjectMetadata, ProjectWorkspace } from "../types";
 
 const insights: DependencyInsight[] = [
   { ecosystem: "JavaScript", name: "react", projectCount: 2, versionRequirements: ["^18", "^19"], resolvedVersions: ["18.3.1", "19.1.1"], hasVersionDivergence: true, hasResolvedVersionDivergence: true, hasResolutionRisk: true, hasHealthRisk: true, projects: [{ projectName: "web", projectPath: "/tmp/web", versionRequirement: "^19", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "package-lock.json" }, { projectName: "docs", projectPath: "/tmp/docs", versionRequirement: "^18", scopes: ["开发"], resolvedVersion: "18.3.1", resolutionSource: "package-lock.json" }] },
@@ -52,15 +53,30 @@ const graph: ProjectDependencyGraph = {
   summary: projects[0].dependencyGraphSummary!,
 };
 
-function renderPage(overrides: Partial<React.ComponentProps<typeof DependenciesPage>> = {}) {
-  const props: React.ComponentProps<typeof DependenciesPage> = {
+interface HarnessProps {
+  insights: DependencyInsight[];
+  projects: ProjectMetadata[];
+  workspaces?: ProjectWorkspace[];
+  scanRoots?: string[];
+  ignoredDirectoryNames?: string[];
+  onLoadGraph: (projectPath: string) => Promise<ProjectDependencyGraph>;
+  onExportSbom: ReturnType<typeof vi.fn>;
+}
+
+function Harness({ workspaces = [], scanRoots = [], ignoredDirectoryNames = [], ...props }: HarnessProps) {
+  const [view, setView] = useState<ProjectAnalysisView>("index");
+  return <ProjectAnalysisPage view={view} onChangeView={setView} workspaces={workspaces} scanRoots={scanRoots} ignoredDirectoryNames={ignoredDirectoryNames} onLoadReport={vi.fn()} {...props} />;
+}
+
+function renderPage(overrides: Partial<HarnessProps> = {}) {
+  const props: HarnessProps = {
     insights,
     projects,
     onLoadGraph: vi.fn().mockResolvedValue(graph),
     onExportSbom: vi.fn().mockResolvedValue({ saved: true }),
     ...overrides,
   };
-  return { ...render(<DependenciesPage {...props} />), props };
+  return { ...render(<Harness {...props} />), props };
 }
 
 afterEach(cleanup);
@@ -110,7 +126,7 @@ describe("DependenciesPage", () => {
     expect(screen.queryByText(".next · 已忽略")).not.toBeInTheDocument();
     expect(screen.getByText("已索引项目").parentElement?.querySelector("strong")).toHaveTextContent("1");
 
-    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
     expect(screen.getByRole("option", { name: "easy-mes · 工作区 · 完整" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /@easy-mes\/admin/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /\.next/ })).not.toBeInTheDocument();
@@ -145,7 +161,7 @@ describe("DependenciesPage", () => {
 
   it("按需加载项目依赖图并筛选节点、展示最短路径", async () => {
     const { props } = renderPage();
-    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
     expect(screen.getByText("尚未解析项目依赖图")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     await waitFor(() => expect(props.onLoadGraph).toHaveBeenCalledWith("/tmp/web"));
@@ -162,10 +178,24 @@ describe("DependenciesPage", () => {
     expect(screen.queryByText("scheduler")).not.toBeInTheDocument();
   });
 
+  it("依赖图与供应链风险共享同一项目选择", () => {
+    const docs: ProjectMetadata = { ...projects[0], name: "docs", path: "/tmp/docs", dependencyGraphSummary: undefined };
+    renderPage({ projects: [...projects, docs] });
+
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.change(screen.getByLabelText("依赖图项目"), { target: { value: "/tmp/docs" } });
+
+    fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
+    expect(screen.getByLabelText("供应链项目")).toHaveValue("/tmp/docs");
+
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    expect(screen.getByLabelText("依赖图项目")).toHaveValue("/tmp/docs");
+  });
+
   it("展示 SBOM 导出的成功、取消与失败反馈", async () => {
     const onExportSbom = vi.fn().mockResolvedValueOnce({ saved: true }).mockResolvedValueOnce({ saved: false }).mockRejectedValueOnce(new Error("保存失败"));
     renderPage({ onExportSbom });
-    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     const exportButton = await screen.findByRole("button", { name: "导出 CycloneDX SBOM" });
 
@@ -180,7 +210,7 @@ describe("DependenciesPage", () => {
   it("对不支持和无效依赖图禁用 SBOM 导出", async () => {
     const unsupported = { ...graph, completeness: "unsupported" as const, nodes: [graph.nodes[0]], edges: [], sources: [], summary: { ...graph.summary, completeness: "unsupported" as const } };
     renderPage({ onLoadGraph: vi.fn().mockResolvedValue(unsupported) });
-    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     expect(await screen.findByText("不支持")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导出 CycloneDX SBOM" })).toBeDisabled();

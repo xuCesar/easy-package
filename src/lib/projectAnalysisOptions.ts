@@ -48,6 +48,16 @@ export function buildProjectAnalysisOptions(
   return [...workspaceOptions, ...standaloneOptions].sort((left, right) => left.name.localeCompare(right.name));
 }
 
+/** 统一的默认选中项：优先有依赖图摘要的项目，其次有供应链摘要的，最后取首个。 */
+export function defaultAnalysisProjectPath(options: ProjectAnalysisOption[]): string {
+  return (
+    options.find((option) => option.project.dependencyGraphSummary)?.project.path ??
+    options.find((option) => option.supplyChainRiskSummary)?.project.path ??
+    options[0]?.project.path ??
+    ""
+  );
+}
+
 function aggregateSupplyChainRiskSummaries(projects: ProjectMetadata[]): ProjectMetadata["supplyChainRiskSummary"] {
   const summaries = projects.flatMap((project) => project.supplyChainRiskSummary ? [project.supplyChainRiskSummary] : []);
   if (!summaries.length) return undefined;

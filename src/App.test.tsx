@@ -18,8 +18,9 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "运行时" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "日志" }));
     expect(screen.getByRole("heading", { name: "日志" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "供应链" }));
-    expect(screen.getByRole("heading", { name: "供应链" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "项目分析" }));
+    expect(screen.getByRole("heading", { name: "项目分析" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
     fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));

@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import { PageHeader } from "../components/PageHeader";
 import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
 import type { ProjectMetadata, ProjectSupplyChainReport, ProjectWorkspace, ReportExportResult, SupplyChainRiskFinding } from "../types";
 
@@ -10,6 +9,10 @@ interface SupplyChainPageProps {
   workspaces: ProjectWorkspace[];
   scanRoots: string[];
   ignoredDirectoryNames: string[];
+  projectPath: string;
+  onSelectProject: (path: string) => void;
+  showIgnoredProjects: boolean;
+  onToggleIgnoredProjects: (show: boolean) => void;
   onLoadReport: (projectPath: string) => Promise<ProjectSupplyChainReport>;
   onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
 }
@@ -26,10 +29,8 @@ const ruleLabels: Record<string, string> = {
   DEPENDENCY_VERSION_MISSING: "版本缺失",
 };
 
-export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirectoryNames, onLoadReport, onExportSbom }: SupplyChainPageProps) {
-  const [showIgnoredProjects, setShowIgnoredProjects] = useState(false);
+export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirectoryNames, projectPath, onSelectProject, showIgnoredProjects, onToggleIgnoredProjects, onLoadReport, onExportSbom }: SupplyChainPageProps) {
   const projectOptions = useMemo(() => buildProjectAnalysisOptions(projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects), [ignoredDirectoryNames, projects, scanRoots, showIgnoredProjects, workspaces]);
-  const [projectPath, setProjectPath] = useState(() => projectOptions.find((option) => option.supplyChainRiskSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
   const [report, setReport] = useState<ProjectSupplyChainReport>();
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<"all" | "warning" | "info">("all");
@@ -57,12 +58,11 @@ export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirect
   }) ?? [], [query, report, rule, severity]);
   const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId);
 
-  useEffect(() => {
-    if (projectOptions.some((option) => option.project.path === projectPath)) return;
-    setProjectPath(projectOptions.find((option) => option.supplyChainRiskSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
+  const selectProject = (path: string) => {
+    onSelectProject(path);
     setReport(undefined);
     setSelectedFindingId(undefined);
-  }, [projectOptions, projectPath]);
+  };
 
   const loadReport = async () => {
     if (!projectPath) return;
@@ -97,7 +97,6 @@ export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirect
 
   return (
     <>
-      <PageHeader title="供应链" description="基于本机锁文件和完整依赖图识别结构性风险；不联网查询漏洞，也不推断许可证兼容性。" />
       {error ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>{error}</span></div> : null}
       {notice ? <div className="inline-alert"><Icon name="info" /><span>{notice}</span></div> : null}
       <section className="metrics supply-chain-metrics" aria-label="供应链风险摘要">
@@ -107,11 +106,11 @@ export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirect
       </section>
       <section className="panel graph-controls" aria-label="供应链分析设置">
         <div className="graph-controls__body">
-          <label className="select-field">项目<select aria-label="供应链项目" value={projectPath} onChange={(event) => { setProjectPath(event.target.value); setReport(undefined); setSelectedFindingId(undefined); }}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.supplyChainRiskSummary ? ` · ${option.supplyChainRiskSummary.warningCount} 个警告` : ""}</option>)}</select></label>
+          <label className="select-field">项目<select aria-label="供应链项目" value={projectPath} onChange={(event) => selectProject(event.target.value)}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.supplyChainRiskSummary ? ` · ${option.supplyChainRiskSummary.warningCount} 个警告` : ""}</option>)}</select></label>
           <button className="button button--primary" onClick={() => void loadReport()} disabled={!projectPath || isLoading}>{isLoading ? "分析中…" : "分析供应链风险"}</button>
           <button className="button button--secondary" onClick={() => void exportSbom()} disabled={!report || isExporting}>{isExporting ? "导出中…" : "导出含风险摘要的 SBOM"}</button>
         </div>
-        <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => setShowIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整证据按需从当前锁文件重建，不写入 SQLite。</p></div>
+        <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => onToggleIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整证据按需从当前锁文件重建，不写入 SQLite。</p></div>
       </section>
       {report ? <>
         <section className="metrics graph-metrics" aria-label="当前项目风险摘要">

@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import { PageHeader } from "../components/PageHeader";
 import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
 import { isIgnoredScanPath } from "../lib/projectPaths";
 import type { DependencyGraphNode, DependencyInsight, DependencyProjectUsage, ProjectDependencyGraph, ProjectMetadata, ProjectWorkspace, ReportExportResult } from "../types";
 
 interface DependenciesPageProps {
+  view: "index" | "graph";
   insights: DependencyInsight[];
   projects: ProjectMetadata[];
   workspaces?: ProjectWorkspace[];
   scanRoots?: string[];
   ignoredDirectoryNames?: string[];
+  projectPath: string;
+  onSelectProject: (path: string) => void;
+  showIgnoredProjects: boolean;
+  onToggleIgnoredProjects: (show: boolean) => void;
   onLoadGraph: (projectPath: string) => Promise<ProjectDependencyGraph>;
   onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
 }
@@ -35,16 +39,13 @@ const completenessLabel = {
   invalid: "无效",
 };
 
-export function DependenciesPage({ insights, projects, workspaces = [], scanRoots = [], ignoredDirectoryNames = [], onLoadGraph, onExportSbom }: DependenciesPageProps) {
-  const [view, setView] = useState<"insights" | "graph">("insights");
+export function DependenciesPage({ view, insights, projects, workspaces = [], scanRoots = [], ignoredDirectoryNames = [], projectPath: selectedProjectPath, onSelectProject, showIgnoredProjects, onToggleIgnoredProjects, onLoadGraph, onExportSbom }: DependenciesPageProps) {
   const [query, setQuery] = useState("");
   const [ecosystem, setEcosystem] = useState("all");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
   const [onlyRisky, setOnlyRisky] = useState(false);
   const [onlyResolutionRisk, setOnlyResolutionRisk] = useState(false);
-  const [showIgnoredProjects, setShowIgnoredProjects] = useState(false);
   const projectOptions = useMemo(() => buildProjectAnalysisOptions(projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects), [ignoredDirectoryNames, projects, scanRoots, showIgnoredProjects, workspaces]);
-  const [selectedProjectPath, setSelectedProjectPath] = useState(() => projectOptions.find((option) => option.project.dependencyGraphSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
   const [graph, setGraph] = useState<ProjectDependencyGraph>();
   const [graphQuery, setGraphQuery] = useState("");
   const [graphScope, setGraphScope] = useState<"all" | "direct" | "transitive" | "duplicates">("all");
@@ -84,12 +85,11 @@ export function DependenciesPage({ insights, projects, workspaces = [], scanRoot
   const outgoing = graph && selectedNode ? relatedNodes(graph, selectedNode.id, "outgoing") : [];
   const incoming = graph && selectedNode ? relatedNodes(graph, selectedNode.id, "incoming") : [];
 
-  useEffect(() => {
-    if (projectOptions.some((option) => option.project.path === selectedProjectPath)) return;
-    setSelectedProjectPath(projectOptions.find((option) => option.project.dependencyGraphSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
+  const selectProject = (path: string) => {
+    onSelectProject(path);
     setGraph(undefined);
     setSelectedNodeId(undefined);
-  }, [projectOptions, selectedProjectPath]);
+  };
 
   const loadGraph = async () => {
     if (!selectedProjectPath) return;
@@ -124,14 +124,9 @@ export function DependenciesPage({ insights, projects, workspaces = [], scanRoot
 
   return (
     <>
-      <PageHeader title="依赖" description="跨项目汇总直接声明依赖，并按需从 npm、pnpm 与 Cargo 锁文件生成完整只读依赖图。" />
       {actionError ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>{actionError}</span></div> : null}
       {notice ? <div className="inline-alert"><Icon name="info" /><span>{notice}</span></div> : null}
-      <div className="view-tabs" role="tablist" aria-label="依赖视图">
-        <button role="tab" aria-selected={view === "insights"} className={view === "insights" ? "view-tab view-tab--active" : "view-tab"} onClick={() => setView("insights")}>跨项目汇总</button>
-        <button role="tab" aria-selected={view === "graph"} className={view === "graph" ? "view-tab view-tab--active" : "view-tab"} onClick={() => setView("graph")}>项目依赖图</button>
-      </div>
-      {view === "insights" ? <>
+      {view === "index" ? <>
         <section className="metrics dependency-metrics" aria-label="依赖摘要">
           <div className="metric"><span className="metric__icon"><Icon name="dependencies" /></span><div><strong>{insights.length}</strong><span>直接依赖</span></div></div>
           <div className="metric"><span className="metric__icon"><Icon name="projects" /></span><div><strong>{totalProjects}</strong><span>已索引项目</span></div></div>
@@ -156,11 +151,11 @@ export function DependenciesPage({ insights, projects, workspaces = [], scanRoot
       </> : <>
         <section className="panel graph-controls" aria-label="项目依赖图设置">
           <div className="graph-controls__body">
-            <label className="select-field">项目<select aria-label="依赖图项目" value={selectedProjectPath} onChange={(event) => { setSelectedProjectPath(event.target.value); setGraph(undefined); setSelectedNodeId(undefined); }}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.project.dependencyGraphSummary ? ` · ${completenessLabel[option.project.dependencyGraphSummary.completeness]}` : ""}</option>)}</select></label>
+            <label className="select-field">项目<select aria-label="依赖图项目" value={selectedProjectPath} onChange={(event) => selectProject(event.target.value)}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.project.dependencyGraphSummary ? ` · ${completenessLabel[option.project.dependencyGraphSummary.completeness]}` : ""}</option>)}</select></label>
             <button className="button button--primary" onClick={() => void loadGraph()} disabled={!selectedProjectPath || isLoadingGraph}>{isLoadingGraph ? "解析中…" : "解析依赖图"}</button>
             <button className="button button--secondary" onClick={() => void exportSbom()} disabled={!graph || graph.completeness === "unsupported" || graph.completeness === "invalid" || isExporting}>{isExporting ? "导出中…" : "导出 CycloneDX SBOM"}</button>
           </div>
-          <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => setShowIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整图按需读取当前锁文件，不写入 SQLite 快照。</p></div>
+          <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => onToggleIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整图按需读取当前锁文件，不写入 SQLite 快照。</p></div>
         </section>
         {graph ? <>
           <section className="metrics graph-metrics" aria-label="依赖图摘要">

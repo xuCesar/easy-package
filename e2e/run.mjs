@@ -136,7 +136,7 @@ async function run() {
     await waitForElement("//h1[normalize-space()='环境']");
     await waitForElement("//h2[normalize-space()='命令解析']");
 
-    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='依赖']");
+    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='项目分析']");
     await selectOption("//select[@aria-label='依赖生态']", "JavaScript");
     await waitForElement("//h2[normalize-space()='react']");
     await waitForElement("//span[normalize-space()='pnpm-lock.yaml']");

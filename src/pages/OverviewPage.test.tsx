@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe("OverviewPage", () => {
   it("没有扫描项目时展示添加入口", () => {
     const onNavigate = vi.fn();
-    render(<OverviewPage data={{ ...mockScan, projects: [] }} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={onNavigate} />);
+    render(<OverviewPage data={{ ...mockScan, projects: [] }} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={onNavigate} onOpenAnalysis={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加扫描目录" }));
 
@@ -17,7 +17,8 @@ describe("OverviewPage", () => {
 
   it("展示待关注问题聚合列表并可跳转对应页面", () => {
     const onNavigate = vi.fn();
-    render(<OverviewPage data={mockScan} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={onNavigate} />);
+    const onOpenAnalysis = vi.fn();
+    render(<OverviewPage data={mockScan} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={onNavigate} onOpenAnalysis={onOpenAnalysis} />);
 
     const attention = screen.getByRole("region", { name: "待关注问题" });
     expect(within(attention).getByRole("heading", { name: "2 项需关注" })).toBeInTheDocument();
@@ -26,12 +27,12 @@ describe("OverviewPage", () => {
     expect(onNavigate).toHaveBeenCalledWith("environment");
 
     fireEvent.click(within(attention).getByRole("button", { name: /api-lab 存在 1 项供应链风险/ }));
-    expect(onNavigate).toHaveBeenCalledWith("supplyChain");
+    expect(onOpenAnalysis).toHaveBeenCalledWith("supplyChain");
   });
 
   it("没有待关注问题时展示一切正常", () => {
     const data = { ...mockScan, healthIssues: [], runtimeAssessments: [], projects: mockScan.projects.map((project) => ({ ...project, supplyChainRiskSummary: undefined })) };
-    render(<OverviewPage data={data} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={vi.fn()} />);
+    render(<OverviewPage data={data} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={vi.fn()} onOpenAnalysis={vi.fn()} />);
 
     const attention = screen.getByRole("region", { name: "待关注问题" });
     expect(within(attention).getByRole("heading", { name: "一切正常" })).toBeInTheDocument();

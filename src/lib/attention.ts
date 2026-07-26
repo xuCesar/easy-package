@@ -1,4 +1,4 @@
-import type { EnvironmentScan, HealthSeverity, PageId } from "../types";
+import type { EnvironmentScan, HealthSeverity, PageId, ProjectAnalysisView } from "../types";
 
 export interface AttentionItem {
   id: string;
@@ -6,6 +6,7 @@ export interface AttentionItem {
   title: string;
   detail: string;
   target: PageId;
+  analysisView?: ProjectAnalysisView;
 }
 
 const severityRank: Record<HealthSeverity, number> = { error: 0, warning: 1, info: 2 };
@@ -43,7 +44,8 @@ export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
       severity: "warning",
       title: `${project.name} 存在 ${warningCount} 项供应链风险`,
       detail: "查看供应链风险明细并导出 SBOM。",
-      target: "supplyChain",
+      target: "analysis",
+      analysisView: "supplyChain",
     });
   }
 

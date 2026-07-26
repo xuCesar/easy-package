@@ -3,7 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusDot } from "../components/Status";
 import { collectAttentionItems } from "../lib/attention";
 import { formatRelativeTime } from "../lib/format";
-import type { EnvironmentScan, PageId, ScanProgress, SnapshotComparison } from "../types";
+import type { EnvironmentScan, PageId, ProjectAnalysisView, ScanProgress, SnapshotComparison } from "../types";
 
 interface OverviewPageProps {
   data: EnvironmentScan;
@@ -13,6 +13,7 @@ interface OverviewPageProps {
   onRefresh: () => void;
   onCancel: () => void;
   onNavigate: (page: PageId) => void;
+  onOpenAnalysis: (view: ProjectAnalysisView) => void;
 }
 
 const phaseLabel: Record<ScanProgress["phase"], string> = {
@@ -23,7 +24,7 @@ const phaseLabel: Record<ScanProgress["phase"], string> = {
   complete: "扫描完成",
 };
 
-export function OverviewPage({ data, isLoading, scanProgress, comparison: _comparison, onRefresh, onCancel, onNavigate }: OverviewPageProps) {
+export function OverviewPage({ data, isLoading, scanProgress, comparison: _comparison, onRefresh, onCancel, onNavigate, onOpenAnalysis }: OverviewPageProps) {
   const managers = data.managers.slice(0, 4);
   const projects = data.projects.slice(0, 4);
   const scanLogs = data.logs.slice(0, 3);
@@ -41,7 +42,7 @@ export function OverviewPage({ data, isLoading, scanProgress, comparison: _compa
         <div className="overview-section__header"><h2>{attentionItems.length > 0 ? `${attentionItems.length} 项需关注` : "一切正常"}</h2></div>
         <div className="overview-rows">
           {attentionItems.map((item) => (
-            <button key={item.id} className="overview-row" onClick={() => onNavigate(item.target)}>
+            <button key={item.id} className="overview-row" onClick={() => item.analysisView ? onOpenAnalysis(item.analysisView) : onNavigate(item.target)}>
               <span><Icon name={item.severity === "info" ? "info" : "warning"} className={`attention-icon attention-icon--${item.severity}`} />{item.title}</span>
               <span className="overview-row__quiet">{item.detail}</span>
               <span className="overview-row__quiet"><Icon name="chevron" /></span>
