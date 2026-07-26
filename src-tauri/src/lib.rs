@@ -27,6 +27,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let storage = Storage::new(app.handle())?;
+            // 崩溃后遗留的 Running 审计立即转入待核对状态，而不是等下一次扫描。
+            if let Err(error) = storage.recover_incomplete_actions() {
+                eprintln!("启动时恢复未完成写操作失败：{error}");
+            }
             app.manage(storage);
             app.manage(commands::ScanRegistry::default());
             app.manage(actions::ActionRegistry::default());

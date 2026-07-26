@@ -52,6 +52,7 @@ struct ExecutableFingerprint {
     canonical_path: PathBuf,
     size: u64,
     modified_at: Option<SystemTime>,
+    content_digest: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -809,11 +810,49 @@ fn capture_executable_fingerprint(path: &Path) -> Result<ExecutableFingerprint, 
     if !metadata.is_file() {
         return Err(AppError::Command("包管理器路径不是普通文件".into()));
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o002 != 0 {
+            return Err(AppError::Command(
+                "包管理器可执行文件允许任意用户写入，拒绝用于写操作".into(),
+            ));
+        }
+    }
     Ok(ExecutableFingerprint {
-        canonical_path,
+        content_digest: digest_file_contents(&canonical_path)?,
         size: metadata.len(),
         modified_at: metadata.modified().ok(),
+        canonical_path,
     })
+}
+
+// 指纹除 size/mtime 外附带内容摘要，缩小校验与 spawn 之间的 TOCTOU 窗口：
+// 原地替换同尺寸、同 mtime 的文件也会被检出。
+fn digest_file_contents(path: &Path) -> Result<String, AppError> {
+    use sha2::{Digest, Sha256};
+    let file = std::fs::File::open(path)
+        .map_err(|error| AppError::Command(format!("无法读取包管理器可执行文件：{error}")))?;
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| AppError::Command(format!("无法读取包管理器可执行文件：{error}")))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            use std::fmt::Write;
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        }))
 }
 
 fn verify_executable_fingerprint(
@@ -1331,6 +1370,42 @@ mod tests {
         let after = capture_executable_fingerprint(&executable).unwrap();
         assert_ne!(before, after);
         assert!(verify_executable_fingerprint(&executable, &before).is_err());
+    }
+
+    #[test]
+    fn fingerprint_detects_same_size_same_mtime_content_swap() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("tool");
+        std::fs::write(&executable, "payload-A").unwrap();
+        let before = capture_executable_fingerprint(&executable).unwrap();
+        let original_mtime = std::fs::metadata(&executable).unwrap().modified().unwrap();
+
+        std::fs::write(&executable, "payload-B").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&executable)
+            .unwrap()
+            .set_modified(original_mtime)
+            .unwrap();
+
+        let metadata = std::fs::metadata(&executable).unwrap();
+        assert_eq!(metadata.len(), before.size);
+        assert_eq!(metadata.modified().unwrap(), original_mtime);
+        assert!(verify_executable_fingerprint(&executable, &before).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fingerprint_rejects_world_writable_executables() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("tool");
+        std::fs::write(&executable, "content").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(capture_executable_fingerprint(&executable).is_err());
+
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(capture_executable_fingerprint(&executable).is_ok());
     }
 
     #[test]

@@ -267,7 +267,7 @@ impl Storage {
             }
             record.status = crate::models::PackageActionStatus::Unknown;
             record.error =
-                Some("应用在操作完成前退出；已重新扫描环境，但无法确认中断前已完成的步骤。".into());
+                Some("应用在操作完成前退出；已标记为待核对，请重新扫描并确认实际结果。".into());
             record.finished_at = chrono::Utc::now().to_rfc3339();
             record.rescan_required = true;
             self.save_action_audit(&record)?;
