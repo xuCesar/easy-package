@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { apiErrorMessage } from "../lib/apiError";
@@ -74,6 +74,7 @@ export function DependenciesPage({
   const [isExporting, setIsExporting] = useState(false);
   const [actionError, setActionError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const graphRequestToken = useRef(0);
   const ecosystems = useMemo(() => [...new Set(insights.map((insight) => insight.ecosystem))].sort(), [insights]);
   const insightDisplays = useMemo(
     () =>
@@ -138,6 +139,7 @@ export function DependenciesPage({
   const incoming = graph && selectedNode ? relatedNodes(graph, selectedNode.id, "incoming") : [];
 
   const selectProject = (path: string) => {
+    graphRequestToken.current += 1;
     onSelectProject(path);
     setGraph(undefined);
     setSelectedNodeId(undefined);
@@ -145,17 +147,24 @@ export function DependenciesPage({
 
   const loadGraph = async () => {
     if (!selectedProjectPath) return;
+    graphRequestToken.current += 1;
+    const token = graphRequestToken.current;
     setIsLoadingGraph(true);
     setActionError(undefined);
     setNotice(undefined);
     setSelectedNodeId(undefined);
     try {
-      setGraph(await onLoadGraph(selectedProjectPath));
+      const graph = await onLoadGraph(selectedProjectPath);
+      if (graphRequestToken.current !== token) return;
+      setGraph(graph);
     } catch (error) {
+      if (graphRequestToken.current !== token) return;
       setGraph(undefined);
       setActionError(apiErrorMessage(error, "依赖分析失败，请重试。"));
     } finally {
-      setIsLoadingGraph(false);
+      if (graphRequestToken.current === token) {
+        setIsLoadingGraph(false);
+      }
     }
   };
 

@@ -31,7 +31,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "管理操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "缓存清理" }));
-    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    const planButton = screen.getByRole("button", { name: "生成操作计划" });
+    await waitFor(() => expect(planButton).toBeEnabled());
+    fireEvent.click(planButton);
     expect(await screen.findByText("/opt/homebrew/bin/brew cleanup")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "系统设置" }));
     expect(screen.getByRole("heading", { name: "系统设置" })).toBeInTheDocument();

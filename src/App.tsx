@@ -1,13 +1,11 @@
-import { type ReactNode, useState } from "react";
+import { memo, type ReactNode, useCallback, useState } from "react";
 import { isTauriRuntime } from "./api";
 import { AppShell } from "./components/AppShell";
 import { Icon } from "./components/Icon";
-import { useCatalogSearch } from "./hooks/useCatalogSearch";
 import { useDevPkg } from "./hooks/useDevPkg";
-import { usePackageActions } from "./hooks/usePackageActions";
 import { useSnapshotHistory } from "./hooks/useSnapshotHistory";
 import type { UpgradePlanPrefill } from "./lib/upgradePlanBridge";
-import { ActionCenterPage } from "./pages/ActionCenterPage";
+import { ActionCenterContainer } from "./pages/ActionCenterContainer";
 import { EnvironmentPage } from "./pages/EnvironmentPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LogsPage } from "./pages/LogsPage";
@@ -29,22 +27,35 @@ const diagnosticLabels: Record<(typeof diagnosticPages)[number], string> = {
 };
 const diagnosticPageSet = new Set<PageId>(diagnosticPages);
 
+// 扫描进度高频更新只应重渲染消费它的概览页；其余页面通过 memo + 稳定 props 跳过。
+const MemoPackagesPage = memo(PackagesPage);
+const MemoProjectsPage = memo(ProjectsPage);
+const MemoProjectAnalysisPage = memo(ProjectAnalysisPage);
+const MemoRuntimesPage = memo(RuntimesPage);
+const MemoHistoryPage = memo(HistoryPage);
+const MemoEnvironmentPage = memo(EnvironmentPage);
+const MemoLogsPage = memo(LogsPage);
+const MemoSettingsPage = memo(SettingsPage);
+
 export function App() {
   const [page, setPage] = useState<PageId>("overview");
   const [upgradePrefill, setUpgradePrefill] = useState<UpgradePlanPrefill>();
   const [analysisView, setAnalysisView] = useState<ProjectAnalysisView>("index");
-  const navigate = (next: PageId) => {
+  const navigate = useCallback((next: PageId) => {
     setUpgradePrefill(undefined);
     setPage(next);
-  };
-  const openAnalysis = (view: ProjectAnalysisView) => {
-    setAnalysisView(view);
-    navigate("analysis");
-  };
-  const startUpgradePlan = (prefill: UpgradePlanPrefill) => {
+  }, []);
+  const openAnalysis = useCallback(
+    (view: ProjectAnalysisView) => {
+      setAnalysisView(view);
+      navigate("analysis");
+    },
+    [navigate],
+  );
+  const startUpgradePlan = useCallback((prefill: UpgradePlanPrefill) => {
     setUpgradePrefill(prefill);
     setPage("actions");
-  };
+  }, []);
   const {
     data,
     isLoading,
@@ -62,9 +73,9 @@ export function App() {
     exportProjectSbom,
     applyEnvironment,
   } = useDevPkg();
-  const packageActions = usePackageActions(applyEnvironment, data?.scannedAt);
-  const catalogSearch = useCatalogSearch();
   const history = useSnapshotHistory(data?.scannedAt);
+  const refreshNow = useCallback(() => void refresh(), [refresh]);
+  const cancelScanNow = useCallback(() => void cancelScan(), [cancelScan]);
 
   let content: ReactNode;
   if (!data && isLoading) {
@@ -123,8 +134,8 @@ export function App() {
             isLoading={isLoading}
             scanProgress={scanProgress}
             comparison={history.comparison}
-            onRefresh={() => void refresh()}
-            onCancel={() => void cancelScan()}
+            onRefresh={refreshNow}
+            onCancel={cancelScanNow}
             onNavigate={navigate}
             onOpenAnalysis={openAnalysis}
           />
@@ -143,48 +154,30 @@ export function App() {
           </nav>
         ) : null}
         {page === "packages" ? (
-          <PackagesPage packages={data.packages} onNavigate={navigate} onStartUpgradePlan={startUpgradePlan} />
+          <MemoPackagesPage packages={data.packages} onNavigate={navigate} onStartUpgradePlan={startUpgradePlan} />
         ) : null}
         {page === "actions" ? (
-          <ActionCenterPage
-            upgradePrefill={upgradePrefill}
+          <ActionCenterContainer
             packages={data.packages}
             scanSettings={data.scanSettings}
-            capabilities={packageActions.capabilities}
-            catalogResponse={catalogSearch.response}
-            isCatalogSearching={catalogSearch.isSearching}
-            catalogError={catalogSearch.error}
-            plan={packageActions.plan}
-            result={packageActions.result}
-            audit={packageActions.audit}
-            progress={packageActions.progress}
-            isPlanning={packageActions.isPlanning}
-            isExecuting={packageActions.isExecuting}
-            isReconciling={packageActions.isReconciling}
-            error={packageActions.error}
-            onSearchCatalog={catalogSearch.search}
-            onCancelCatalogSearch={catalogSearch.cancel}
-            onClearCatalogSearch={catalogSearch.clear}
-            onCreatePlan={packageActions.createPlan}
-            onExecute={packageActions.executePlan}
-            onCancel={packageActions.cancelAction}
-            onReconcile={packageActions.reconcileAction}
-            onClearPlan={packageActions.clearPlan}
+            scannedAt={data.scannedAt}
+            upgradePrefill={upgradePrefill}
+            onApplyEnvironment={applyEnvironment}
           />
         ) : null}
         {page === "projects" ? (
-          <ProjectsPage
+          <MemoProjectsPage
             projects={data.projects}
             workspaces={data.workspaces}
             scanRoots={data.scanRoots}
             ignoredDirectoryNames={data.scanSettings.defaultIgnoredDirectoryNames}
             onAddRoot={addRoot}
             onRemoveRoot={removeRoot}
-            onRefresh={() => void refresh()}
+            onRefresh={refreshNow}
           />
         ) : null}
         {page === "analysis" ? (
-          <ProjectAnalysisPage
+          <MemoProjectAnalysisPage
             view={analysisView}
             onChangeView={setAnalysisView}
             insights={data.dependencyInsights}
@@ -198,10 +191,10 @@ export function App() {
           />
         ) : null}
         {page === "runtimes" ? (
-          <RuntimesPage installations={data.runtimeInstallations} assessments={data.runtimeAssessments} />
+          <MemoRuntimesPage installations={data.runtimeInstallations} assessments={data.runtimeAssessments} />
         ) : null}
         {page === "history" ? (
-          <HistoryPage
+          <MemoHistoryPage
             summaries={history.summaries}
             comparison={history.comparison}
             isLoading={history.isLoading}
@@ -210,10 +203,10 @@ export function App() {
             onExport={history.exportComparison}
           />
         ) : null}
-        {page === "environment" ? <EnvironmentPage data={data} onNavigate={navigate} /> : null}
-        {page === "logs" ? <LogsPage logs={data.logs} /> : null}
+        {page === "environment" ? <MemoEnvironmentPage data={data} onNavigate={navigate} /> : null}
+        {page === "logs" ? <MemoLogsPage logs={data.logs} /> : null}
         {page === "settings" ? (
-          <SettingsPage
+          <MemoSettingsPage
             scanSettings={data.scanSettings}
             onUpdateSettings={updateScanSettings}
             onExportReport={exportEnvironmentReport}

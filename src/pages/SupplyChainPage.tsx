@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { apiErrorMessage } from "../lib/apiError";
@@ -61,6 +61,7 @@ export function SupplyChainPage({
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const reportRequestToken = useRef(0);
 
   const aggregate = useMemo(
     () =>
@@ -101,6 +102,7 @@ export function SupplyChainPage({
   const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId);
 
   const selectProject = (path: string) => {
+    reportRequestToken.current += 1;
     onSelectProject(path);
     setReport(undefined);
     setSelectedFindingId(undefined);
@@ -108,17 +110,24 @@ export function SupplyChainPage({
 
   const loadReport = async () => {
     if (!projectPath) return;
+    reportRequestToken.current += 1;
+    const token = reportRequestToken.current;
     setIsLoading(true);
     setError(undefined);
     setNotice(undefined);
     setSelectedFindingId(undefined);
     try {
-      setReport(await onLoadReport(projectPath));
+      const report = await onLoadReport(projectPath);
+      if (reportRequestToken.current !== token) return;
+      setReport(report);
     } catch (loadError) {
+      if (reportRequestToken.current !== token) return;
       setReport(undefined);
       setError(messageFrom(loadError));
     } finally {
-      setIsLoading(false);
+      if (reportRequestToken.current === token) {
+        setIsLoading(false);
+      }
     }
   };
 
