@@ -21,15 +21,33 @@ use commands::{
 use storage::Storage;
 use tauri::Manager;
 
+/// 日志默认 info 级别，可用 EASY_PACKAGE_LOG 覆盖（如 devpkg_lib=debug）。
+/// dev 构建输出可读格式，release 构建输出 JSON 行。
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let filter = EnvFilter::try_from_env("EASY_PACKAGE_LOG")
+        .unwrap_or_else(|_| EnvFilter::new("devpkg_lib=info"));
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    #[cfg(debug_assertions)]
+    builder.init();
+    #[cfg(not(debug_assertions))]
+    builder.json().init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tracing();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let storage = Storage::new(app.handle())?;
             // 崩溃后遗留的 Running 审计立即转入待核对状态，而不是等下一次扫描。
-            if let Err(error) = storage.recover_incomplete_actions() {
-                eprintln!("启动时恢复未完成写操作失败：{error}");
+            match storage.recover_incomplete_actions() {
+                Ok(recovered) if recovered > 0 => {
+                    tracing::info!(recovered, "启动时将中断的写操作标记为待核对");
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "启动时恢复未完成写操作失败"),
             }
             app.manage(storage);
             app.manage(commands::ScanRegistry::default());

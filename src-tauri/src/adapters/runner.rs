@@ -52,6 +52,26 @@ impl CommandRunner {
         args: &[&str],
         cancelled: &AtomicBool,
     ) -> CommandOutput {
+        // 只记录程序名与参数，不记录命令输出，保持既有脱敏边界。
+        let trace_started = std::time::Instant::now();
+        let output = self.run_cancellable_inner(executable, args, cancelled);
+        tracing::debug!(
+            program = %executable.display(),
+            args = ?args,
+            success = output.success,
+            exit_code = output.exit_code,
+            duration_ms = trace_started.elapsed().as_millis() as u64,
+            "外部命令执行"
+        );
+        output
+    }
+
+    fn run_cancellable_inner(
+        &self,
+        executable: &Path,
+        args: &[&str],
+        cancelled: &AtomicBool,
+    ) -> CommandOutput {
         let mut child = match Command::new(executable)
             .args(args)
             .env("NO_COLOR", "1")

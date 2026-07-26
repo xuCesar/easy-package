@@ -84,7 +84,11 @@ pub async fn scan_environment(
     let scan_id_for_finish = scan_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let scan_id_for_progress = scan_id.clone();
+        let started_at = std::time::Instant::now();
+        let span = tracing::info_span!("scan_environment", scan_id = %scan_id_for_progress);
+        let _entered = span.enter();
         let progress = Arc::new(move |progress: ScanProgress| {
+            tracing::debug!(phase = ?progress.phase, completed = progress.completed, total = progress.total, "扫描阶段进度");
             let _ = app.emit("scan-progress", progress);
         });
         #[cfg(feature = "e2e")]
@@ -98,6 +102,13 @@ pub async fn scan_environment(
         if let Some(summary) = storage.list_snapshot_summaries()?.into_iter().next() {
             actions::reconcile_pending_audits(&storage, summary.id, &scan)?;
         }
+        tracing::info!(
+            duration_ms = started_at.elapsed().as_millis() as u64,
+            managers = scan.managers.len(),
+            projects = scan.projects.len(),
+            partial_failures = scan.partial_failures,
+            "环境扫描完成"
+        );
         Ok(scan)
     })
     .await

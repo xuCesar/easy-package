@@ -426,6 +426,28 @@ pub fn execute_registered_plan(
     cancelled: &AtomicBool,
     on_log: &dyn Fn(String),
 ) -> ActionExecution {
+    let span = tracing::info_span!(
+        "package_action",
+        manager = ?registered.plan.manager_id,
+        action = ?registered.plan.action,
+        targets = registered.plan.targets.len(),
+    );
+    let _entered = span.enter();
+    let started_at = std::time::Instant::now();
+    let execution = execute_registered_plan_inner(registered, cancelled, on_log);
+    tracing::info!(
+        status = ?execution.status,
+        duration_ms = started_at.elapsed().as_millis() as u64,
+        "受控写操作结束"
+    );
+    execution
+}
+
+fn execute_registered_plan_inner(
+    registered: &RegisteredPlan,
+    cancelled: &AtomicBool,
+    on_log: &dyn Fn(String),
+) -> ActionExecution {
     let validation = match registered.plan.manager_id {
         PackageManagerId::Homebrew => validate_homebrew_executable(&registered.executable),
         PackageManagerId::Npm => validate_npm_executable(&registered.executable),
