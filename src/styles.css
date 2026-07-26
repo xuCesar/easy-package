@@ -471,6 +471,7 @@ tbody tr:hover { background: rgba(255, 255, 255, .018); }
 .app-state p { margin: 0; color: var(--text-3); font-size: 12px; }
 .app-state > svg { width: 35px; color: var(--red); }
 .app-state .button { margin-top: 20px; }
+.app-state__actions { display: flex; gap: 10px; }
 .scan-indicator { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); background: var(--accent-soft); }
 .scan-indicator svg { width: 24px; animation: spin 1.2s linear infinite; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
