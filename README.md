@@ -67,7 +67,7 @@ pnpm build:desktop
 pnpm test:e2e
 ```
 
-`pnpm check` 会依次执行前端测试、前端构建、Rust 单元测试与 Rust 格式检查。
+`pnpm check` 会依次执行 Biome lint、前端测试、前端构建、Rust 单元测试与 Rust 格式检查；也可单独运行 `pnpm lint` / `pnpm lint:fix` / `pnpm format`。Node 版本以 `.nvmrc`（22）为准。
 `pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
 GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建。
 
@@ -82,7 +82,7 @@ GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量
 3. 验证环境页的健康项与诊断日志，并在扫描中执行一次取消操作。
 4. 调整扫描范围后确认项目与依赖洞察同步更新；完成第二次扫描后，在“历史”页检查快照比较与筛选。
 5. 导出一份环境报告和变化报告，检查主目录已脱敏且不含诊断原始输出。
-6. 在“依赖”页按需解析项目图，检查直接/传递/重复版本筛选与依赖路径；在“供应链”页检查结构性风险证据并导出一份 SBOM。
+6. 在“项目分析”页的“依赖图”视图按需解析项目图，检查直接/传递/重复版本筛选与依赖路径；切到“供应链风险”视图确认项目选择保持一致，检查结构性风险证据并导出一份 SBOM。
 7. 在“操作中心”分别生成 Homebrew、npm 与 pnpm 的安装、升级、卸载和缓存维护计划，核对固定命令、Node/prefix 预检、确认门槛、恢复阻塞与取消提示；真实执行仅使用隔离验收环境。
 8. 删除临时测试目录，确认不会遗留扫描根目录。
 
