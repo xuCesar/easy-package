@@ -13,7 +13,7 @@ export interface UpgradePlanPrefill {
   unwritableCount: number;
 }
 
-function isWritableManagerId(managerId: string): managerId is WritableManagerId {
+export function isWritableManagerId(managerId: string): managerId is WritableManagerId {
   return writableManagerSet.has(managerId);
 }
 

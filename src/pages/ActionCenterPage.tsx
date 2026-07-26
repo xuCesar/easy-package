@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
-import type { UpgradePlanPrefill } from "../lib/upgradePlanBridge";
+import { isWritableManagerId, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
 import type {
   ActionCapability,
   CatalogSearchResponse,
@@ -12,6 +12,7 @@ import type {
   PackageActionPlan,
   PackageActionProgress,
   PackageActionResult,
+  PackageManagerId,
   ScanSettings,
   WritableManagerId,
 } from "../types";
@@ -53,9 +54,13 @@ const actionLabels: Record<PackageAction, string> = {
   cleanup: "缓存清理",
 };
 const managerLabels: Record<WritableManagerId, string> = { homebrew: "Homebrew", npm: "npm", pnpm: "pnpm" };
+// 计划/审计记录的 managerId 在 wire 上是完整 PackageManagerId；后端保证只会出现可写管理器，
+// 这里展示层兜底为原始 id，不做静默断言。
+const managerDisplay = (managerId: PackageManagerId): string =>
+  isWritableManagerId(managerId) ? managerLabels[managerId] : managerId;
 const statusLabels = { planned: "待确认", running: "可能中断", succeeded: "成功", failed: "失败", unknown: "状态未知" };
 const outcomeLabels = { applied: "已观察到生效", notApplied: "未观察到变化", ambiguous: "结果仍不明确" };
-const actionDisplay = (managerId: WritableManagerId, action: PackageAction) =>
+const actionDisplay = (managerId: PackageManagerId, action: PackageAction) =>
   managerId === "npm" && action === "cleanup" ? "缓存校验与回收" : actionLabels[action];
 
 export function ActionCenterPage(props: ActionCenterPageProps) {
@@ -423,7 +428,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
             <div className="action-plan__summary">
               <div>
                 <span>管理器</span>
-                <strong>{managerLabels[props.plan.managerId]}</strong>
+                <strong>{managerDisplay(props.plan.managerId)}</strong>
               </div>
               <div>
                 <span>操作</span>
@@ -431,7 +436,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
               </div>
               <div>
                 <span>目标</span>
-                <strong>{props.plan.targets.join("、") || `${managerLabels[props.plan.managerId]} 缓存`}</strong>
+                <strong>{props.plan.targets.join("、") || `${managerDisplay(props.plan.managerId)} 缓存`}</strong>
               </div>
               <div>
                 <span>网络</span>
@@ -532,7 +537,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
             </span>
           </div>
           <div className="action-result__body">
-            <p>{props.result.error ?? `${managerLabels[props.result.managerId]} 操作成功，环境扫描已更新。`}</p>
+            <p>{props.result.error ?? `${managerDisplay(props.result.managerId)} 操作成功，环境扫描已更新。`}</p>
             {props.result.comparison ? (
               <div className="result-changes">
                 <strong>{props.result.comparison.changes.length} 项环境变化</strong>
@@ -574,7 +579,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
                 <span className={`action-status action-status--${record.status}`}>{statusLabels[record.status]}</span>
                 <div>
                   <strong>
-                    {managerLabels[record.managerId]} · {actionDisplay(record.managerId, record.action)} ·{" "}
+                    {managerDisplay(record.managerId)} · {actionDisplay(record.managerId, record.action)} ·{" "}
                     {record.targets.join("、") || "缓存"}
                   </strong>
                   <code>{record.commandPreview}</code>

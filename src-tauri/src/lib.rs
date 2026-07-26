@@ -1,5 +1,6 @@
 mod actions;
 mod adapters;
+mod bindings;
 mod commands;
 #[cfg(feature = "e2e")]
 mod e2e;

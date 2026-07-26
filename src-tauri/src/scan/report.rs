@@ -8,7 +8,7 @@ use crate::{
     models::{EnvironmentScan, SnapshotComparison},
 };
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportFormat {
     Json,
@@ -38,7 +38,7 @@ impl ReportFormat {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportExportResult {
     pub saved: bool,

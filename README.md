@@ -69,6 +69,8 @@ pnpm test:e2e
 
 `pnpm check` 会依次执行 Biome lint、前端测试、前端构建、Rust 单元测试与 Rust 格式检查；也可单独运行 `pnpm lint` / `pnpm lint:fix` / `pnpm format`。Node 版本以 `.nvmrc`（22）为准。
 
+前端数据契约类型([src/types.gen.ts](src/types.gen.ts))由 Rust models 通过 specta 生成:`cargo test bindings` 会在类型漂移时失败(已包含在 `pnpm check` 与 CI 中);修改 `models.rs` 后运行 `EASY_PACKAGE_EXPORT_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml bindings` 重新生成。`src/types.ts` 只保留 UI 专属类型。
+
 后端使用 `tracing` 输出结构化日志：默认 `devpkg_lib=info`，可用环境变量 `EASY_PACKAGE_LOG` 调整（如 `EASY_PACKAGE_LOG=devpkg_lib=debug pnpm tauri dev` 可看到扫描阶段进度与外部命令 trace）。dev 构建为可读格式，release 构建为 JSON 行；日志不包含命令输出等已脱敏内容。
 `pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
 GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建。

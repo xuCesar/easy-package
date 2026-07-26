@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManagerId {
     Homebrew,
@@ -32,7 +32,7 @@ impl PackageManagerId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ManagerStatus {
     Available,
@@ -42,7 +42,7 @@ pub enum ManagerStatus {
     Unsupported,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ExecutionTrust {
     System,
@@ -52,7 +52,7 @@ pub enum ExecutionTrust {
     NotApplicable,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum CacheScanStatus {
     Complete,
@@ -73,7 +73,7 @@ impl Default for ExecutionTrust {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticError {
     pub code: String,
@@ -84,7 +84,7 @@ pub struct DiagnosticError {
     pub output: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageManager {
     pub id: PackageManagerId,
@@ -106,7 +106,7 @@ pub struct PackageManager {
     pub scanned_at: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum PackageScope {
     System,
@@ -114,7 +114,7 @@ pub enum PackageScope {
     Tool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdateStatus {
     UpToDate,
@@ -122,7 +122,7 @@ pub enum UpdateStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedPackage {
     pub id: String,
@@ -135,7 +135,7 @@ pub struct ManagedPackage {
     pub update_status: UpdateStatus,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum CatalogSearchStatus {
     Ready,
@@ -147,7 +147,7 @@ pub enum CatalogSearchStatus {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CatalogSearchBlockerCode {
     NetworkPolicyOffline,
@@ -160,7 +160,7 @@ pub enum CatalogSearchBlockerCode {
     SearchFailed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSearchResult {
     pub manager_id: PackageManagerId,
@@ -174,7 +174,7 @@ pub struct CatalogSearchResult {
     pub installed_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSearchResponse {
     pub search_id: String,
@@ -188,14 +188,14 @@ pub struct CatalogSearchResponse {
     pub results: Vec<CatalogSearchResult>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeRequirement {
     pub runtime: String,
     pub requirement: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectMetadata {
     pub name: String,
@@ -216,7 +216,7 @@ pub struct ProjectMetadata {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectWorkspaceRef {
     pub name: String,
@@ -224,7 +224,7 @@ pub struct ProjectWorkspaceRef {
     pub ecosystem: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectWorkspace {
     pub name: String,
@@ -253,7 +253,7 @@ pub fn default_ignored_directory_names() -> Vec<String> {
     .collect()
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum NetworkPolicy {
     Offline,
@@ -266,7 +266,7 @@ impl Default for NetworkPolicy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanSettings {
     #[serde(default)]
@@ -290,7 +290,7 @@ impl Default for ScanSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeInstallation {
     pub id: String,
@@ -302,7 +302,7 @@ pub struct RuntimeInstallation {
     pub execution_trust: ExecutionTrust,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum RuntimeRequirementStatus {
     Available,
@@ -311,7 +311,7 @@ pub enum RuntimeRequirementStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeRequirementAssessment {
     pub project_name: String,
@@ -326,7 +326,7 @@ pub struct RuntimeRequirementAssessment {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDependency {
     pub ecosystem: String,
@@ -342,7 +342,7 @@ pub struct ProjectDependency {
     pub resolution_checked: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum DependencyGraphCompleteness {
     Complete,
@@ -351,7 +351,7 @@ pub enum DependencyGraphCompleteness {
     Invalid,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum DependencyGraphNodeKind {
     Project,
@@ -359,7 +359,7 @@ pub enum DependencyGraphNodeKind {
     Local,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyGraphNode {
     pub id: String,
@@ -374,7 +374,7 @@ pub struct DependencyGraphNode {
     pub package_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyGraphEdge {
     pub from: String,
@@ -382,7 +382,7 @@ pub struct DependencyGraphEdge {
     pub dependency_type: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyGraphSummary {
     pub node_count: usize,
@@ -398,7 +398,7 @@ pub struct DependencyGraphSummary {
     pub source_digest: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDependencyGraph {
     pub project_name: String,
@@ -414,14 +414,16 @@ pub struct ProjectDependencyGraph {
     pub summary: DependencyGraphSummary,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, specta::Type,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum SupplyChainRiskSeverity {
     Info,
     Warning,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyChainRiskFinding {
     pub id: String,
@@ -438,7 +440,7 @@ pub struct SupplyChainRiskFinding {
     pub evidence: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyChainRiskSummary {
     pub total_count: usize,
@@ -448,7 +450,7 @@ pub struct SupplyChainRiskSummary {
     pub rule_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSupplyChainReport {
     pub project_name: String,
@@ -457,7 +459,7 @@ pub struct ProjectSupplyChainReport {
     pub findings: Vec<SupplyChainRiskFinding>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyProjectUsage {
     pub project_name: String,
@@ -470,7 +472,7 @@ pub struct DependencyProjectUsage {
     pub resolution_source: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyInsight {
     pub ecosystem: String,
@@ -489,7 +491,7 @@ pub struct DependencyInsight {
     pub has_health_risk: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectAnalysis {
     pub projects: Vec<ProjectMetadata>,
@@ -503,7 +505,7 @@ pub struct ProjectAnalysis {
     pub scan_settings: ScanSettings,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum HealthSeverity {
     Info,
@@ -511,7 +513,7 @@ pub enum HealthSeverity {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthIssue {
     pub id: String,
@@ -527,7 +529,7 @@ pub struct HealthIssue {
     pub command: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum LogCategory {
     Scan,
@@ -536,7 +538,7 @@ pub enum LogCategory {
     Storage,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum LogStatus {
     Info,
@@ -545,7 +547,7 @@ pub enum LogStatus {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskLog {
     pub id: String,
@@ -561,7 +563,7 @@ pub struct TaskLog {
     pub timestamp: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PathObservation {
     pub command: String,
@@ -573,7 +575,7 @@ pub struct PathObservation {
     pub candidates: Vec<PathCandidate>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PathCandidate {
     pub path: String,
@@ -584,7 +586,7 @@ pub struct PathCandidate {
     pub version: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentScan {
     pub managers: Vec<PackageManager>,
@@ -608,7 +610,7 @@ pub struct EnvironmentScan {
     pub partial_failures: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotSummary {
     pub id: i64,
@@ -632,7 +634,9 @@ impl SnapshotSummary {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, specta::Type,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum SnapshotChangeKind {
     Added,
@@ -640,7 +644,9 @@ pub enum SnapshotChangeKind {
     Changed,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, specta::Type,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum SnapshotChangeEntity {
     Manager,
@@ -649,7 +655,7 @@ pub enum SnapshotChangeEntity {
     Health,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotChange {
     pub kind: SnapshotChangeKind,
@@ -659,7 +665,7 @@ pub struct SnapshotChange {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotComparison {
     pub baseline: SnapshotSummary,
@@ -670,7 +676,7 @@ pub struct SnapshotComparison {
     pub changed_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum PackageAction {
     Install,
@@ -679,7 +685,7 @@ pub enum PackageAction {
     Cleanup,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum PackageActionStatus {
     Planned,
@@ -689,7 +695,7 @@ pub enum PackageActionStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ActionCheckStatus {
     Pass,
@@ -697,7 +703,7 @@ pub enum ActionCheckStatus {
     Blocked,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActionBlockerCode {
     Ready,
@@ -714,7 +720,7 @@ pub enum ActionBlockerCode {
     CacheSemantics,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionPreflightCheck {
     pub code: ActionBlockerCode,
@@ -723,7 +729,7 @@ pub struct ActionPreflightCheck {
     pub detail: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionCapability {
     pub manager_id: PackageManagerId,
@@ -732,7 +738,7 @@ pub struct ActionCapability {
     pub checks: Vec<ActionPreflightCheck>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ObservedActionOutcome {
     Applied,
@@ -740,7 +746,7 @@ pub enum ObservedActionOutcome {
     Ambiguous,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionPlan {
     pub id: String,
@@ -756,7 +762,7 @@ pub struct PackageActionPlan {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionProgress {
     pub action_id: String,
@@ -766,7 +772,7 @@ pub struct PackageActionProgress {
     pub timestamp: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionResult {
     pub action_id: String,
@@ -787,7 +793,7 @@ pub struct PackageActionResult {
     pub finished_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionAuditRecord {
     pub action_id: String,
@@ -816,14 +822,14 @@ pub struct PackageActionAuditRecord {
     pub rescan_required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageActionReconciliationResult {
     pub audit: PackageActionAuditRecord,
     pub environment: EnvironmentScan,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ScanPhase {
     Managers,
@@ -833,7 +839,7 @@ pub enum ScanPhase {
     Complete,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub scan_id: String,
