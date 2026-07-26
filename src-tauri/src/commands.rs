@@ -830,13 +830,23 @@ fn build_project_and_dependency_graph_for_path(
             "依赖图项目必须位于已添加的扫描目录内".into(),
         ));
     }
+    // 优先用最近快照定位项目，避免每次按需加载都触发全量项目扫描；
+    // 锁文件内容由图构建时重新读取，不受快照新旧影响。
     let never_cancelled = AtomicBool::new(false);
-    let analysis = scan::projects_for_roots(storage, &never_cancelled)?;
-    let project = analysis
-        .projects
-        .into_iter()
-        .find(|project| PathBuf::from(&project.path) == canonical)
-        .ok_or_else(|| AppError::InvalidScanRoot("该路径不是已识别项目".into()))?;
+    let snapshot_project = storage.latest_snapshot()?.and_then(|snapshot| {
+        snapshot
+            .projects
+            .into_iter()
+            .find(|project| PathBuf::from(&project.path) == canonical)
+    });
+    let project = match snapshot_project {
+        Some(project) => project,
+        None => scan::projects_for_roots(storage, &never_cancelled)?
+            .projects
+            .into_iter()
+            .find(|project| PathBuf::from(&project.path) == canonical)
+            .ok_or_else(|| AppError::InvalidScanRoot("该路径不是已识别项目".into()))?,
+    };
     let graph =
         scan::dependency_graph::build_project_dependency_graph(&project, &AtomicBool::new(false))?;
     Ok((project, graph))

@@ -122,7 +122,6 @@ pub fn scan_projects_with_settings(
         .map(|(directory, markers)| parse_project(&directory, &markers))
         .collect::<Vec<_>>();
     let workspaces = discover_workspaces(&mut projects);
-    super::dependency_graph::enrich_dependency_graph_summaries(&mut projects, cancelled)?;
     if !roots.is_empty() {
         logs.push(project_log(
             LogStatus::Success,
@@ -143,8 +142,14 @@ pub fn analyze_projects(
     roots: &[PathBuf],
     settings: &ScanSettings,
     cancelled: &AtomicBool,
+    previous_projects: &[ProjectMetadata],
 ) -> Result<ProjectAnalysis, AppError> {
-    let scan = scan_projects_with_settings(roots, settings, cancelled)?;
+    let mut scan = scan_projects_with_settings(roots, settings, cancelled)?;
+    super::dependency_graph::enrich_dependency_graph_summaries(
+        &mut scan.projects,
+        cancelled,
+        previous_projects,
+    )?;
     Ok(ProjectAnalysis {
         projects: scan.projects,
         dependency_insights: scan.dependency_insights,

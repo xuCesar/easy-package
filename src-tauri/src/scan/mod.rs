@@ -87,7 +87,17 @@ pub fn scan_environment(
         .map(|root| root.to_string_lossy().into_owned())
         .collect();
     emit_progress(ScanPhase::Projects, manager_count, None);
-    let project_scan = projects::scan_projects_with_settings(&roots, &scan_settings, cancelled)?;
+    let mut project_scan =
+        projects::scan_projects_with_settings(&roots, &scan_settings, cancelled)?;
+    let previous_projects = storage
+        .latest_snapshot()?
+        .map(|snapshot| snapshot.projects)
+        .unwrap_or_default();
+    dependency_graph::enrich_dependency_graph_summaries(
+        &mut project_scan.projects,
+        cancelled,
+        &previous_projects,
+    )?;
     if cancelled.load(Ordering::SeqCst) {
         return Err(AppError::ScanCancelled);
     }
@@ -228,8 +238,12 @@ pub fn projects_for_roots(
 ) -> Result<ProjectAnalysis, AppError> {
     let roots = storage.list_scan_roots()?;
     let settings = storage.scan_settings()?;
-    let mut analysis = analyze_projects(&roots, &settings, cancelled)?;
     let snapshot = storage.latest_snapshot()?;
+    let previous_projects = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.projects.clone())
+        .unwrap_or_default();
+    let mut analysis = analyze_projects(&roots, &settings, cancelled, &previous_projects)?;
     let installations = snapshot
         .as_ref()
         .map(|snapshot| snapshot.runtime_installations.clone())

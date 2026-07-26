@@ -68,36 +68,22 @@ pub fn build_project_dependency_graph(
     );
 
     let mut parsed = Vec::new();
-    let npm_lock = find_lock_file(directory, "package-lock.json");
-    let pnpm_lock = find_lock_file(directory, "pnpm-lock.yaml");
-    let manager = project.package_manager.as_deref().unwrap_or_default();
-    if manager.starts_with("pnpm") {
-        if let Some(path) = pnpm_lock.as_deref() {
-            parsed.push(parse_pnpm_lock(path, directory, &root_id, cancelled)?);
-        }
-    } else if manager.starts_with("npm") {
-        if let Some(path) = npm_lock.as_deref() {
-            parsed.push(parse_npm_lock(path, directory, &root_id, cancelled)?);
-        }
-    } else {
-        match (npm_lock.as_deref(), pnpm_lock.as_deref()) {
-            (Some(path), None) => {
-                parsed.push(parse_npm_lock(path, directory, &root_id, cancelled)?)
+    for candidate in select_lock_candidates(project, directory) {
+        match candidate {
+            LockCandidate::Npm(path) => {
+                parsed.push(parse_npm_lock(&path, directory, &root_id, cancelled)?)
             }
-            (None, Some(path)) => {
-                parsed.push(parse_pnpm_lock(path, directory, &root_id, cancelled)?)
+            LockCandidate::Pnpm(path) => {
+                parsed.push(parse_pnpm_lock(&path, directory, &root_id, cancelled)?)
             }
-            (Some(_), Some(_)) => parsed.push(ParsedGraph::empty(
+            LockCandidate::Cargo(path) => {
+                parsed.push(parse_cargo_lock(&path, project, &root_id, cancelled)?)
+            }
+            LockCandidate::AmbiguousJavaScript => parsed.push(ParsedGraph::empty(
                 "JavaScript 锁文件",
                 DependencyGraphCompleteness::Partial,
                 "检测到多个 JavaScript 锁文件，且没有可确定的 packageManager 声明。".into(),
             )),
-            (None, None) => {}
-        }
-    }
-    if project.ecosystems.iter().any(|item| item == "Rust") {
-        if let Some(path) = find_lock_file(directory, "Cargo.lock") {
-            parsed.push(parse_cargo_lock(&path, project, &root_id, cancelled)?);
         }
     }
 
@@ -230,13 +216,99 @@ pub fn build_project_dependency_graph(
     })
 }
 
+enum LockCandidate {
+    Npm(PathBuf),
+    Pnpm(PathBuf),
+    Cargo(PathBuf),
+    AmbiguousJavaScript,
+}
+
+fn select_lock_candidates(project: &ProjectMetadata, directory: &Path) -> Vec<LockCandidate> {
+    let mut candidates = Vec::new();
+    let npm_lock = find_lock_file(directory, "package-lock.json");
+    let pnpm_lock = find_lock_file(directory, "pnpm-lock.yaml");
+    let manager = project.package_manager.as_deref().unwrap_or_default();
+    if manager.starts_with("pnpm") {
+        if let Some(path) = pnpm_lock {
+            candidates.push(LockCandidate::Pnpm(path));
+        }
+    } else if manager.starts_with("npm") {
+        if let Some(path) = npm_lock {
+            candidates.push(LockCandidate::Npm(path));
+        }
+    } else {
+        match (npm_lock, pnpm_lock) {
+            (Some(path), None) => candidates.push(LockCandidate::Npm(path)),
+            (None, Some(path)) => candidates.push(LockCandidate::Pnpm(path)),
+            (Some(_), Some(_)) => candidates.push(LockCandidate::AmbiguousJavaScript),
+            (None, None) => {}
+        }
+    }
+    if project.ecosystems.iter().any(|item| item == "Rust") {
+        if let Some(path) = find_lock_file(directory, "Cargo.lock") {
+            candidates.push(LockCandidate::Cargo(path));
+        }
+    }
+    candidates
+}
+
+/// 用与完整图构建相同的来源选择与摘要算法计算 source digest，但只读取锁文件、
+/// 不解析。返回 None 表示无法快速判定（读取失败），调用方应视为缓存未命中。
+/// 无效锁文件会得到与解析路径不同的 digest —— 只会造成多余重建，不会错误复用。
+pub(super) fn quick_source_digest(project: &ProjectMetadata) -> Option<String> {
+    let directory = PathBuf::from(&project.path);
+    let mut digests = Vec::new();
+    for candidate in select_lock_candidates(project, &directory) {
+        let (source_name, path) = match candidate {
+            LockCandidate::Npm(path) => ("package-lock.json", path),
+            LockCandidate::Pnpm(path) => ("pnpm-lock.yaml", path),
+            LockCandidate::Cargo(path) => ("Cargo.lock", path),
+            LockCandidate::AmbiguousJavaScript => continue,
+        };
+        match read_lock_file(&path, source_name) {
+            Ok(LockSource::Content(source)) => {
+                digests.push(format!(
+                    "{source_name}:{}",
+                    stable_digest(source.as_bytes())
+                ));
+            }
+            Ok(LockSource::TooLarge(_)) => {}
+            Err(_) => return None,
+        }
+    }
+    Some(if digests.is_empty() {
+        String::new()
+    } else {
+        stable_digest(digests.join("|").as_bytes())
+    })
+}
+
+/// 以上一次扫描的摘要为缓存：锁文件 digest 未变的项目直接复用摘要，
+/// 只为新增或锁文件变化的项目构建完整依赖图。
 pub fn enrich_dependency_graph_summaries(
     projects: &mut [ProjectMetadata],
     cancelled: &AtomicBool,
+    previous_projects: &[ProjectMetadata],
 ) -> Result<(), AppError> {
+    let previous_by_path: std::collections::HashMap<&str, &ProjectMetadata> = previous_projects
+        .iter()
+        .map(|project| (project.path.as_str(), project))
+        .collect();
     for project in projects {
         if cancelled.load(Ordering::SeqCst) {
             return Err(AppError::ScanCancelled);
+        }
+        if let Some(previous) = previous_by_path.get(project.path.as_str()) {
+            if let Some(previous_summary) = previous.dependency_graph_summary.as_ref() {
+                if !previous_summary.source_digest.is_empty()
+                    && quick_source_digest(project).as_deref()
+                        == Some(previous_summary.source_digest.as_str())
+                {
+                    project.dependency_graph_summary = Some(previous_summary.clone());
+                    project.supply_chain_risk_summary = previous.supply_chain_risk_summary.clone();
+                    continue;
+                }
+            }
         }
         let graph = build_project_dependency_graph(project, cancelled)?;
         let risk_summary = super::supply_chain::build_supply_chain_report(project, &graph).summary;
@@ -1250,6 +1322,140 @@ mod tests {
             supply_chain_risk_summary: None,
             warnings: Vec::new(),
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_enrich_cold_vs_warm() {
+        let directory = tempdir().unwrap();
+        let mut projects = Vec::new();
+        for index in 0..30 {
+            let project_dir = directory.path().join(format!("proj-{index}"));
+            fs::create_dir_all(&project_dir).unwrap();
+            let mut packages = String::from(
+                r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"#,
+            );
+            for dep in 0..50 {
+                if dep > 0 {
+                    packages.push(',');
+                }
+                packages.push_str(&format!(r#""dep-{dep}":"1""#));
+            }
+            packages.push_str("}}");
+            for dep in 0..800 {
+                packages.push_str(&format!(
+                    r#","node_modules/dep-{dep}":{{"name":"dep-{dep}","version":"1.0.{index}"}}"#
+                ));
+            }
+            packages.push_str("}}");
+            fs::write(project_dir.join("package-lock.json"), packages).unwrap();
+            projects.push(project(
+                &project_dir,
+                &format!("proj-{index}"),
+                "JavaScript",
+                Some("npm@11"),
+            ));
+        }
+        let start = std::time::Instant::now();
+        enrich_dependency_graph_summaries(&mut projects, &AtomicBool::new(false), &[]).unwrap();
+        let cold = start.elapsed();
+        let previous = projects.clone();
+        let mut rescanned = previous
+            .iter()
+            .map(|item| ProjectMetadata {
+                dependency_graph_summary: None,
+                supply_chain_risk_summary: None,
+                ..item.clone()
+            })
+            .collect::<Vec<_>>();
+        let start = std::time::Instant::now();
+        enrich_dependency_graph_summaries(&mut rescanned, &AtomicBool::new(false), &previous)
+            .unwrap();
+        let warm = start.elapsed();
+        println!("cold(30 projects x ~800 nodes): {cold:?}, warm(digest hit): {warm:?}");
+        assert!(rescanned
+            .iter()
+            .all(|item| item.dependency_graph_summary.is_some()));
+    }
+
+    #[test]
+    fn quick_digest_matches_full_graph_digest() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join("package-lock.json"),
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        let metadata = project(directory.path(), "app", "JavaScript", Some("npm@11"));
+        let graph = build_project_dependency_graph(&metadata, &AtomicBool::new(false)).unwrap();
+        assert!(!graph.source_digest.is_empty());
+        assert_eq!(
+            quick_source_digest(&metadata).as_deref(),
+            Some(graph.source_digest.as_str())
+        );
+
+        fs::write(directory.path().join("package-lock.json"), "{}").unwrap();
+        assert_ne!(
+            quick_source_digest(&metadata).as_deref(),
+            Some(graph.source_digest.as_str())
+        );
+    }
+
+    #[test]
+    fn enrich_reuses_previous_summary_when_digest_is_unchanged() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join("package-lock.json"),
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        let mut projects = vec![project(
+            directory.path(),
+            "app",
+            "JavaScript",
+            Some("npm@11"),
+        )];
+        enrich_dependency_graph_summaries(&mut projects, &AtomicBool::new(false), &[]).unwrap();
+        let built = projects[0].dependency_graph_summary.clone().unwrap();
+
+        // 上一次快照携带同 digest 但哨兵计数的摘要：digest 命中时必须原样复用，证明未重建。
+        let mut previous = projects.clone();
+        let sentinel = previous[0].dependency_graph_summary.as_mut().unwrap();
+        sentinel.node_count = 999;
+        let mut rescanned = vec![project(
+            directory.path(),
+            "app",
+            "JavaScript",
+            Some("npm@11"),
+        )];
+        enrich_dependency_graph_summaries(&mut rescanned, &AtomicBool::new(false), &previous)
+            .unwrap();
+        assert_eq!(
+            rescanned[0]
+                .dependency_graph_summary
+                .as_ref()
+                .unwrap()
+                .node_count,
+            999
+        );
+
+        // 锁文件变化后 digest 失配，重建得到真实值。
+        fs::write(
+            directory.path().join("package-lock.json"),
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1","b":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"},"node_modules/b":{"name":"b","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        let mut changed = vec![project(
+            directory.path(),
+            "app",
+            "JavaScript",
+            Some("npm@11"),
+        )];
+        enrich_dependency_graph_summaries(&mut changed, &AtomicBool::new(false), &previous)
+            .unwrap();
+        let rebuilt = changed[0].dependency_graph_summary.as_ref().unwrap();
+        assert_ne!(rebuilt.node_count, 999);
+        assert_eq!(rebuilt.node_count, built.node_count + 1);
     }
 
     #[test]
