@@ -34,7 +34,7 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "系统扫描设置" })).toBeInTheDocument();
   });
 
-  it("操作中心可从侧栏一级入口与「受控模式」标签直达", async () => {
+  it("操作中心可从侧栏一级入口与「安全操作模式」标签直达", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }));
@@ -42,7 +42,7 @@ describe("App", () => {
     expect(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" })).toHaveAttribute("aria-current", "page");
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "概览" }));
     expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "受控模式" }));
+    fireEvent.click(screen.getByRole("button", { name: "安全操作模式" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
   });
 

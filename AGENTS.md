@@ -30,6 +30,8 @@ Follow the local style: two-space indentation and double quotes in TypeScript; `
 
 Use idiomatic Rust formatting (`cargo fmt`) and `snake_case` for modules, functions, and fields. Keep Tauri commands thin; place command execution under `adapters/`, scanning under `scan/`, and persistence under `storage.rs`. Backend commands must remain read-only and must not invoke a shell.
 
+Branding: the public product name is **Easy Package** — use it in all UI copy, the window title, `productName`, README, and release pages. `devpkg` is the internal engineering codename and stays confined to package names, crate/module names, and the Tauri identifier (`app.devpkg.desktop`); never surface it in user-facing text. The controlled-write capability is labeled 「安全操作模式」 in UI copy and links to the 操作中心 page.
+
 ## Testing Guidelines
 
 Use Vitest with Testing Library and assert user-visible behavior. Add regression tests for bug fixes and cover changed filtering, empty/error states, and command parsing. Rust unit tests belong in the affected module under `#[cfg(test)]`; use temporary directories for filesystem behavior. Run the narrowest relevant test first, then `pnpm check`.

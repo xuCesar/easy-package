@@ -31,7 +31,7 @@ export function AppShell({ page, onNavigate, children }: AppShellProps) {
             </button>
           ))}
         </nav>
-        <div className="sidebar__footer"><button className={page === "settings" ? "sidebar-settings sidebar-settings--active" : "sidebar-settings"} onClick={() => onNavigate("settings")} aria-current={page === "settings" ? "page" : undefined}><Icon name="settings" /><span>系统设置</span></button><div><span>v0.1.0</span><button className="readonly-label" onClick={() => onNavigate("actions")} title="打开操作中心">受控模式</button></div></div>
+        <div className="sidebar__footer"><button className={page === "settings" ? "sidebar-settings sidebar-settings--active" : "sidebar-settings"} onClick={() => onNavigate("settings")} aria-current={page === "settings" ? "page" : undefined}><Icon name="settings" /><span>系统设置</span></button><div><span>v0.1.0</span><button className="readonly-label" onClick={() => onNavigate("actions")} title="打开操作中心">安全操作模式</button></div></div>
       </aside>
       <main className="main-content">{children}</main>
     </div>
