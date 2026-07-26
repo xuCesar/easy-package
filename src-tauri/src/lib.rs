@@ -7,6 +7,7 @@ mod error;
 mod models;
 mod operation_guard;
 mod scan;
+mod services;
 mod storage;
 
 use commands::{

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -10,18 +9,18 @@ use std::{
 
 use chrono::Utc;
 use tauri::{AppHandle, Emitter, State};
-use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
+use crate::services;
 use crate::{
     actions::{self, catalog::CatalogRegistry, ActionRegistry},
     error::AppError,
     models::{
         ActionCapability, CatalogSearchResponse, EnvironmentScan, HealthIssue, ManagedPackage,
         ObservedActionOutcome, PackageAction, PackageActionAuditRecord, PackageActionPlan,
-        PackageActionProgress, PackageActionReconciliationResult, PackageActionResult,
-        PackageActionStatus, ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata,
-        ProjectSupplyChainReport, ScanProgress, ScanSettings, TaskLog,
+        PackageActionReconciliationResult, PackageActionResult, PackageActionStatus,
+        ProjectAnalysis, ProjectDependencyGraph, ProjectMetadata, ProjectSupplyChainReport,
+        ScanProgress, ScanSettings, TaskLog,
     },
     operation_guard::OperationCoordinator,
     scan,
@@ -311,7 +310,7 @@ pub async fn export_environment_report(
             .latest_snapshot()?
             .ok_or_else(|| AppError::Command("尚无可导出的环境扫描结果".into()))?;
         let content = scan::report::build_report(&scan, format)?;
-        save_report_with_dialog(&app, format, format.file_name(), content)
+        services::save_report_with_dialog(&app, format, format.file_name(), content)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
@@ -335,7 +334,7 @@ pub async fn compare_snapshots(
 ) -> Result<crate::models::SnapshotComparison, AppError> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        snapshot_comparison(&storage, baseline_id, current_id)
+        services::snapshot_comparison(&storage, baseline_id, current_id)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
@@ -351,64 +350,16 @@ pub async fn export_snapshot_comparison_report(
 ) -> Result<scan::report::ReportExportResult, AppError> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let comparison = snapshot_comparison(&storage, baseline_id, current_id)?;
+        let comparison = services::snapshot_comparison(&storage, baseline_id, current_id)?;
         let content = scan::report::build_comparison_report(&comparison, format)?;
         let file_name = match format {
             scan::report::ReportFormat::Json => "easy-package-changes.json",
             scan::report::ReportFormat::Markdown => "easy-package-changes.md",
         };
-        save_report_with_dialog(&app, format, file_name, content)
+        services::save_report_with_dialog(&app, format, file_name, content)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
-}
-
-fn snapshot_comparison(
-    storage: &Storage,
-    baseline_id: i64,
-    current_id: i64,
-) -> Result<crate::models::SnapshotComparison, AppError> {
-    if baseline_id == current_id {
-        return Err(AppError::Command("请选择两个不同的快照进行比较".into()));
-    }
-    if baseline_id > current_id {
-        return Err(AppError::Command("基线快照必须早于当前快照".into()));
-    }
-    let baseline = storage
-        .snapshot_by_id(baseline_id)?
-        .ok_or_else(|| AppError::Command("基线快照不存在或已被清理".into()))?;
-    let current = storage
-        .snapshot_by_id(current_id)?
-        .ok_or_else(|| AppError::Command("当前快照不存在或已被清理".into()))?;
-    scan::history::compare_snapshots(baseline_id, &baseline, current_id, &current)
-}
-
-fn save_report_with_dialog(
-    app: &AppHandle,
-    format: scan::report::ReportFormat,
-    file_name: &str,
-    content: String,
-) -> Result<scan::report::ReportExportResult, AppError> {
-    let dialog = app
-        .dialog()
-        .file()
-        .set_title("导出环境报告")
-        .set_file_name(file_name)
-        .add_filter(format.filter_name(), &[format.extension()]);
-    let Some(file) = dialog.blocking_save_file() else {
-        return Ok(scan::report::ReportExportResult {
-            saved: false,
-            path: None,
-        });
-    };
-    let path = file
-        .into_path()
-        .map_err(|error| AppError::Command(error.to_string()))?;
-    fs::write(path, content).map_err(|error| AppError::Command(error.to_string()))?;
-    Ok(scan::report::ReportExportResult {
-        saved: true,
-        path: None,
-    })
 }
 
 #[tauri::command]
@@ -489,150 +440,13 @@ pub async fn execute_package_action(
     let coordinator = coordinator.inner().clone();
     let action_id_for_finish = action_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let started_at = Utc::now().to_rfc3339();
-        let baseline_summary = storage.list_snapshot_summaries()?.first().cloned();
-        let baseline_scan = storage.latest_snapshot()?;
-        storage.save_action_audit(&PackageActionAuditRecord {
-            action_id: action_id.clone(),
-            plan_id: registered.plan.id.clone(),
-            manager_id: registered.plan.manager_id,
-            action: registered.plan.action,
-            targets: registered.plan.targets.clone(),
-            status: PackageActionStatus::Running,
-            command_preview: registered.plan.command_preview.clone(),
-            logs: Vec::new(),
-            error: None,
-            started_at: started_at.clone(),
-            // 运行中记录复用现有排序字段；最终结果会原位覆盖该时间。
-            finished_at: started_at.clone(),
-            baseline_snapshot_id: baseline_summary.as_ref().map(|summary| summary.id),
-            result_snapshot_id: None,
-            observed_outcome: None,
-            evidence: Vec::new(),
-            reconciled_at: None,
-            rescan_required: true,
-        })?;
-        emit_action_progress(
+        services::run_confirmed_package_action(
             &app,
+            &storage,
+            &registered,
+            &cancellation,
             &action_id,
-            PackageActionStatus::Running,
-            &format!(
-                "开始执行已确认的 {} 操作",
-                registered.plan.manager_id.as_str()
-            ),
-            true,
-        );
-        let progress_app = app.clone();
-        let progress_action_id = action_id.clone();
-        let on_log = move |message: String| {
-            emit_action_progress(
-                &progress_app,
-                &progress_action_id,
-                PackageActionStatus::Running,
-                &message,
-                true,
-            );
-        };
-        let execution = actions::execute_registered_plan(&registered, &cancellation, &on_log);
-        emit_action_progress(
-            &app,
-            &action_id,
-            PackageActionStatus::Running,
-            "正在重新扫描本机环境并计算变化",
-            false,
-        );
-        let mut result_error = execution.error.clone();
-        let mut environment = None;
-        let mut result_snapshot_id = None;
-        let mut observed_outcome = None;
-        let mut evidence = Vec::new();
-        let mut rescan_required = false;
-        let comparison = match rescan_after_package_action(&storage, &action_id) {
-            Ok((current, scan)) => {
-                result_snapshot_id = Some(current.id);
-                let comparison = match (baseline_summary.as_ref(), baseline_scan.as_ref()) {
-                    (Some(baseline), Some(baseline_scan)) => {
-                        let observed = actions::reconcile_observed_outcome(
-                            registered.plan.manager_id,
-                            registered.plan.action,
-                            &registered.plan.targets,
-                            baseline_scan,
-                            &scan,
-                        );
-                        observed_outcome = Some(observed.0);
-                        evidence = observed.1;
-                        scan::history::compare_snapshots(
-                            baseline.id,
-                            baseline_scan,
-                            current.id,
-                            &scan,
-                        )
-                        .ok()
-                    }
-                    _ => None,
-                };
-                environment = Some(scan);
-                comparison
-            }
-            Err(error) => {
-                append_error(&mut result_error, format!("操作后重新扫描失败：{error}"));
-                rescan_required = true;
-                None
-            }
-        };
-        let finished_at = Utc::now().to_rfc3339();
-        let mut result = PackageActionResult {
-            action_id: action_id.clone(),
-            plan_id: registered.plan.id.clone(),
-            manager_id: registered.plan.manager_id,
-            action: registered.plan.action,
-            targets: registered.plan.targets.clone(),
-            status: execution.status,
-            command_preview: registered.plan.command_preview.clone(),
-            logs: execution.logs,
-            error: result_error,
-            comparison,
-            environment,
-            started_at,
-            finished_at,
-        };
-        let audit = PackageActionAuditRecord {
-            action_id: result.action_id.clone(),
-            plan_id: result.plan_id.clone(),
-            manager_id: result.manager_id,
-            action: result.action,
-            targets: result.targets.clone(),
-            status: result.status,
-            command_preview: result.command_preview.clone(),
-            logs: result.logs.clone(),
-            error: result.error.clone(),
-            started_at: result.started_at.clone(),
-            finished_at: result.finished_at.clone(),
-            baseline_snapshot_id: baseline_summary.as_ref().map(|summary| summary.id),
-            result_snapshot_id,
-            observed_outcome,
-            evidence,
-            reconciled_at: (!rescan_required).then(|| Utc::now().to_rfc3339()),
-            rescan_required,
-        };
-        if let Err(error) = storage.save_action_audit(&audit) {
-            append_error(&mut result.error, format!("操作审计记录保存失败：{error}"));
-        }
-        emit_action_progress(
-            &app,
-            &action_id,
-            result.status,
-            match result.status {
-                PackageActionStatus::Succeeded => "操作完成，环境已重新扫描",
-                PackageActionStatus::Failed => "包管理器操作失败，环境已重新扫描",
-                PackageActionStatus::Unknown => "操作状态未知，环境已重新扫描",
-                PackageActionStatus::Planned | PackageActionStatus::Running => {
-                    "操作结束，环境已重新扫描"
-                }
-            },
-            false,
-        );
-        Ok::<_, AppError>(result)
+        )
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()));
@@ -675,7 +489,8 @@ pub async fn reconcile_package_action(
             Some(baseline_id) => storage.snapshot_by_id(baseline_id)?,
             None => None,
         };
-        let (current, environment) = rescan_after_package_action(&storage, &operation_id)?;
+        let (current, environment) =
+            services::rescan_after_package_action(&storage, &operation_id)?;
         let (outcome, evidence) = match baseline.as_ref() {
             Some(baseline) => actions::reconcile_observed_outcome(
                 audit.manager_id,
@@ -708,51 +523,6 @@ pub async fn reconcile_package_action(
     result?
 }
 
-fn emit_action_progress(
-    app: &AppHandle,
-    action_id: &str,
-    status: PackageActionStatus,
-    message: &str,
-    cancellable: bool,
-) {
-    let _ = app.emit(
-        "package-action-progress",
-        PackageActionProgress {
-            action_id: action_id.into(),
-            status,
-            message: message.into(),
-            cancellable,
-            timestamp: Utc::now().to_rfc3339(),
-        },
-    );
-}
-
-fn rescan_after_package_action(
-    storage: &Storage,
-    action_id: &str,
-) -> Result<(crate::models::SnapshotSummary, EnvironmentScan), AppError> {
-    let scan_id = format!("post-action-{action_id}");
-    let scan =
-        scan::scan_environment(storage, &AtomicBool::new(false), &scan_id, Arc::new(|_| {}))?;
-    storage.save_snapshot(&scan)?;
-    let summary = storage
-        .list_snapshot_summaries()?
-        .into_iter()
-        .next()
-        .ok_or_else(|| AppError::Storage("操作后快照未保存".into()))?;
-    Ok((summary, scan))
-}
-
-fn append_error(target: &mut Option<String>, value: String) {
-    match target {
-        Some(current) => {
-            current.push('；');
-            current.push_str(&value);
-        }
-        None => *target = Some(value),
-    }
-}
-
 #[tauri::command]
 pub async fn get_project_dependency_graph(
     project_path: String,
@@ -760,7 +530,7 @@ pub async fn get_project_dependency_graph(
 ) -> Result<ProjectDependencyGraph, AppError> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        build_project_dependency_graph_for_path(&storage, &project_path)
+        services::build_project_dependency_graph_for_path(&storage, &project_path)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
@@ -774,7 +544,7 @@ pub async fn get_project_supply_chain_report(
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (project, graph) =
-            build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+            services::build_project_and_dependency_graph_for_path(&storage, &project_path)?;
         Ok(scan::supply_chain::build_supply_chain_report(
             &project, &graph,
         ))
@@ -792,13 +562,13 @@ pub async fn export_project_sbom(
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (project, graph) =
-            build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+            services::build_project_and_dependency_graph_for_path(&storage, &project_path)?;
         let risk_report = scan::supply_chain::build_supply_chain_report(&project, &graph);
         let content = scan::dependency_graph::build_cyclonedx_sbom_with_risk_summary(
             &graph,
             Some(&risk_report.summary),
         )?;
-        save_report_with_dialog(
+        services::save_report_with_dialog(
             &app,
             scan::report::ReportFormat::Json,
             "easy-package-sbom.cdx.json",
@@ -807,49 +577,6 @@ pub async fn export_project_sbom(
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
-}
-
-fn build_project_dependency_graph_for_path(
-    storage: &Storage,
-    project_path: &str,
-) -> Result<ProjectDependencyGraph, AppError> {
-    Ok(build_project_and_dependency_graph_for_path(storage, project_path)?.1)
-}
-
-fn build_project_and_dependency_graph_for_path(
-    storage: &Storage,
-    project_path: &str,
-) -> Result<(ProjectMetadata, ProjectDependencyGraph), AppError> {
-    let requested = PathBuf::from(project_path);
-    let canonical = requested
-        .canonicalize()
-        .map_err(|error| AppError::InvalidScanRoot(error.to_string()))?;
-    let roots = storage.list_scan_roots()?;
-    if !roots.iter().any(|root| canonical.starts_with(root)) {
-        return Err(AppError::InvalidScanRoot(
-            "依赖图项目必须位于已添加的扫描目录内".into(),
-        ));
-    }
-    // 优先用最近快照定位项目，避免每次按需加载都触发全量项目扫描；
-    // 锁文件内容由图构建时重新读取，不受快照新旧影响。
-    let never_cancelled = AtomicBool::new(false);
-    let snapshot_project = storage.latest_snapshot()?.and_then(|snapshot| {
-        snapshot
-            .projects
-            .into_iter()
-            .find(|project| PathBuf::from(&project.path) == canonical)
-    });
-    let project = match snapshot_project {
-        Some(project) => project,
-        None => scan::projects_for_roots(storage, &never_cancelled)?
-            .projects
-            .into_iter()
-            .find(|project| PathBuf::from(&project.path) == canonical)
-            .ok_or_else(|| AppError::InvalidScanRoot("该路径不是已识别项目".into()))?,
-    };
-    let graph =
-        scan::dependency_graph::build_project_dependency_graph(&project, &AtomicBool::new(false))?;
-    Ok((project, graph))
 }
 
 #[cfg(test)]
@@ -945,15 +672,15 @@ mod tests {
         let directory = tempdir().unwrap();
         let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
 
-        assert!(snapshot_comparison(&storage, 1, 1)
+        assert!(services::snapshot_comparison(&storage, 1, 1)
             .unwrap_err()
             .to_string()
             .contains("两个不同的快照"));
-        assert!(snapshot_comparison(&storage, 1, 2)
+        assert!(services::snapshot_comparison(&storage, 1, 2)
             .unwrap_err()
             .to_string()
             .contains("基线快照不存在或已被清理"));
-        assert!(snapshot_comparison(&storage, 2, 1)
+        assert!(services::snapshot_comparison(&storage, 2, 1)
             .unwrap_err()
             .to_string()
             .contains("基线快照必须早于当前快照"));
@@ -973,13 +700,15 @@ mod tests {
             .add_scan_root(&root.canonicalize().unwrap())
             .unwrap();
 
-        let outside_error =
-            build_project_dependency_graph_for_path(&storage, outside.to_string_lossy().as_ref())
-                .unwrap_err()
-                .to_string();
+        let outside_error = services::build_project_dependency_graph_for_path(
+            &storage,
+            outside.to_string_lossy().as_ref(),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(outside_error.contains("必须位于已添加的扫描目录内"));
 
-        let non_project_error = build_project_dependency_graph_for_path(
+        let non_project_error = services::build_project_dependency_graph_for_path(
             &storage,
             not_project.to_string_lossy().as_ref(),
         )
