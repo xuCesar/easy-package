@@ -64,7 +64,10 @@ mod tests {
         let coordinator = OperationCoordinator::default();
         coordinator.begin_scan("scan-1").unwrap();
         assert_eq!(
-            coordinator.begin_package_action("action-1").unwrap_err().code(),
+            coordinator
+                .begin_package_action("action-1")
+                .unwrap_err()
+                .code(),
             "SCAN_ALREADY_RUNNING"
         );
         coordinator.finish("scan-1");

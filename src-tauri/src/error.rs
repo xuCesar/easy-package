@@ -83,7 +83,10 @@ mod tests {
     #[test]
     fn conflict_and_recovery_codes_are_stable() {
         assert_eq!(AppError::ScanConflict.code(), "SCAN_ALREADY_RUNNING");
-        assert_eq!(AppError::ActionConflict.code(), "PACKAGE_ACTION_ALREADY_RUNNING");
+        assert_eq!(
+            AppError::ActionConflict.code(),
+            "PACKAGE_ACTION_ALREADY_RUNNING"
+        );
         assert_eq!(
             AppError::RecoveryRequired.code(),
             "PACKAGE_ACTION_RECOVERY_REQUIRED"

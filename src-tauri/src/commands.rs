@@ -147,16 +147,24 @@ pub fn cancel_package_catalog_search(search_id: String, registry: State<'_, Cata
 }
 
 #[tauri::command]
-pub fn list_packages(storage: State<'_, Storage>) -> Result<Vec<ManagedPackage>, AppError> {
-    Ok(storage
-        .latest_snapshot()?
-        .map(|snapshot| snapshot.packages)
-        .unwrap_or_default())
+pub async fn list_packages(storage: State<'_, Storage>) -> Result<Vec<ManagedPackage>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(storage
+            .latest_snapshot()?
+            .map(|snapshot| snapshot.packages)
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
-pub fn list_projects(storage: State<'_, Storage>) -> Result<Vec<ProjectMetadata>, AppError> {
-    Ok(scan::projects_for_roots(storage.inner())?.projects)
+pub async fn list_projects(storage: State<'_, Storage>) -> Result<Vec<ProjectMetadata>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || Ok(scan::projects_for_roots(&storage)?.projects))
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
@@ -249,19 +257,27 @@ pub async fn export_environment_report(
 }
 
 #[tauri::command]
-pub fn list_snapshot_summaries(
+pub async fn list_snapshot_summaries(
     storage: State<'_, Storage>,
 ) -> Result<Vec<crate::models::SnapshotSummary>, AppError> {
-    storage.list_snapshot_summaries()
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_snapshot_summaries())
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
-pub fn compare_snapshots(
+pub async fn compare_snapshots(
     baseline_id: i64,
     current_id: i64,
     storage: State<'_, Storage>,
 ) -> Result<crate::models::SnapshotComparison, AppError> {
-    snapshot_comparison(storage.inner(), baseline_id, current_id)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        snapshot_comparison(&storage, baseline_id, current_id)
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
@@ -335,16 +351,24 @@ fn save_report_with_dialog(
 }
 
 #[tauri::command]
-pub fn get_health_report(storage: State<'_, Storage>) -> Result<Vec<HealthIssue>, AppError> {
-    Ok(storage
-        .latest_snapshot()?
-        .map(|snapshot| snapshot.health_issues)
-        .unwrap_or_default())
+pub async fn get_health_report(storage: State<'_, Storage>) -> Result<Vec<HealthIssue>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(storage
+            .latest_snapshot()?
+            .map(|snapshot| snapshot.health_issues)
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
-pub fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppError> {
-    storage.list_logs()
+pub async fn get_scan_logs(storage: State<'_, Storage>) -> Result<Vec<TaskLog>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_logs())
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
@@ -562,10 +586,13 @@ pub fn cancel_package_action(action_id: String, registry: State<'_, ActionRegist
 }
 
 #[tauri::command]
-pub fn list_package_action_audit(
+pub async fn list_package_action_audit(
     storage: State<'_, Storage>,
 ) -> Result<Vec<PackageActionAuditRecord>, AppError> {
-    storage.list_action_audit()
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_action_audit())
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
 }
 
 #[tauri::command]
