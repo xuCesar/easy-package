@@ -578,6 +578,13 @@ tbody tr:hover { background: #f8fafc; }
 .overview-row__quiet { color: var(--text-3) !important; font-family: inherit !important; }
 .overview-section--logs { max-width: 760px; margin-top: 36px; }
 .overview-row--static { grid-template-columns: minmax(0, 1fr) auto; cursor: default; }
+.attention-icon { width: 16px; flex-shrink: 0; }
+.attention-icon--error { color: var(--red); }
+.attention-icon--warning { color: var(--yellow); }
+.attention-icon--info { color: var(--text-3); }
+.overview-row--static svg.attention-icon--ok { color: var(--green); }
+.overview-section--attention .overview-row > span:last-child { color: var(--text-3); }
+.overview-section--attention .overview-row > span:last-child svg { width: 14px; }
 .overview-row--static:hover { background: transparent; }
 .overview-row--static svg { width: 16px; color: var(--text-3); }
 .overview-add-project { min-height: 170px; display: grid; place-items: center; align-content: center; gap: 10px; border: 0; border-bottom: 1px solid var(--border-soft); color: var(--text-3); background: transparent; cursor: pointer; }
