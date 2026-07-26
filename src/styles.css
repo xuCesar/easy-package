@@ -46,7 +46,8 @@ code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monosp
 .sidebar-settings svg { width: 18px; }
 .sidebar-settings:hover { color: var(--text); background: #edf1f5; }
 .sidebar-settings--active { color: #2268c7; border-color: #d7e5f7; background: #e8f1ff; }
-.readonly-label { color: #627b98; }
+.readonly-label { color: #627b98; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.readonly-label:hover { text-decoration: underline; }
 .main-content { width: 100%; max-width: 1360px; padding: 46px clamp(40px, 4.2vw, 60px) 64px; margin: 0 auto; min-width: 0; }
 
 .page-header { min-height: 62px; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 30px; }

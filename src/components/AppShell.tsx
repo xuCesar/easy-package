@@ -5,6 +5,7 @@ import type { PageId } from "../types";
 const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "overview", label: "概览", icon: "overview" },
   { id: "packages", label: "软件包", icon: "packages" },
+  { id: "actions", label: "操作", icon: "terminal" },
   { id: "projects", label: "项目", icon: "projects" },
   { id: "environment", label: "诊断", icon: "environment" },
 ];
@@ -30,7 +31,7 @@ export function AppShell({ page, onNavigate, children }: AppShellProps) {
             </button>
           ))}
         </nav>
-        <div className="sidebar__footer"><button className={page === "settings" ? "sidebar-settings sidebar-settings--active" : "sidebar-settings"} onClick={() => onNavigate("settings")} aria-current={page === "settings" ? "page" : undefined}><Icon name="settings" /><span>系统设置</span></button><div><span>v0.1.0</span><span className="readonly-label">受控模式</span></div></div>
+        <div className="sidebar__footer"><button className={page === "settings" ? "sidebar-settings sidebar-settings--active" : "sidebar-settings"} onClick={() => onNavigate("settings")} aria-current={page === "settings" ? "page" : undefined}><Icon name="settings" /><span>系统设置</span></button><div><span>v0.1.0</span><button className="readonly-label" onClick={() => onNavigate("actions")} title="打开操作中心">受控模式</button></div></div>
       </aside>
       <main className="main-content">{children}</main>
     </div>
