@@ -31,6 +31,8 @@ export const useDevPkg = () => {
   }, []);
 
   const refresh = useCallback(async () => {
+    // 后端拒绝并发扫描；若已有扫描进行中则忽略本次调用，避免覆盖 activeScanId 导致进度与取消失效
+    if (activeScanId.current) return;
     const scanId = crypto.randomUUID();
     activeScanId.current = scanId;
     setState((current) => ({ ...current, isLoading: true, error: undefined }));
@@ -38,8 +40,10 @@ export const useDevPkg = () => {
     setNotice(undefined);
     try {
       const data = await api.scanEnvironment(scanId);
+      if (activeScanId.current !== scanId) return;
       startTransition(() => setState({ data, isLoading: false }));
     } catch (error) {
+      if (activeScanId.current !== scanId) return;
       if (getErrorMessage(error) === "扫描已取消") {
         setState((current) => ({ ...current, isLoading: false, error: undefined }));
         setNotice("本次扫描已取消，保留上次成功结果。");
