@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use rusqlite::{params, Connection};
@@ -11,9 +12,12 @@ use crate::{
     models::{EnvironmentScan, PackageActionAuditRecord, ScanSettings, SnapshotSummary, TaskLog},
 };
 
+/// 目标 schema 版本（SQLite user_version）。新增迁移时递增并在 migrate 中补 case。
+const SCHEMA_VERSION: i64 = 2;
+
 #[derive(Debug, Clone)]
 pub struct Storage {
-    path: PathBuf,
+    connection: Arc<Mutex<Connection>>,
 }
 
 impl Storage {
@@ -23,26 +27,33 @@ impl Storage {
             .app_data_dir()
             .map_err(|error| AppError::Storage(error.to_string()))?;
         fs::create_dir_all(&directory).map_err(|error| AppError::Storage(error.to_string()))?;
+        Self::open(directory.join("devpkg.sqlite3"))
+    }
+
+    #[cfg(test)]
+    pub fn at(path: PathBuf) -> Result<Self, AppError> {
+        Self::open(path)
+    }
+
+    fn open(path: PathBuf) -> Result<Self, AppError> {
+        let connection = Connection::open(path)?;
+        connection.busy_timeout(std::time::Duration::from_secs(5))?;
         let storage = Self {
-            path: directory.join("devpkg.sqlite3"),
+            connection: Arc::new(Mutex::new(connection)),
         };
         storage.initialize()?;
         Ok(storage)
     }
 
-    #[cfg(test)]
-    pub fn at(path: PathBuf) -> Result<Self, AppError> {
-        let storage = Self { path };
-        storage.initialize()?;
-        Ok(storage)
-    }
-
-    fn connection(&self) -> Result<Connection, AppError> {
-        Ok(Connection::open(&self.path)?)
+    fn connection(&self) -> Result<MutexGuard<'_, Connection>, AppError> {
+        self.connection
+            .lock()
+            .map_err(|error| AppError::Storage(format!("存储连接锁不可用：{error}")))
     }
 
     fn initialize(&self) -> Result<(), AppError> {
-        self.connection()?.execute_batch(
+        let connection = self.connection()?;
+        connection.execute_batch(
             "PRAGMA journal_mode=WAL;
              CREATE TABLE IF NOT EXISTS scan_roots (
                path TEXT PRIMARY KEY,
@@ -68,7 +79,7 @@ impl Storage {
                payload TEXT NOT NULL
              );",
         )?;
-        Ok(())
+        migrate(&connection)
     }
 
     pub fn add_scan_root(&self, path: &Path) -> Result<(), AppError> {
@@ -125,6 +136,14 @@ impl Storage {
             "INSERT INTO snapshots(scanned_at, payload) VALUES (?1, ?2)",
             params![scan.scanned_at, payload],
         )?;
+        let id = transaction.last_insert_rowid();
+        transaction.execute(
+            "UPDATE snapshots SET summary = ?1 WHERE id = ?2",
+            params![
+                serde_json::to_string(&SnapshotSummary::from_scan(id, scan))?,
+                id
+            ],
+        )?;
         for log in &scan.logs {
             transaction.execute(
                 "INSERT OR REPLACE INTO scan_logs(id, timestamp, payload) VALUES (?1, ?2, ?3)",
@@ -160,23 +179,34 @@ impl Storage {
     pub fn list_snapshot_summaries(&self) -> Result<Vec<SnapshotSummary>, AppError> {
         let connection = self.connection()?;
         let mut statement =
-            connection.prepare("SELECT id, payload FROM snapshots ORDER BY id DESC")?;
+            connection.prepare("SELECT id, summary, payload FROM snapshots ORDER BY id DESC")?;
         let rows = statement.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?;
-        rows.map(|row| {
-            let (id, payload) = row?;
-            let scan = serde_json::from_str::<EnvironmentScan>(&payload).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    1,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            Ok(SnapshotSummary::from_scan(id, &scan))
-        })
-        .collect::<Result<Vec<_>, rusqlite::Error>>()
-        .map_err(AppError::from)
+        let mut summaries = Vec::new();
+        for row in rows {
+            let (id, summary, payload) = row?;
+            let parsed = summary.and_then(|value| {
+                serde_json::from_str::<SnapshotSummary>(&value)
+                    .ok()
+                    .map(|mut summary| {
+                        summary.id = id;
+                        summary
+                    })
+            });
+            summaries.push(match parsed {
+                Some(summary) => summary,
+                None => SnapshotSummary::from_scan(
+                    id,
+                    &serde_json::from_str::<EnvironmentScan>(&payload)?,
+                ),
+            });
+        }
+        Ok(summaries)
     }
 
     pub fn snapshot_by_id(&self, id: i64) -> Result<Option<EnvironmentScan>, AppError> {
@@ -277,11 +307,111 @@ impl Storage {
     }
 }
 
+fn migrate(connection: &Connection) -> Result<(), AppError> {
+    let mut version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    while version < SCHEMA_VERSION {
+        let transaction = connection.unchecked_transaction()?;
+        match version {
+            // v1：基线表结构，由 initialize 的 CREATE IF NOT EXISTS 建立。
+            0 => {}
+            // v2：snapshots 增加轻量 summary 列并回填，历史列表不再全量反序列化 payload。
+            1 => {
+                transaction.execute("ALTER TABLE snapshots ADD COLUMN summary TEXT", [])?;
+                backfill_snapshot_summaries(&transaction)?;
+            }
+            _ => break,
+        }
+        transaction.pragma_update(None, "user_version", version + 1)?;
+        transaction.commit()?;
+        version += 1;
+    }
+    Ok(())
+}
+
+fn backfill_snapshot_summaries(transaction: &rusqlite::Transaction<'_>) -> Result<(), AppError> {
+    let rows = {
+        let mut statement = transaction.prepare("SELECT id, payload FROM snapshots")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, payload) in rows {
+        // 旧 payload 解析失败时保留 NULL，读取路径会回退到全量反序列化。
+        let Ok(scan) = serde_json::from_str::<EnvironmentScan>(&payload) else {
+            continue;
+        };
+        transaction.execute(
+            "UPDATE snapshots SET summary = ?1 WHERE id = ?2",
+            params![
+                serde_json::to_string(&SnapshotSummary::from_scan(id, &scan))?,
+                id
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn migrates_v1_database_and_backfills_snapshot_summaries() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("legacy.sqlite3");
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE snapshots (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       scanned_at TEXT NOT NULL,
+                       payload TEXT NOT NULL
+                     );",
+                )
+                .unwrap();
+            let payload = r#"{"managers":[],"packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"2026-01-01T00:00:00Z","partialFailures":0}"#;
+            connection
+                .execute(
+                    "INSERT INTO snapshots(scanned_at, payload) VALUES (?1, ?2)",
+                    params!["2026-01-01T00:00:00Z", payload],
+                )
+                .unwrap();
+        }
+
+        let storage = Storage::at(path.clone()).unwrap();
+        let version: i64 = storage
+            .connection()
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+
+        // 摘要列已回填：即使 payload 损坏，历史列表也不再依赖全量反序列化。
+        storage
+            .connection()
+            .unwrap()
+            .execute("UPDATE snapshots SET payload = 'not-json'", [])
+            .unwrap();
+        let summaries = storage.list_snapshot_summaries().unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].scanned_at, "2026-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn fresh_database_starts_at_current_schema_version() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("fresh.sqlite3")).unwrap();
+        let version: i64 = storage
+            .connection()
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
     use crate::models::{
         PackageAction, PackageActionAuditRecord, PackageActionStatus, PackageManagerId,
     };
