@@ -1,121 +1,84 @@
 # Easy Package
 
-Easy Package 是一个 macOS 本机开发环境管理器 MVP。它使用 Tauri 2、React、TypeScript、Rust 和 SQLite，统一发现并展示 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip、RubyGems、Composer，以及用户明确选择目录中的项目元数据与依赖洞察；Homebrew Formula、npm 与 pnpm 全局包支持经过预检和确认的受控写操作。
+Easy Package 是一个 macOS 桌面应用，把散落在 Homebrew、npm、pnpm、Cargo、pip 等十余个包管理器里的开发环境集中到一个界面：统一查看已安装的软件包与版本、分析项目依赖与供应链风险，并以「先预检、后确认」的安全方式执行常用的包管理操作。
 
-## 当前边界
+基于 Tauri 2 + React + Rust 构建，数据全部保存在本机 SQLite，默认完全离线。
 
-- 首发支持 macOS；其他平台返回受控的“不支持”状态。
-- 桌面窗口最小宽度为 880px，不提供移动端 Web 适配。
-- 只执行版本、列表、更新检查、缓存路径等只读命令；默认离线，只有用户将联网策略切换为“允许 registry 检查”后才执行更新检查。
-- 包管理器命令按系统、已识别管理器目录和已识别用户工具目录分类；未知 PATH 可执行文件只展示，不执行。
-- 扫描按管理器、项目、运行时、健康报告阶段显示进度，可随时取消；取消不会覆盖上一次成功快照。
-- 同一时间只允许一个环境扫描；缓存目录统计支持取消，并在 3 秒或 10 万条目预算后明确标记为“部分”。
-- 最近 10 份成功扫描快照可在“历史”页比较，按包管理器、软件包、项目和健康提示展示新增、移除与变化。
-- 项目扫描可设置最大遍历深度与用户忽略目录；默认跳过 `node_modules`、`.git`、`target`、`dist`、`build`、`.venv` 与 `vendor`，并在扫描日志中说明跳过原因。
-- 可通过系统保存对话框导出当前环境快照或快照变化为 JSON / Markdown；报告会将用户主目录替换为 `~`，且不包含诊断原始输出。
-- 环境页会解析 node、npm、pnpm、Python/pip、Ruby/gem、PHP、Composer 的 PATH 优先级与候选来源，并只读标记命令冲突、运行时路径不一致和重复 Node 全局工具。
-- “运行时”页面只读发现 Node.js、Python 与 Rust 的当前及本地安装，识别 nvm、fnm、Volta、asdf、mise、pyenv、uv 与 rustup 来源，并关联项目运行时声明；复杂版本范围只展示，不推测兼容性。
-- “操作中心”支持 Homebrew Formula、npm 与 pnpm 全局包的安装、单个或批量升级、卸载和缓存维护：后端先生成一次性操作计划，展示固定命令、联网需求和风险，经用户二次确认后才执行。
-- 安装模式可在用户主动将联网策略设为“允许 registry 检查”后，使用受信任的 Homebrew、npm 或 pnpm 可执行文件搜索软件包目录。搜索固定限制 20 条、20 秒超时、支持取消，并仅在内存中缓存 5 分钟；搜索结果只会填入安装目标，绝不会直接安装或写入 SQLite。
-- Homebrew 写操作仅允许 `/opt/homebrew/bin/brew` 或 `/usr/local/bin/brew`；npm/pnpm 仅允许扫描得到且位于受管理或已识别用户工具目录中的可执行文件。计划会记录可执行文件指纹，执行前再次验证路径、大小和修改时间。
-- npm 写操作还要求同目录 Node.js 与 PATH 当前 Node.js 一致，预检并锁定 global prefix 和 cache 路径；任一执行上下文在确认后变化都会拒绝操作。
-- pnpm 安装只接受普通包名或 `@scope/name`，拒绝版本表达式、URL、Git 与本地路径来源；安装、升级和卸载固定带 `--ignore-scripts`，缓存清理仅调用 `pnpm store prune`。
-- npm 使用相同包名边界，安装、升级和卸载固定带 `--ignore-scripts`；缓存维护仅调用 `npm cache verify`，不提供 `npm cache clean --force`。npm/pnpm 均不允许修改管理器自身。
-- 写操作与环境扫描互斥，执行日志会脱敏并保存在本机审计记录中；取消或超时不会声称回滚，而是标记“状态未知”并强制重新扫描。
-- 写操作开始前会先保存 `running` 审计；异常退出后新写操作保持阻塞，直到用户完成一次成功环境扫描并将遗留记录归档为“状态未知”。
-- 操作中心会在生成计划前展示 Homebrew、npm、pnpm 各动作的类型化能力检查和稳定阻塞码；PATH、信任、恢复或数据路径不满足时直接禁用计划入口。
-- 审计分别记录命令状态与复扫观察结果。安装、卸载、升级和缓存维护会依据前后快照标记 `applied`、`notApplied` 或 `ambiguous`；中断记录可通过“重新扫描并核对”解除阻塞，但不会伪造回滚或成功结论。
-- Yarn、Bun、Cargo、uv、pip、RubyGems、Composer 等其他管理器仍保持只读；不提供 lifecycle scripts、任意 Shell、自动修复、后台升级或定时写操作。
-- Yarn 仅支持 Classic 全局包目录扫描；Yarn Berry 会显示为已发现，但不扫描全局包。
-- 项目扫描会从 Yarn Classic、Yarn Berry 与文本 `bun.lock` 关联 JavaScript 直接依赖的锁定版本；`bun.lockb` 仅展示受控限制提示，不尝试解析二进制内容。
-- RubyGems 只读取本机的全局 gem 列表，不检查更新或执行写操作。
-- Composer 只读取 Composer Home 中的 `vendor/composer/installed.json` 全局元数据；缓存目录通过受控的只读配置查询取得，不执行 `composer global show` 或更新检查。
-- 项目扫描只读取 manifest、锁文件和运行时声明；npm、pnpm 与 Cargo 项目会生成完整依赖图摘要，完整节点与边仅在用户打开项目依赖图或供应链分析时按需重建，不写入 SQLite。
-- “依赖”页面索引 JavaScript、Python、Rust、Go、Ruby 与 PHP 的直接声明依赖；跨生态同名包不会合并，并会标记跨项目的版本范围分歧。
-- 对 package-lock、pnpm-lock、yarn.lock、bun.lock、Cargo.lock、uv.lock、Gemfile.lock 与 composer.lock，应用会只读关联直接依赖的已解析版本；无法匹配时明确显示“未解析”，不推测版本。
-- 项目扫描支持 Poetry、Pipenv 与 Go modules；Poetry/Pipenv 分别读取其锁文件，Go 以 go.mod 的模块选择版本作为已解析版本来源，不执行模块下载。
-- 项目扫描支持 Ruby 的 Gemfile/Gemfile.lock 与 PHP 的 composer.json/composer.lock；仅解析直接声明及锁定版本，不执行 Ruby DSL、Bundler 或 Composer 命令。
-- 项目扫描会识别 JavaScript 与 Cargo 工作区，并提示工作区内版本分歧、未声明版本及本地依赖引用；Yarn、Bun、Python、Go、Ruby 与 PHP 暂不生成完整依赖图。
-- 完整依赖图首批支持 `package-lock.json`、`pnpm-lock.yaml` 和 `Cargo.lock`，单锁文件限制 25 MB，单图限制 50,000 节点与 200,000 条边；超限会返回明确的“部分”状态，不静默截断结论。
-- “供应链”页面基于完整依赖图离线识别锁文件缺失或无效、同名多版本、本地/工作区引用、来源或版本缺失、不可达条目与循环回边，并展示本机证据和最短依赖路径。
-- 可通过系统保存对话框导出 CycloneDX 1.6 SBOM；导出内容不包含本机路径，并只附带离线结构性风险摘要，不查询或伪造漏洞、许可证与修复版本。
-- 扫描快照、扫描根目录、原始本机路径和诊断日志只保存在本机 SQLite 中；导出报告会脱敏主目录路径。
+## 核心能力
+
+**环境总览**
+- 一次扫描发现本机的 Homebrew、npm、pnpm、Yarn、Bun、Cargo、uv、pip、RubyGems、Composer，展示版本、可执行文件来源与缓存占用
+- 概览页聚合「需关注问题」：环境健康项、项目运行时不匹配、供应链警告，点击直达对应页面；一切正常时明确告知
+- 解析 node / python / pip 等命令的 PATH 优先级，标记多来源冲突与运行时路径不一致
+
+**软件包管理**
+- 跨管理器统一列表：系统软件、全局工具、作用域与更新状态，支持搜索与组合筛选
+- 「可更新」筛选一键生成批量升级计划，直接进入操作中心执行
+
+**安全操作模式（操作中心）**
+- 支持 Homebrew Formula 与 npm / pnpm 全局包的安装、升级、卸载和缓存维护
+- 每次操作：能力预检 → 生成固定命令计划（展示完整命令与风险）→ 用户二次确认 → 执行 → 自动复扫并比对前后快照
+- 不经过 Shell、不接受自定义参数、不请求 sudo;npm / pnpm 固定禁用 lifecycle scripts；可执行文件经白名单 + 内容指纹双重校验
+- 全部操作留有本机审计记录；中断或异常会阻塞后续写入，直到重新扫描核对
+
+**项目分析**
+- 添加自选目录后，只读解析项目 manifest、锁文件与运行时声明，支持 JavaScript / Python / Rust / Go / Ruby / PHP 生态
+- 跨项目依赖索引：标记版本范围分歧、解析异常与健康风险
+- npm / pnpm / Cargo 项目可按需构建完整依赖图：直接/传递/重复版本筛选、最短依赖路径；锁文件未变化时秒级复用缓存
+- 离线供应链风险分析：锁文件缺失、多版本、本地引用、不可达条目、依赖循环等结构性发现，附本机证据
+- 可导出 CycloneDX 1.6 SBOM（含离线风险摘要，不包含本机路径）
+
+**运行时与历史**
+- 只读发现 Node.js / Python / Rust 的本机安装与版本管理器来源(nvm、Volta、asdf、mise、pyenv、rustup 等），对照项目声明给出匹配结论
+- 保留最近 10 份扫描快照，任意两份比较新增/移除/变化；环境报告与变化报告可导出为 JSON / Markdown（主目录自动脱敏）
 
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/xuCesar/easy-package/releases) 下载最新的 `EasyPackage-*-macos.dmg`,拖入「应用程序」即可。
+从 [GitHub Releases](https://github.com/xuCesar/easy-package/releases) 下载最新的 `EasyPackage-*-macos.dmg`，拖入「应用程序」即可。要求 macOS 10.15+。
 
-当前发行版**未做 Apple 签名与公证**(暂不使用付费开发者证书),macOS 首次打开会被 Gatekeeper 拦截,选择其一放行:
+当前发行版**未做 Apple 签名与公证**，首次打开会被 Gatekeeper 拦截，任选一种方式放行：
 
-- 双击打开被拒后,前往「系统设置 → 隐私与安全性」,点击「仍要打开」;
-- 或在终端执行:
+- 双击打开被拒后，前往「系统设置 → 隐私与安全性」，点击「仍要打开」；
+- 或在终端执行：
 
 ```bash
 xattr -d com.apple.quarantine "/Applications/Easy Package.app"
 ```
 
-发布方式:推送 `v*` 标签会触发 Release workflow,在 macOS runner 上跑完整质量门禁后构建 DMG 并创建 draft release;确认草稿内容后手动发布。
+## 快速上手
 
-## 本地开发
+1. **首次扫描**：启动后自动扫描本机包管理器，完成后进入概览；扫描随时可取消，不会覆盖上一次结果。
+2. **添加项目**：在「项目」页添加你的代码目录（如 `~/Code`)，依赖与运行时分析会随扫描更新；可配置遍历深度与忽略目录。
+3. **查看问题**：概览页「N 项需关注」是日常入口，点击任一条目直达上下文。
+4. **执行操作**：侧栏「操作」进入操作中心（或软件包页「可更新」→「批量生成升级计划」），按预检 → 确认 → 执行的流程完成变更。
+5. **允许联网（可选）**：默认离线。在「系统设置」把联网策略切换为「允许 registry 检查」后，才会执行更新检查与软件包目录搜索；除此之外不发起任何网络请求。
 
-要求：Node.js、pnpm 11、Rust 1.84+，以及 Tauri 2 的 macOS 系统依赖。
+## 界面速览
 
-```bash
-pnpm install
-pnpm tauri dev
-```
+| 页面 | 用途 |
+|------|------|
+| 概览 | 环境摘要、需关注问题聚合、最近扫描 |
+| 软件包 | 跨管理器包列表、筛选、批量升级入口 |
+| 操作 | 安全操作模式：受控安装/升级/卸载/缓存维护与审计记录 |
+| 项目 | 扫描目录管理、项目与工作区列表 |
+| 诊断 → 环境 | 包管理器详情、命令 PATH 解析、健康报告 |
+| 诊断 → 项目分析 | 依赖索引 / 依赖图 / 供应链风险，SBOM 导出 |
+| 诊断 → 运行时 | 本机运行时安装与项目声明匹配 |
+| 诊断 → 历史 | 快照比较与变化报告导出 |
+| 诊断 → 日志 | 扫描过程日志 |
+| 系统设置 | 扫描深度、忽略目录、联网策略、环境报告导出 |
 
-仅预览前端界面（使用与 Rust 返回结构一致的模拟数据）：
+## 安全与隐私设计
 
-```bash
-pnpm dev
-```
+- **默认离线**：除非明确允许 registry 检查，不发起任何网络请求；供应链分析完全离线，不查询漏洞库。
+- **只读优先**：扫描只执行版本、列表、缓存路径等只读命令；未知 PATH 可执行文件只展示、不执行。
+- **受控写入**：写操作仅限固定白名单命令，无 Shell、无自定义参数、无 sudo；执行前后快照比对，绝不声称自动回滚。
+- **数据不出本机**：快照、路径、日志仅存本机 SQLite；导出报告将主目录替换为 `~`，不包含诊断原始输出。
 
-## 验证
+各能力的精确行为边界见 [docs/boundaries.md](docs/boundaries.md)。
 
-```bash
-pnpm test
-pnpm build
-pnpm test:rust
-pnpm check
-pnpm build:desktop
-pnpm test:e2e
-```
+## 开发
 
-`pnpm check` 会依次执行 Biome lint、前端测试、前端构建、Rust 单元测试与 Rust 格式检查；也可单独运行 `pnpm lint` / `pnpm lint:fix` / `pnpm format`。Node 版本以 `.nvmrc`（22）为准。
+本地构建、验证命令、E2E 与桌面烟测清单、代码结构见 [docs/development.md](docs/development.md)；协作与安全约定见 [AGENTS.md](AGENTS.md)。
 
-前端数据契约类型([src/types.gen.ts](src/types.gen.ts))由 Rust models 通过 specta 生成:`cargo test bindings` 会在类型漂移时失败(已包含在 `pnpm check` 与 CI 中);修改 `models.rs` 后运行 `EASY_PACKAGE_EXPORT_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml bindings` 重新生成。`src/types.ts` 只保留 UI 专属类型。
-
-后端使用 `tracing` 输出结构化日志：默认 `devpkg_lib=info`，可用环境变量 `EASY_PACKAGE_LOG` 调整（如 `EASY_PACKAGE_LOG=devpkg_lib=debug pnpm tauri dev` 可看到扫描阶段进度与外部命令 trace）。dev 构建为可读格式，release 构建为 JSON 行；日志不包含命令输出等已脱敏内容。
-`pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
-GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建。
-
-`pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。它不属于常规 CI 门禁：`tauri-driver` 不支持 macOS，且 Linux WebKit 驱动与固定 fixture 的维护成本不适合当前 macOS-first MVP。需要发布级原生验证时，在受控 Linux 环境或后续稳定的 macOS 原生方案中手动运行；该模式不读取本机包管理器、扫描目录或 SQLite。在 macOS 上以下方「桌面烟测」清单作为替代验证手段。
-
-## 桌面烟测
-
-原生构建或 `pnpm tauri dev` 成功，只证明应用可以构建和启动，不替代 GUI E2E 或真实使用验证。每次涉及扫描、依赖或界面改动时，在 1440px 窗口完成以下只读检查：
-
-1. 确认概览页显示扫描结果，并验证软件包筛选与空态。
-2. 在系统临时目录创建测试项目目录，添加后检查项目和依赖解析来源，再从扫描根目录移除。
-3. 验证环境页的健康项与诊断日志，并在扫描中执行一次取消操作。
-4. 调整扫描范围后确认项目与依赖洞察同步更新；完成第二次扫描后，在“历史”页检查快照比较与筛选。
-5. 导出一份环境报告和变化报告，检查主目录已脱敏且不含诊断原始输出。
-6. 在“项目分析”页的“依赖图”视图按需解析项目图，检查直接/传递/重复版本筛选与依赖路径；切到“供应链风险”视图确认项目选择保持一致，检查结构性风险证据并导出一份 SBOM。
-7. 在“操作中心”分别生成 Homebrew、npm 与 pnpm 的安装、升级、卸载和缓存维护计划，核对固定命令、Node/prefix 预检、确认门槛、恢复阻塞与取消提示；真实执行仅使用隔离验收环境。
-8. 删除临时测试目录，确认不会遗留扫描根目录。
-
-## 结构
-
-- `src/`：React 页面、组件、Tauri API 封装和前端测试。
-- `src-tauri/src/adapters/`：包管理器发现、命令执行与输出解析。
-- `src-tauri/src/scan/`：项目扫描、直接依赖索引、PATH 检查和健康规则。
-- `src-tauri/src/scan/dependency_graph.rs`：受预算限制的 npm、pnpm、Cargo 完整依赖图与 CycloneDX 导出。
-- `src-tauri/src/scan/supply_chain.rs`：不联网的结构性供应链规则、稳定规则 ID、证据和依赖路径。
-- `src-tauri/src/actions.rs`：通用动作执行内核，以及 Homebrew/npm/pnpm 独立的固定参数、路径指纹、执行上下文和预检规则。
-- `src-tauri/src/actions/capabilities.rs`：写操作能力矩阵、稳定阻塞码和只读执行条件检查。
-- `src-tauri/src/actions/reconcile.rs`：基于前后快照推导实际观察结果与审计证据。
-- `src-tauri/src/storage.rs`：SQLite 快照、根目录、扫描设置和日志存储。
-- `src-tauri/src/commands.rs`：对前端开放的扫描、报告与受控软件包动作 command；写操作只能消费一次性计划。
-
-命令执行统一使用可执行文件路径与参数数组，设置 20 秒超时，不经过 Shell。诊断输出会替换用户主目录并限制长度。
+发布：推送 `v*` 标签触发 Release workflow，通过完整质量门禁后构建 DMG 并创建 draft release，人工确认后发布。
