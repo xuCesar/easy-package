@@ -1714,6 +1714,29 @@ mod tests {
     }
 
     #[test]
+    fn ignores_next_build_output_as_projects() {
+        let root = tempdir().unwrap();
+        let project = root.path().join("web");
+        let generated = project.join(".next/types");
+        fs::create_dir_all(&generated).unwrap();
+        fs::write(project.join("package.json"), r#"{"name":"web"}"#).unwrap();
+        fs::write(
+            generated.join("package.json"),
+            r#"{"name":"generated-types"}"#,
+        )
+        .unwrap();
+
+        let result = scan_projects(&[root.path().to_path_buf()], &AtomicBool::new(false)).unwrap();
+
+        assert_eq!(result.projects.len(), 1);
+        assert_eq!(result.projects[0].name, "web");
+        assert!(result
+            .logs
+            .iter()
+            .any(|log| log.message.contains("跳过默认忽略目录：.next")));
+    }
+
+    #[test]
     fn honors_user_ignored_paths_and_reports_them_in_logs() {
         let root = tempdir().unwrap();
         let ignored = root.path().join("generated");

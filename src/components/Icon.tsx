@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from "react";
 
-export type IconName = "overview" | "packages" | "projects" | "dependencies" | "runtimes" | "history" | "environment" | "settings" | "plus" | "refresh" | "search" | "warning" | "check" | "info" | "folder" | "trash" | "copy" | "terminal" | "chevron";
+export type IconName = "overview" | "packages" | "projects" | "dependencies" | "runtimes" | "history" | "environment" | "logs" | "settings" | "plus" | "refresh" | "search" | "warning" | "check" | "info" | "folder" | "trash" | "copy" | "terminal" | "chevron";
 
 const paths: Record<IconName, ReactNode> = {
   overview: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/></>,
@@ -10,6 +10,7 @@ const paths: Record<IconName, ReactNode> = {
   runtimes: <><path d="M7 4h10l3 8-3 8H7l-3-8 3-8Z"/><path d="M9 9h6M9 15h6M12 9v6"/></>,
   history: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   environment: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></>,
+  logs: <><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.4v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.6-1H2V10h.1A1.7 1.7 0 0 0 3.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.06 4.2l.06.06A1.7 1.7 0 0 0 8 4.6a1.7 1.7 0 0 0 1-1.6V3h4v.1A1.7 1.7 0 0 0 14 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 18.4 9a1.7 1.7 0 0 0 1.6 1h.1v4H20a1.7 1.7 0 0 0-.6 1Z"/></>,
   plus: <><path d="M12 5v14M5 12h14"/></>,
   refresh: <><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6.2 6.2L4 8M5.5 15A7 7 0 0 0 17.8 17.8L20 16"/></>,

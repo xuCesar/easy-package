@@ -65,7 +65,7 @@ describe("useDevPkg 扫描竞态", () => {
     });
     expect(scanCalls).toHaveLength(1);
 
-    const progress: ScanProgress = { scanId: firstScanId, phase: "packages", completed: 5, total: 13 };
+    const progress: ScanProgress = { scanId: firstScanId, phase: "managers", completed: 5, total: 13 };
     act(() => emitProgress?.(progress));
     expect(result.current.scanProgress).toEqual(progress);
 

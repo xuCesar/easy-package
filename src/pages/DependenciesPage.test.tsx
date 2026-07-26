@@ -85,6 +85,40 @@ describe("DependenciesPage", () => {
     expect(screen.getByText("^18 → 18.3.1")).toBeInTheDocument();
   });
 
+  it("在全局依赖视图和依赖图中按工作区聚合成员，并默认隐藏生成目录", () => {
+    const workspaceRoot = { ...projects[0], name: "easy-mes", path: "/tmp/easy-mes" };
+    const workspaceMember = { ...projects[0], name: "@easy-mes/admin", path: "/tmp/easy-mes/apps/admin", workspace: { name: "easy-mes", path: "/tmp/easy-mes", ecosystem: "JavaScript" } };
+    const generated = { ...projects[0], name: ".next", path: "/tmp/easy-mes/apps/admin/.next" };
+    const workspaceInsights: DependencyInsight[] = [{
+      ...insights[0],
+      projectCount: 3,
+      projects: [
+        { projectName: "easy-mes", projectPath: workspaceRoot.path, versionRequirement: "^19", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "pnpm-lock.yaml" },
+        { projectName: "@easy-mes/admin", projectPath: workspaceMember.path, versionRequirement: "^19", scopes: ["开发"], resolvedVersion: "19.1.1", resolutionSource: "pnpm-lock.yaml" },
+        { projectName: ".next", projectPath: generated.path, versionRequirement: "^19", scopes: ["运行"], resolvedVersion: "19.1.1", resolutionSource: "pnpm-lock.yaml" },
+      ],
+    }];
+    renderPage({
+      insights: workspaceInsights,
+      projects: [workspaceRoot, workspaceMember, generated],
+      workspaces: [{ name: "easy-mes", path: workspaceRoot.path, ecosystem: "JavaScript", memberPaths: [workspaceRoot.path, workspaceMember.path] }],
+      scanRoots: ["/tmp"],
+      ignoredDirectoryNames: [".next"],
+    });
+
+    expect(screen.getByText("easy-mes · 2 个引用项目")).toBeInTheDocument();
+    expect(screen.queryByText(".next · 已忽略")).not.toBeInTheDocument();
+    expect(screen.getByText("已索引项目").parentElement?.querySelector("strong")).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("tab", { name: "项目依赖图" }));
+    expect(screen.getByRole("option", { name: "easy-mes · 工作区 · 完整" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /@easy-mes\/admin/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /\.next/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示已忽略的生成目录" }));
+    expect(screen.getByRole("option", { name: ".next · 已忽略 · 完整" })).toBeInTheDocument();
+  });
+
   it("展示 JavaScript、Go、Ruby、PHP 与 Poetry 锁文件解析来源", () => {
     const ecosystemInsights: DependencyInsight[] = [
       { ecosystem: "JavaScript", name: "hono", projectCount: 1, versionRequirements: ["^4.6"], resolvedVersions: ["4.6.14"], hasVersionDivergence: false, hasResolvedVersionDivergence: false, hasResolutionRisk: false, hasHealthRisk: false, projects: [{ projectName: "bun", projectPath: "/tmp/bun", versionRequirement: "^4.6", scopes: ["运行"], resolvedVersion: "4.6.14", resolutionSource: "bun.lock" }] },

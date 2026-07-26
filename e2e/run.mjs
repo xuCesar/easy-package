@@ -123,26 +123,30 @@ async function run() {
     await waitForDriver(driver);
     await createSession();
 
-    await waitForElement("//h1[normalize-space()='本机开发环境']");
-    await waitForElement("//strong[normalize-space()='Homebrew']");
+    await waitForElement("//h1[normalize-space()='概览']");
+    await waitForElement("//span[normalize-space()='Homebrew']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='软件包']]");
     await selectOption("//label[.//span[normalize-space()='管理器']]//select", "npm");
     await waitForElement("//strong[normalize-space()='typescript']");
     await type("//input[@placeholder='搜索软件包']", "not-a-real-package");
-    await waitForElement("//*[normalize-space()='没有匹配的软件包']");
+    await waitForElement("//strong[normalize-space()='没有匹配的软件包']");
 
-    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='依赖']]");
+    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='诊断']]");
+    await waitForElement("//h1[normalize-space()='环境']");
+    await waitForElement("//h2[normalize-space()='命令解析']");
+
+    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='依赖']");
     await selectOption("//select[@aria-label='依赖生态']", "JavaScript");
     await waitForElement("//h2[normalize-space()='react']");
-    await waitForElement("//*[normalize-space()='pnpm-lock.yaml']");
+    await waitForElement("//span[normalize-space()='pnpm-lock.yaml']");
 
-    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='环境']]");
-    await waitForElement("//h2[normalize-space()='PATH 解析']");
+    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='日志']");
+    await waitForElement("//h2[normalize-space()='扫描记录']");
     await waitForElement("//*[normalize-space()='E2E 固定环境扫描完成']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='概览']]");
-    await click("//button[contains(normalize-space(), '刷新扫描')]");
+    await click("//button[normalize-space()='刷新']");
     await click("//button[normalize-space()='取消扫描']");
     await waitForElement("//*[normalize-space()='本次扫描已取消，保留上次成功结果。']");
   } catch (error) {

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityMark, StatusDot } from "../components/Status";
 import { formatBytes, managerLabel } from "../lib/format";
-import type { EnvironmentScan, ExecutionTrust, PageId } from "../types";
+import { isIgnoredScanPath, isSameOrNestedPath, projectNameFromPath } from "../lib/projectPaths";
+import type { EnvironmentScan, ExecutionTrust, HealthIssue, PageId } from "../types";
 
 const trustLabel: Record<ExecutionTrust, string> = {
   system: "系统路径",
@@ -16,12 +17,17 @@ const trustLabel: Record<ExecutionTrust, string> = {
 export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; onNavigate: (page: PageId) => void }) {
   const [copied, setCopied] = useState<string>();
   const [onlyConflicts, setOnlyConflicts] = useState(false);
+  const [selectedHealthGroupKey, setSelectedHealthGroupKey] = useState<string>();
+  const healthGroups = useMemo(() => buildHealthGroups(data), [data]);
+  const selectedHealthGroup = selectedHealthGroupKey ? healthGroups.find((group) => group.key === selectedHealthGroupKey) : undefined;
   const pathObservations = onlyConflicts ? data.pathObservations.filter((item) => item.hasConflict) : data.pathObservations;
   const copyText = async (id: string, value: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(id);
     window.setTimeout(() => setCopied(undefined), 1200);
   };
+
+  if (selectedHealthGroup) return <HealthGroupDetail group={selectedHealthGroup} onBack={() => setSelectedHealthGroupKey(undefined)} onNavigate={onNavigate} />;
 
   return (
     <>
@@ -52,13 +58,69 @@ export function EnvironmentPage({ data, onNavigate }: { data: EnvironmentScan; o
         </section>
         <section className="panel environment-health">
           <div className="panel__header"><h2>健康报告</h2><span className="count-label">{data.healthIssues.length}</span></div>
-          <div className="health-list">{data.healthIssues.map((issue) => { const destination = issue.code.startsWith("RUNTIME_") || issue.code === "ACTIVE_RUNTIME_MISMATCH" ? "runtimes" : issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE" ? "dependencies" : issue.path ? "projects" : undefined; return <div className="health-item" key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}</strong><p>{issue.description}</p>{issue.path ? <code>{issue.path}</code> : null}{issue.command ? <button className="text-button health-item__link" onClick={() => document.getElementById(`command-${issue.command}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>查看相关命令<Icon name="chevron" /></button> : destination ? <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>查看相关{destination === "dependencies" ? "依赖" : destination === "runtimes" ? "运行时" : "项目"}<Icon name="chevron" /></button> : null}</div></div>; })}{data.healthIssues.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
-        </section>
-        <section className="panel environment-logs">
-          <div className="panel__header"><h2>扫描日志</h2><span className="quiet-label">最近 {data.logs.length} 条</span></div>
-          <div className="log-list">{data.logs.map((log) => <div className={`log-row log-row--${log.status}`} key={log.id}><time>{new Date(log.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span>{log.message}</span>{log.output ? <button className="text-button" onClick={() => void copyText(log.id, log.output ?? "")}>{copied === log.id ? "已复制" : "复制输出"}</button> : null}</div>)}</div>
+          <div className="health-group-list">{healthGroups.map((group) => <button className="health-group" key={group.key} onClick={() => setSelectedHealthGroupKey(group.key)} aria-label={`查看健康详情 ${group.name}`}><span className="project-icon"><Icon name={group.path ? "folder" : "environment"} /></span><span className="health-group__main"><strong>{group.name}</strong><small>{group.path ?? "包管理器、缓存、PATH 与全局环境"}</small></span><span className="health-group__summary"><strong>{group.issues.length + group.ignoredIssues.length}</strong><small>{healthGroupSummary(group)}</small></span><Icon name="chevron" /></button>)}{healthGroups.length === 0 ? <p className="quiet-message">环境状态良好。</p> : null}</div>
         </section>
       </div>
     </>
   );
+}
+
+interface HealthGroup {
+  key: string;
+  name: string;
+  path?: string;
+  issues: HealthIssue[];
+  ignoredIssues: HealthIssue[];
+}
+
+function HealthGroupDetail({ group, onBack, onNavigate }: { group: HealthGroup; onBack: () => void; onNavigate: (page: PageId) => void }) {
+  const [showIgnored, setShowIgnored] = useState(false);
+  const allIssues = [...group.issues, ...group.ignoredIssues];
+  const displayedIssues = showIgnored ? [...group.issues, ...group.ignoredIssues] : group.issues;
+  return <>
+    <PageHeader title={`${group.name} 健康报告`} description={group.path ?? "包管理器、缓存、PATH 与全局环境健康项"} actions={<>{group.ignoredIssues.length ? <button className="button button--secondary" onClick={() => setShowIgnored((current) => !current)}>{showIgnored ? "隐藏已忽略项" : `显示已忽略项 (${group.ignoredIssues.length})`}</button> : null}<button className="button button--secondary" onClick={onBack}>返回健康报告</button></>} />
+    <section className="project-detail-summary" aria-label="健康摘要"><div><span>全部健康项</span><strong>{allIssues.length}</strong></div><div><span>错误</span><strong>{allIssues.filter((issue) => issue.severity === "error").length}</strong></div><div><span>警告</span><strong>{allIssues.filter((issue) => issue.severity === "warning").length}</strong></div><div><span>提示</span><strong>{allIssues.filter((issue) => issue.severity === "info").length}</strong></div></section>
+    <section className="panel health-detail-panel"><div className="panel__header"><h2>健康项详情</h2><span className="count-label">{displayedIssues.length}</span></div><div className="health-list">{displayedIssues.map((issue) => { const destination = healthDestination(issue); const ignored = group.ignoredIssues.some((item) => item.id === issue.id); return <article className={ignored ? "health-item health-item--detail health-item--ignored" : "health-item health-item--detail"} key={issue.id}><SeverityMark severity={issue.severity} /><div><strong>{issue.title}{ignored ? " · 已忽略" : ""}</strong><p>{issue.description}</p><div className="health-detail-meta"><code>{issue.code}</code>{issue.path ? <code>{issue.path}</code> : null}{issue.command ? <code>{issue.command}</code> : null}</div>{destination && !ignored ? <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>查看相关{destination === "dependencies" ? "依赖" : destination === "runtimes" ? "运行时" : "项目"}<Icon name="chevron" /></button> : null}</div></article>; })}</div></section>
+  </>;
+}
+
+function buildHealthGroups(data: EnvironmentScan): HealthGroup[] {
+  const groups = new Map<string, HealthGroup>();
+  for (const issue of data.healthIssues) {
+    const owner = healthIssueOwner(issue, data);
+    const group = groups.get(owner.key) ?? { ...owner, issues: [], ignoredIssues: [] };
+    const ignored = issue.path ? isIgnoredScanPath(issue.path, data.scanRoots, data.scanSettings.defaultIgnoredDirectoryNames) : false;
+    (ignored ? group.ignoredIssues : group.issues).push(issue);
+    groups.set(owner.key, group);
+  }
+  return [...groups.values()].sort((left, right) => left.key === "global" ? -1 : right.key === "global" ? 1 : left.name.localeCompare(right.name));
+}
+
+function healthIssueOwner(issue: HealthIssue, data: EnvironmentScan): Pick<HealthGroup, "key" | "name" | "path"> {
+  if (!issue.path || !data.scanRoots.some((root) => isSameOrNestedPath(issue.path ?? "", root))) return { key: "global", name: "全局环境" };
+  const workspace = data.workspaces.filter((item) => isSameOrNestedPath(issue.path ?? "", item.path)).sort((left, right) => right.path.length - left.path.length)[0];
+  if (workspace) {
+    const rootProject = data.projects.find((item) => item.path === workspace.path);
+    return { key: `workspace:${workspace.path}`, name: rootProject?.name ?? workspace.name, path: workspace.path };
+  }
+  const project = data.projects.filter((item) => isSameOrNestedPath(issue.path ?? "", item.path)).sort((left, right) => right.path.length - left.path.length)[0];
+  if (project) return { key: `project:${project.path}`, name: project.name, path: project.path };
+  const root = data.scanRoots.filter((item) => isSameOrNestedPath(issue.path ?? "", item)).sort((left, right) => right.length - left.length)[0];
+  return { key: `root:${root}`, name: projectNameFromPath(root), path: root };
+}
+
+function severitySummary(issues: HealthIssue[]): string {
+  const errors = issues.filter((issue) => issue.severity === "error").length;
+  const warnings = issues.filter((issue) => issue.severity === "warning").length;
+  const info = issues.length - errors - warnings;
+  return [errors ? `${errors} 错误` : "", warnings ? `${warnings} 警告` : "", info ? `${info} 提示` : ""].filter(Boolean).join(" · ");
+}
+
+function healthGroupSummary(group: HealthGroup): string {
+  const visibleSummary = severitySummary(group.issues);
+  return [visibleSummary, group.ignoredIssues.length ? `${group.ignoredIssues.length} 个已忽略` : ""].filter(Boolean).join(" · ");
+}
+
+function healthDestination(issue: HealthIssue): PageId | undefined {
+  return issue.code.startsWith("RUNTIME_") || issue.code === "ACTIVE_RUNTIME_MISMATCH" ? "runtimes" : issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE" ? "dependencies" : issue.path ? "projects" : undefined;
 }

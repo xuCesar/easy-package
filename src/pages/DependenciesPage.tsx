@@ -1,14 +1,31 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
-import type { DependencyGraphNode, DependencyInsight, ProjectDependencyGraph, ProjectMetadata, ReportExportResult } from "../types";
+import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
+import { isIgnoredScanPath } from "../lib/projectPaths";
+import type { DependencyGraphNode, DependencyInsight, DependencyProjectUsage, ProjectDependencyGraph, ProjectMetadata, ProjectWorkspace, ReportExportResult } from "../types";
 
 interface DependenciesPageProps {
   insights: DependencyInsight[];
   projects: ProjectMetadata[];
+  workspaces?: ProjectWorkspace[];
+  scanRoots?: string[];
+  ignoredDirectoryNames?: string[];
   onLoadGraph: (projectPath: string) => Promise<ProjectDependencyGraph>;
   onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
+}
+
+interface DependencyUsageDisplay extends DependencyProjectUsage {
+  key: string;
+  isIgnored: boolean;
+  isWorkspace: boolean;
+  memberCount: number;
+}
+
+interface DependencyInsightDisplay {
+  insight: DependencyInsight;
+  projects: DependencyUsageDisplay[];
 }
 
 const completenessLabel = {
@@ -18,14 +35,16 @@ const completenessLabel = {
   invalid: "无效",
 };
 
-export function DependenciesPage({ insights, projects, onLoadGraph, onExportSbom }: DependenciesPageProps) {
+export function DependenciesPage({ insights, projects, workspaces = [], scanRoots = [], ignoredDirectoryNames = [], onLoadGraph, onExportSbom }: DependenciesPageProps) {
   const [view, setView] = useState<"insights" | "graph">("insights");
   const [query, setQuery] = useState("");
   const [ecosystem, setEcosystem] = useState("all");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
   const [onlyRisky, setOnlyRisky] = useState(false);
   const [onlyResolutionRisk, setOnlyResolutionRisk] = useState(false);
-  const [selectedProjectPath, setSelectedProjectPath] = useState(projects.find((project) => project.dependencyGraphSummary)?.path ?? projects[0]?.path ?? "");
+  const [showIgnoredProjects, setShowIgnoredProjects] = useState(false);
+  const projectOptions = useMemo(() => buildProjectAnalysisOptions(projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects), [ignoredDirectoryNames, projects, scanRoots, showIgnoredProjects, workspaces]);
+  const [selectedProjectPath, setSelectedProjectPath] = useState(() => projectOptions.find((option) => option.project.dependencyGraphSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
   const [graph, setGraph] = useState<ProjectDependencyGraph>();
   const [graphQuery, setGraphQuery] = useState("");
   const [graphScope, setGraphScope] = useState<"all" | "direct" | "transitive" | "duplicates">("all");
@@ -35,12 +54,13 @@ export function DependenciesPage({ insights, projects, onLoadGraph, onExportSbom
   const [actionError, setActionError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const ecosystems = useMemo(() => [...new Set(insights.map((insight) => insight.ecosystem))].sort(), [insights]);
-  const filtered = useMemo(() => insights.filter((insight) => {
+  const insightDisplays = useMemo(() => insights.map((insight) => ({ insight, projects: buildDependencyUsageDisplays(insight.projects, projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects) })).filter((item) => item.projects.length > 0), [ignoredDirectoryNames, insights, projects, scanRoots, showIgnoredProjects, workspaces]);
+  const filtered = useMemo(() => insightDisplays.filter(({ insight }) => {
     const matchesQuery = insight.name.toLowerCase().includes(query.trim().toLowerCase());
     return matchesQuery && (ecosystem === "all" || insight.ecosystem === ecosystem) && (!onlyDivergent || insight.hasVersionDivergence) && (!onlyRisky || insight.hasHealthRisk) && (!onlyResolutionRisk || insight.hasResolutionRisk);
-  }), [ecosystem, insights, onlyDivergent, onlyResolutionRisk, onlyRisky, query]);
-  const divergentCount = insights.filter((insight) => insight.hasVersionDivergence).length;
-  const totalProjects = new Set(insights.flatMap((insight) => insight.projects.map((project) => project.projectPath))).size;
+  }), [ecosystem, insightDisplays, onlyDivergent, onlyResolutionRisk, onlyRisky, query]);
+  const divergentCount = insightDisplays.filter(({ insight }) => insight.hasVersionDivergence).length;
+  const totalProjects = new Set(insightDisplays.flatMap(({ projects: usages }) => usages.map((project) => project.key))).size;
   const duplicateNames = useMemo(() => {
     const versions = new Map<string, Set<string>>();
     graph?.nodes.filter((node) => node.kind === "package").forEach((node) => {
@@ -63,6 +83,13 @@ export function DependenciesPage({ insights, projects, onLoadGraph, onExportSbom
   const selectedPath = graph && selectedNode ? shortestDependencyPath(graph, selectedNode.id) : [];
   const outgoing = graph && selectedNode ? relatedNodes(graph, selectedNode.id, "outgoing") : [];
   const incoming = graph && selectedNode ? relatedNodes(graph, selectedNode.id, "incoming") : [];
+
+  useEffect(() => {
+    if (projectOptions.some((option) => option.project.path === selectedProjectPath)) return;
+    setSelectedProjectPath(projectOptions.find((option) => option.project.dependencyGraphSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
+    setGraph(undefined);
+    setSelectedNodeId(undefined);
+  }, [projectOptions, selectedProjectPath]);
 
   const loadGraph = async () => {
     if (!selectedProjectPath) return;
@@ -119,21 +146,21 @@ export function DependenciesPage({ insights, projects, onLoadGraph, onExportSbom
           <span className="toolbar__count">{filtered.length} 个结果</span>
         </div>
         <section className="panel dependency-panel">
-          {filtered.length ? <div className="dependency-list">{filtered.map((insight) => (
+          {filtered.length ? <div className="dependency-list">{filtered.map(({ insight, projects: usageDisplays }) => (
             <article className="dependency-item" key={`${insight.ecosystem}:${insight.name}`}>
               <div className="dependency-item__summary"><div><span className="manager-chip">{insight.ecosystem}</span><h2>{insight.name}</h2><p>声明：{insight.versionRequirements.join("、")} · 已解析：{insight.resolvedVersions.join("、") || "未解析"}</p></div>{insight.hasVersionDivergence || insight.hasResolvedVersionDivergence || insight.hasResolutionRisk ? <span className="divergence-badge"><Icon name="warning" />{insight.hasResolutionRisk ? "解析异常" : "版本分歧"}</span> : null}</div>
-              <div className="dependency-projects">{insight.projects.map((project) => <div key={project.projectPath}><strong>{project.projectName}</strong><code title={project.projectPath}>{project.projectPath}</code><span className="mono">{project.versionRequirement} → {project.resolvedVersion ?? "未解析"}</span><span>{project.resolutionSource ?? project.scopes.join(" · ")}</span></div>)}</div>
+              <div className="dependency-projects">{usageDisplays.map((project) => <div key={project.key}><strong>{project.projectName}{project.isWorkspace ? ` · ${project.memberCount} 个引用项目` : ""}{project.isIgnored ? " · 已忽略" : ""}</strong><code title={project.projectPath}>{project.projectPath}</code><span className="mono">{project.versionRequirement} → {project.resolvedVersion ?? "未解析"}</span><span>{project.resolutionSource ?? project.scopes.join(" · ")}</span></div>)}</div>
             </article>
           ))}</div> : <EmptyState icon="dependencies" title="没有匹配的依赖" description="调整搜索条件，或先在“项目”中添加需要索引的目录。" />}
         </section>
       </> : <>
         <section className="panel graph-controls" aria-label="项目依赖图设置">
           <div className="graph-controls__body">
-            <label className="select-field">项目<select aria-label="依赖图项目" value={selectedProjectPath} onChange={(event) => { setSelectedProjectPath(event.target.value); setGraph(undefined); setSelectedNodeId(undefined); }}><option value="">选择项目</option>{projects.map((project) => <option key={project.path} value={project.path}>{project.name}{project.dependencyGraphSummary ? ` · ${completenessLabel[project.dependencyGraphSummary.completeness]}` : ""}</option>)}</select></label>
+            <label className="select-field">项目<select aria-label="依赖图项目" value={selectedProjectPath} onChange={(event) => { setSelectedProjectPath(event.target.value); setGraph(undefined); setSelectedNodeId(undefined); }}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.project.dependencyGraphSummary ? ` · ${completenessLabel[option.project.dependencyGraphSummary.completeness]}` : ""}</option>)}</select></label>
             <button className="button button--primary" onClick={() => void loadGraph()} disabled={!selectedProjectPath || isLoadingGraph}>{isLoadingGraph ? "解析中…" : "解析依赖图"}</button>
             <button className="button button--secondary" onClick={() => void exportSbom()} disabled={!graph || graph.completeness === "unsupported" || graph.completeness === "invalid" || isExporting}>{isExporting ? "导出中…" : "导出 CycloneDX SBOM"}</button>
           </div>
-          <p>完整图按需读取当前锁文件，不写入 SQLite 快照；快照只保留图摘要和锁文件摘要。</p>
+          <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => setShowIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整图按需读取当前锁文件，不写入 SQLite 快照。</p></div>
         </section>
         {graph ? <>
           <section className="metrics graph-metrics" aria-label="依赖图摘要">
@@ -163,6 +190,46 @@ export function DependenciesPage({ insights, projects, onLoadGraph, onExportSbom
       </>}
     </>
   );
+}
+
+function buildDependencyUsageDisplays(
+  usages: DependencyProjectUsage[],
+  projects: ProjectMetadata[],
+  workspaces: ProjectWorkspace[],
+  scanRoots: string[],
+  ignoredDirectoryNames: string[],
+  showIgnoredProjects: boolean,
+): DependencyUsageDisplay[] {
+  const projectByPath = new Map(projects.map((project) => [project.path, project]));
+  const workspaceByMemberPath = new Map(workspaces.flatMap((workspace) => [workspace.path, ...workspace.memberPaths].map((path) => [path, workspace])));
+  const grouped = new Map<string, DependencyUsageDisplay[]>();
+
+  for (const usage of usages) {
+    const workspace = workspaceByMemberPath.get(usage.projectPath);
+    const isIgnored = isIgnoredScanPath(usage.projectPath, scanRoots, ignoredDirectoryNames);
+    if (!showIgnoredProjects && isIgnored) continue;
+    const key = workspace ? `workspace:${workspace.path}` : `project:${usage.projectPath}`;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push({ ...usage, key, isIgnored, isWorkspace: Boolean(workspace), memberCount: 1, projectName: workspace?.name ?? usage.projectName, projectPath: workspace?.path ?? usage.projectPath });
+    grouped.set(key, bucket);
+  }
+
+  return [...grouped.values()].map((bucket) => {
+    const representative = bucket[0];
+    return {
+      ...representative,
+      memberCount: bucket.length,
+      versionRequirement: uniqueJoined(bucket.map((item) => item.versionRequirement)),
+      resolvedVersion: uniqueJoined(bucket.flatMap((item) => item.resolvedVersion ? [item.resolvedVersion] : [])) || undefined,
+      resolutionSource: uniqueJoined(bucket.flatMap((item) => item.resolutionSource ? [item.resolutionSource] : [])) || undefined,
+      scopes: [...new Set(bucket.flatMap((item) => item.scopes))].sort(),
+      isIgnored: bucket.every((item) => item.isIgnored),
+    };
+  }).sort((left, right) => left.projectName.localeCompare(right.projectName));
+}
+
+function uniqueJoined(values: string[]): string {
+  return [...new Set(values.filter(Boolean))].sort().join("、");
 }
 
 function relatedNodes(graph: ProjectDependencyGraph, nodeId: string, direction: "incoming" | "outgoing"): DependencyGraphNode[] {

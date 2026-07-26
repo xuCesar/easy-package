@@ -9,7 +9,7 @@ const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "environment", label: "诊断", icon: "environment" },
 ];
 
-const diagnosticPages = new Set<PageId>(["environment", "dependencies", "supplyChain", "runtimes", "history"]);
+const diagnosticPages = new Set<PageId>(["environment", "dependencies", "supplyChain", "runtimes", "history", "logs"]);
 
 interface AppShellProps {
   page: PageId;

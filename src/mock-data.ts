@@ -165,7 +165,7 @@ export const mockScan: EnvironmentScan = {
     { projectName: "easy-package", projectPath: "~/Code/easy-package", runtime: "Python", requirement: ">=3.12", status: "available", activeVersion: "3.13.5", installedVersions: ["3.13.5"], message: "已发现本机运行时；复杂版本范围未自动判定" },
   ],
   scanRoots: ["~/Code"],
-  scanSettings: { ignoredPaths: ["~/Code/archive"], maxDepth: 6, defaultIgnoredDirectoryNames: ["node_modules", ".git", "target", "dist", "build", ".venv", "vendor"], networkPolicy: "offline" },
+  scanSettings: { ignoredPaths: ["~/Code/archive"], maxDepth: 6, defaultIgnoredDirectoryNames: ["node_modules", ".next", ".git", "target", "dist", "build", ".venv", "vendor"], networkPolicy: "offline" },
   healthIssues: [
     { id: "updates", severity: "warning", code: "UPDATES_AVAILABLE", title: "3 个软件包可更新", description: "本版本仅展示更新状态，不会修改本机环境。" },
     { id: "python-path", severity: "info", code: "PATH_CONFLICT", title: "发现多个 Python 路径", description: "当前优先使用 /opt/homebrew/bin/python3，请确认这符合预期。" },

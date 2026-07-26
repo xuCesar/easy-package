@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
-import type { ProjectMetadata, ProjectSupplyChainReport, ReportExportResult, SupplyChainRiskFinding } from "../types";
+import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
+import type { ProjectMetadata, ProjectSupplyChainReport, ProjectWorkspace, ReportExportResult, SupplyChainRiskFinding } from "../types";
 
 interface SupplyChainPageProps {
   projects: ProjectMetadata[];
+  workspaces: ProjectWorkspace[];
+  scanRoots: string[];
+  ignoredDirectoryNames: string[];
   onLoadReport: (projectPath: string) => Promise<ProjectSupplyChainReport>;
   onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
 }
@@ -22,8 +26,10 @@ const ruleLabels: Record<string, string> = {
   DEPENDENCY_VERSION_MISSING: "版本缺失",
 };
 
-export function SupplyChainPage({ projects, onLoadReport, onExportSbom }: SupplyChainPageProps) {
-  const [projectPath, setProjectPath] = useState(projects.find((project) => project.supplyChainRiskSummary)?.path ?? projects[0]?.path ?? "");
+export function SupplyChainPage({ projects, workspaces, scanRoots, ignoredDirectoryNames, onLoadReport, onExportSbom }: SupplyChainPageProps) {
+  const [showIgnoredProjects, setShowIgnoredProjects] = useState(false);
+  const projectOptions = useMemo(() => buildProjectAnalysisOptions(projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects), [ignoredDirectoryNames, projects, scanRoots, showIgnoredProjects, workspaces]);
+  const [projectPath, setProjectPath] = useState(() => projectOptions.find((option) => option.supplyChainRiskSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
   const [report, setReport] = useState<ProjectSupplyChainReport>();
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<"all" | "warning" | "info">("all");
@@ -34,12 +40,15 @@ export function SupplyChainPage({ projects, onLoadReport, onExportSbom }: Supply
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
 
-  const aggregate = useMemo(() => projects.reduce((summary, project) => {
-    summary.projects += project.supplyChainRiskSummary ? 1 : 0;
-    summary.total += project.supplyChainRiskSummary?.totalCount ?? 0;
-    summary.warnings += project.supplyChainRiskSummary?.warningCount ?? 0;
+  const aggregate = useMemo(() => [...new Map(projectOptions
+    .flatMap((option) => option.projects)
+    .map((project) => [project.path, project])).values()].reduce((summary, project) => {
+    const riskSummary = project.supplyChainRiskSummary;
+    summary.projects += riskSummary ? 1 : 0;
+    summary.total += riskSummary?.totalCount ?? 0;
+    summary.warnings += riskSummary?.warningCount ?? 0;
     return summary;
-  }, { projects: 0, total: 0, warnings: 0 }), [projects]);
+  }, { projects: 0, total: 0, warnings: 0 }), [projectOptions]);
   const rules = useMemo(() => report?.summary.ruleIds ?? [], [report]);
   const filtered = useMemo(() => report?.findings.filter((finding) => {
     const normalized = query.trim().toLowerCase();
@@ -47,6 +56,13 @@ export function SupplyChainPage({ projects, onLoadReport, onExportSbom }: Supply
     return matchesQuery && (severity === "all" || finding.severity === severity) && (rule === "all" || finding.code === rule);
   }) ?? [], [query, report, rule, severity]);
   const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId);
+
+  useEffect(() => {
+    if (projectOptions.some((option) => option.project.path === projectPath)) return;
+    setProjectPath(projectOptions.find((option) => option.supplyChainRiskSummary)?.project.path ?? projectOptions[0]?.project.path ?? "");
+    setReport(undefined);
+    setSelectedFindingId(undefined);
+  }, [projectOptions, projectPath]);
 
   const loadReport = async () => {
     if (!projectPath) return;
@@ -91,11 +107,11 @@ export function SupplyChainPage({ projects, onLoadReport, onExportSbom }: Supply
       </section>
       <section className="panel graph-controls" aria-label="供应链分析设置">
         <div className="graph-controls__body">
-          <label className="select-field">项目<select aria-label="供应链项目" value={projectPath} onChange={(event) => { setProjectPath(event.target.value); setReport(undefined); setSelectedFindingId(undefined); }}><option value="">选择项目</option>{projects.map((project) => <option key={project.path} value={project.path}>{project.name}{project.supplyChainRiskSummary ? ` · ${project.supplyChainRiskSummary.warningCount} 个警告` : ""}</option>)}</select></label>
+          <label className="select-field">项目<select aria-label="供应链项目" value={projectPath} onChange={(event) => { setProjectPath(event.target.value); setReport(undefined); setSelectedFindingId(undefined); }}><option value="">选择项目</option>{projectOptions.map((option) => <option key={option.project.path} value={option.project.path}>{option.name}{option.isWorkspace ? " · 工作区" : ""}{option.isIgnored ? " · 已忽略" : ""}{option.supplyChainRiskSummary ? ` · ${option.supplyChainRiskSummary.warningCount} 个警告` : ""}</option>)}</select></label>
           <button className="button button--primary" onClick={() => void loadReport()} disabled={!projectPath || isLoading}>{isLoading ? "分析中…" : "分析供应链风险"}</button>
           <button className="button button--secondary" onClick={() => void exportSbom()} disabled={!report || isExporting}>{isExporting ? "导出中…" : "导出含风险摘要的 SBOM"}</button>
         </div>
-        <p>完整证据按需从当前锁文件重建，不写入 SQLite；快照仅保存计数和稳定规则 ID。</p>
+        <div className="supply-chain-settings"><label className="checkbox-field"><input type="checkbox" checked={showIgnoredProjects} onChange={(event) => setShowIgnoredProjects(event.target.checked)} />显示已忽略的生成目录</label><p>默认按工作区聚合，不重复列出成员；完整证据按需从当前锁文件重建，不写入 SQLite。</p></div>
       </section>
       {report ? <>
         <section className="metrics graph-metrics" aria-label="当前项目风险摘要">

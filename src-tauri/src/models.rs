@@ -240,6 +240,7 @@ pub fn default_scan_max_depth() -> usize {
 pub fn default_ignored_directory_names() -> Vec<String> {
     [
         "node_modules",
+        ".next",
         ".git",
         "target",
         "dist",
