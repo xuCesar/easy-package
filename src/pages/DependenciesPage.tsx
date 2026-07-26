@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { apiErrorMessage } from "../lib/apiError";
 import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
 import { isIgnoredScanPath } from "../lib/projectPaths";
 import type {
@@ -152,7 +153,7 @@ export function DependenciesPage({
       setGraph(await onLoadGraph(selectedProjectPath));
     } catch (error) {
       setGraph(undefined);
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(apiErrorMessage(error, "依赖分析失败，请重试。"));
     } finally {
       setIsLoadingGraph(false);
     }
@@ -167,7 +168,7 @@ export function DependenciesPage({
       const result = await onExportSbom(graph.projectPath);
       setNotice(result.saved ? "CycloneDX SBOM 已导出。" : "已取消导出。");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(apiErrorMessage(error, "依赖分析失败，请重试。"));
     } finally {
       setIsExporting(false);
     }

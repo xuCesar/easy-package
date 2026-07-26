@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { apiErrorMessage } from "../lib/apiError";
 import type {
   ActionCapability,
   EnvironmentScan,
@@ -133,6 +134,5 @@ export function usePackageActions(onEnvironmentUpdated: (environment: Environmen
 }
 
 function messageFrom(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return typeof error === "string" ? error : "软件包操作失败，请查看审计记录。";
+  return apiErrorMessage(error, "软件包操作失败，请查看审计记录。");
 }

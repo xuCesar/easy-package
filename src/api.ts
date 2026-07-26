@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ApiError } from "./lib/apiError";
 import { mockProjects, mockScan } from "./mock-data";
 import type {
   ActionCapability,
@@ -410,7 +411,7 @@ const mockApi: DevPkgApi = {
     const total = 13;
     for (let completed = 0; completed < total; completed += 1) {
       await wait(45);
-      if (cancelledMockScans.delete(scanId)) throw new Error("扫描已取消");
+      if (cancelledMockScans.delete(scanId)) throw new ApiError({ code: "SCAN_CANCELLED", message: "扫描已取消" });
       emitMockProgress({
         scanId,
         phase: completed < 10 ? "managers" : completed === 10 ? "projects" : completed === 11 ? "runtimes" : "health",

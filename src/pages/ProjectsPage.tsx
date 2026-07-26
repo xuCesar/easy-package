@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { apiErrorMessage } from "../lib/apiError";
 import { isIgnoredScanPath, isSameOrNestedPath, projectNameFromPath } from "../lib/projectPaths";
 import type { ProjectMetadata, ProjectWorkspace } from "../types";
 
@@ -230,7 +231,7 @@ export function ProjectsPage({
         : "/Users/demo/Code/new-project";
       if (typeof path === "string") await onAddRoot(path);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(apiErrorMessage(error, "项目操作失败，请重试。"));
     } finally {
       setIsChoosing(false);
     }

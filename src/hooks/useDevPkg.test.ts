@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../lib/apiError";
 import type { EnvironmentScan, ScanProgress } from "../types";
 import { useDevPkg } from "./useDevPkg";
 
@@ -81,7 +82,7 @@ describe("useDevPkg 扫描竞态", () => {
     expect(mocks.cancelEnvironmentScan).toHaveBeenCalledExactlyOnceWith(firstScanId);
 
     await act(async () => {
-      scanCalls[0].deferred.reject(new Error("扫描已取消"));
+      scanCalls[0].deferred.reject(new ApiError({ code: "SCAN_CANCELLED", message: "扫描已取消" }));
       await scanCalls[0].deferred.promise.catch(() => undefined);
     });
     expect(result.current.notice).toBe("本次扫描已取消，保留上次成功结果。");

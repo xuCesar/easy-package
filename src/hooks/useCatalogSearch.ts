@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { api } from "../api";
+import { apiErrorMessage } from "../lib/apiError";
 import type { CatalogSearchResponse, WritableManagerId } from "../types";
 
 interface CatalogSearchState {
@@ -23,7 +24,7 @@ export function useCatalogSearch() {
       return response;
     } catch (error) {
       if (activeSearchId.current === searchId) {
-        setState({ isSearching: false, error: error instanceof Error ? error.message : "软件包目录搜索失败。" });
+        setState({ isSearching: false, error: apiErrorMessage(error, "软件包目录搜索失败。") });
       }
       return undefined;
     } finally {

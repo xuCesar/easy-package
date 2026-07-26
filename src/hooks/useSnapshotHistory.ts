@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { apiErrorMessage } from "../lib/apiError";
 import type { ReportFormat, SnapshotComparison, SnapshotSummary } from "../types";
 
 interface SnapshotHistoryState {
@@ -9,7 +10,7 @@ interface SnapshotHistoryState {
   error?: string;
 }
 
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const errorMessage = (error: unknown) => apiErrorMessage(error, "快照操作失败，请重试。");
 
 export function useSnapshotHistory(scannedAt?: string) {
   const [state, setState] = useState<SnapshotHistoryState>({ summaries: [], isLoading: false });

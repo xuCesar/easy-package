@@ -152,9 +152,7 @@ impl ActionRegistry {
             .lock()
             .map_err(|error| AppError::Command(error.to_string()))?;
         if active.is_some() {
-            return Err(AppError::Command(
-                "PACKAGE_ACTION_ALREADY_RUNNING：已有软件包操作正在进行".into(),
-            ));
+            return Err(AppError::ActionConflict);
         }
         let cancelled = Arc::new(AtomicBool::new(false));
         *active = Some(ActivePackageAction {
@@ -213,9 +211,7 @@ pub fn create_package_plan(
         return Err(AppError::Command("该包管理器暂不支持受控写操作".into()));
     }
     if storage.has_incomplete_action()? {
-        return Err(AppError::Command(
-            "PACKAGE_ACTION_RECOVERY_REQUIRED：上次操作可能中断，请先完成一次环境扫描".into(),
-        ));
+        return Err(AppError::RecoveryRequired);
     }
     let snapshot = storage
         .latest_snapshot()?

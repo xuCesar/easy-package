@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { apiErrorMessage } from "../lib/apiError";
 import type { ReportExportResult, ReportFormat, ScanSettings } from "../types";
 
 interface SettingsPageProps {
@@ -27,7 +28,7 @@ export function SettingsPage({ scanSettings, onUpdateSettings, onExportReport }:
       setMaxDepth(String(next.maxDepth));
       setNotice("系统扫描设置已更新。");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      setError(apiErrorMessage(saveError, "设置保存失败，请重试。"));
     } finally {
       setIsSaving(false);
     }
@@ -64,7 +65,7 @@ export function SettingsPage({ scanSettings, onUpdateSettings, onExportReport }:
       const result = await onExportReport(reportFormat);
       setNotice(result.saved ? "环境报告已导出。" : "已取消导出。");
     } catch (exportError) {
-      setError(exportError instanceof Error ? exportError.message : String(exportError));
+      setError(apiErrorMessage(exportError, "报告导出失败，请重试。"));
     } finally {
       setIsExporting(false);
     }

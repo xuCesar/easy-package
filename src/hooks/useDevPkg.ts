@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { apiErrorCode, apiErrorMessage } from "../lib/apiError";
 import type { EnvironmentScan, ReportFormat, ScanProgress, ScanSettings } from "../types";
 
 interface DevPkgState {
@@ -7,12 +8,6 @@ interface DevPkgState {
   isLoading: boolean;
   error?: string;
 }
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return "扫描失败，请查看诊断日志后重试。";
-};
 
 export const useDevPkg = () => {
   const [state, setState] = useState<DevPkgState>({ isLoading: true });
@@ -46,11 +41,15 @@ export const useDevPkg = () => {
       startTransition(() => setState({ data, isLoading: false }));
     } catch (error) {
       if (activeScanId.current !== scanId) return;
-      if (getErrorMessage(error) === "扫描已取消") {
+      if (apiErrorCode(error) === "SCAN_CANCELLED") {
         setState((current) => ({ ...current, isLoading: false, error: undefined }));
         setNotice("本次扫描已取消，保留上次成功结果。");
       } else {
-        setState((current) => ({ ...current, isLoading: false, error: getErrorMessage(error) }));
+        setState((current) => ({
+          ...current,
+          isLoading: false,
+          error: apiErrorMessage(error, "扫描失败，请查看诊断日志后重试。"),
+        }));
       }
     } finally {
       if (activeScanId.current === scanId) {

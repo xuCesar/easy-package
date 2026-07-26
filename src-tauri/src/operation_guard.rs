@@ -42,11 +42,10 @@ impl OperationCoordinator {
             .lock()
             .map_err(|error| AppError::Command(error.to_string()))?;
         if let Some(operation) = active.as_ref() {
-            let code = match operation.kind {
-                OperationKind::Scan => "SCAN_ALREADY_RUNNING",
-                OperationKind::PackageAction => "PACKAGE_ACTION_ALREADY_RUNNING",
-            };
-            return Err(AppError::Command(format!("{code}：已有互斥操作正在进行")));
+            return Err(match operation.kind {
+                OperationKind::Scan => AppError::ScanConflict,
+                OperationKind::PackageAction => AppError::ActionConflict,
+            });
         }
         *active = Some(ActiveOperation {
             id: id.into(),
@@ -64,18 +63,16 @@ mod tests {
     fn serializes_scans_and_package_actions() {
         let coordinator = OperationCoordinator::default();
         coordinator.begin_scan("scan-1").unwrap();
-        assert!(coordinator
-            .begin_package_action("action-1")
-            .unwrap_err()
-            .to_string()
-            .contains("SCAN_ALREADY_RUNNING"));
+        assert_eq!(
+            coordinator.begin_package_action("action-1").unwrap_err().code(),
+            "SCAN_ALREADY_RUNNING"
+        );
         coordinator.finish("scan-1");
         coordinator.begin_package_action("action-1").unwrap();
-        assert!(coordinator
-            .begin_scan("scan-2")
-            .unwrap_err()
-            .to_string()
-            .contains("PACKAGE_ACTION_ALREADY_RUNNING"));
+        assert_eq!(
+            coordinator.begin_scan("scan-2").unwrap_err().code(),
+            "PACKAGE_ACTION_ALREADY_RUNNING"
+        );
         coordinator.finish("action-1");
         assert!(coordinator.begin_scan("scan-2").is_ok());
     }

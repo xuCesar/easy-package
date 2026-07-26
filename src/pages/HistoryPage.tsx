@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { apiErrorMessage } from "../lib/apiError";
 import { formatRelativeTime } from "../lib/format";
 import type {
   ReportExportResult,
@@ -71,7 +72,7 @@ export function HistoryPage({ summaries, comparison, isLoading, error, onCompare
     try {
       await onCompare(selectedBaselineId, selectedCurrentId);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(apiErrorMessage(error, "历史操作失败，请重试。"));
     } finally {
       setIsComparing(false);
     }
@@ -86,7 +87,7 @@ export function HistoryPage({ summaries, comparison, isLoading, error, onCompare
       const result = await onExport(reportFormat, comparison.baseline.id, comparison.current.id);
       setNotice(result.saved ? "变化报告已导出。" : "已取消导出。");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(apiErrorMessage(error, "历史操作失败，请重试。"));
     } finally {
       setIsExporting(false);
     }

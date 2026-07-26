@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { apiErrorMessage } from "../lib/apiError";
 import { buildProjectAnalysisOptions } from "../lib/projectAnalysisOptions";
 import type {
   ProjectMetadata,
@@ -402,5 +403,5 @@ function FindingButton({
 }
 
 function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return apiErrorMessage(error, "供应链分析失败，请重试。");
 }
