@@ -4,14 +4,22 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { UpdateBadge } from "../components/Status";
 import { filterPackages, managerLabel } from "../lib/format";
+import { buildUpgradePlanPrefill, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
 import type { ManagedPackage, PackageManagerId, PageId, UpdateStatus } from "../types";
 
-export function PackagesPage({ packages, onNavigate }: { packages: ManagedPackage[]; onNavigate: (page: PageId) => void }) {
+interface PackagesPageProps {
+  packages: ManagedPackage[];
+  onNavigate: (page: PageId) => void;
+  onStartUpgradePlan: (prefill: UpgradePlanPrefill) => void;
+}
+
+export function PackagesPage({ packages, onNavigate, onStartUpgradePlan }: PackagesPageProps) {
   const [query, setQuery] = useState("");
   const [manager, setManager] = useState<"all" | PackageManagerId>("all");
   const [status, setStatus] = useState<"all" | UpdateStatus>("all");
   const deferredQuery = useDeferredValue(query);
   const filtered = filterPackages(packages, { query: deferredQuery, manager, status });
+  const upgradePrefill = buildUpgradePlanPrefill(filtered);
 
   return (
     <>
@@ -20,6 +28,7 @@ export function PackagesPage({ packages, onNavigate }: { packages: ManagedPackag
         <label className="search-field"><Icon name="search" /><span className="sr-only">搜索软件包</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索软件包" /></label>
         <label className="select-field"><span>管理器</span><select value={manager} onChange={(event) => setManager(event.target.value as typeof manager)}><option value="all">全部</option>{Object.entries(managerLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="select-field"><span>状态</span><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="all">全部</option><option value="available">可更新</option><option value="upToDate">已是最新</option><option value="unknown">未知</option></select></label>
+        <button className="button button--secondary" onClick={() => upgradePrefill && onStartUpgradePlan(upgradePrefill)} disabled={!upgradePrefill} title={upgradePrefill ? `为 ${managerLabel[upgradePrefill.managerId]} 预填 ${upgradePrefill.targets.length} 个升级目标` : "当前筛选结果中没有可写管理器的可更新包"}>批量生成升级计划{upgradePrefill ? `（${upgradePrefill.targets.length}）` : ""}</button>
         <span className="toolbar__count">{filtered.length} 个结果</span>
       </section>
       <section className="panel package-panel">

@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import type { UpgradePlanPrefill } from "../lib/upgradePlanBridge";
 import type { ActionCapability, CatalogSearchResponse, ManagedPackage, PackageAction, PackageActionAuditRecord, PackageActionPlan, PackageActionProgress, PackageActionResult, ScanSettings, WritableManagerId } from "../types";
 
 interface ActionCenterPageProps {
   packages: ManagedPackage[];
+  upgradePrefill?: UpgradePlanPrefill;
   scanSettings: ScanSettings;
   capabilities: ActionCapability[];
   catalogResponse?: CatalogSearchResponse;
@@ -36,11 +38,11 @@ const outcomeLabels = { applied: "已观察到生效", notApplied: "未观察到
 const actionDisplay = (managerId: WritableManagerId, action: PackageAction) => managerId === "npm" && action === "cleanup" ? "缓存校验与回收" : actionLabels[action];
 
 export function ActionCenterPage(props: ActionCenterPageProps) {
-  const [managerId, setManagerId] = useState<WritableManagerId>("homebrew");
-  const [action, setAction] = useState<PackageAction>("install");
+  const [managerId, setManagerId] = useState<WritableManagerId>(props.upgradePrefill?.managerId ?? "homebrew");
+  const [action, setAction] = useState<PackageAction>(props.upgradePrefill ? "upgrade" : "install");
   const [installTarget, setInstallTarget] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
-  const [upgradeTargets, setUpgradeTargets] = useState<string[]>([]);
+  const [upgradeTargets, setUpgradeTargets] = useState<string[]>(props.upgradePrefill?.targets ?? []);
   const [uninstallTarget, setUninstallTarget] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [auditManager, setAuditManager] = useState<"all" | WritableManagerId>("all");
@@ -89,6 +91,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
       <div className="write-boundary-banner"><Icon name="warning" /><div><strong>受控写入模式</strong><span>不使用 Shell、不接受自定义参数、不请求 sudo；npm 与 pnpm 固定禁用 lifecycle scripts。</span></div></div>
       {recoveryRequired ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>存在尚未核对的写操作。完成重新扫描与结果核对前不能继续写入。</span><button onClick={() => void props.onReconcile(recoveryRecords[0].actionId)} disabled={props.isReconciling}>{props.isReconciling ? "正在核对…" : "重新扫描并核对"}</button></div> : null}
       {props.error ? <div className="inline-alert inline-alert--error"><Icon name="warning" /><span>{props.error}</span></div> : null}
+      {props.upgradePrefill ? <div className="inline-alert" role="status"><Icon name="info" /><span>{`已从软件包页带入 ${props.upgradePrefill.targets.length} 个 ${managerLabels[props.upgradePrefill.managerId]} 升级目标。`}{props.upgradePrefill.truncatedCount > 0 ? `超出单次计划上限，已截断 ${props.upgradePrefill.truncatedCount} 个，可在执行后分批处理。` : ""}{props.upgradePrefill.otherWritableCount > 0 ? `另有 ${props.upgradePrefill.otherWritableCount} 个可更新包属于其他可写管理器，请切换管理器后单独生成计划。` : ""}{props.upgradePrefill.unwritableCount > 0 ? `${props.upgradePrefill.unwritableCount} 个可更新包不属于受控可写管理器，已被过滤。` : ""}</span></div> : null}
 
       <div className="view-tabs action-manager-tabs" role="tablist" aria-label="写操作包管理器">
         {(["homebrew", "npm", "pnpm"] as const).map((item) => <button key={item} role="tab" aria-selected={managerId === item} className={managerId === item ? "view-tab view-tab--active" : "view-tab"} onClick={() => changeManager(item)} disabled={props.isExecuting}>{managerLabels[item]}</button>)}

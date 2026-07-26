@@ -45,6 +45,35 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
   });
 
+  it("软件包页可更新筛选可一键预填批量升级计划", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });
+
+    const bridgeButton = screen.getByRole("button", { name: "批量生成升级计划（1）" });
+    expect(bridgeButton).toBeEnabled();
+    fireEvent.click(bridgeButton);
+
+    expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "升级" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Homebrew" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("checkbox", { name: /git/ })).toBeChecked();
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("已从软件包页带入 1 个 Homebrew 升级目标");
+    expect(notice).toHaveTextContent("另有 1 个可更新包属于其他可写管理器");
+    expect(notice).toHaveTextContent("1 个可更新包不属于受控可写管理器，已被过滤");
+  });
+
+  it("无可写管理器可更新包时批量升级入口禁用", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }));
+    fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "pip" } });
+
+    expect(screen.getByRole("button", { name: "批量生成升级计划" })).toBeDisabled();
+  });
+
   it("软件包筛选展示空态", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
