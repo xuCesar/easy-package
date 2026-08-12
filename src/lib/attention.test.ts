@@ -76,6 +76,7 @@ describe("collectAttentionItems", () => {
     expect(items.map((item) => item.id)).toEqual(["health:broken", "health:updates"]);
     expect(items[0].severity).toBe("error");
     expect(items[0].target).toBe("environment");
+    expect(items[1].target).toBe("packages");
   });
 
   it("info 健康项与满足要求的运行时不计入", () => {

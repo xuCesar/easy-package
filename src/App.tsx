@@ -115,6 +115,7 @@ export function App() {
             onRefresh={refreshNow}
             onCancel={cancelScanNow}
             onNavigate={navigate}
+            onStartUpgradePlan={startUpgradePlan}
           />
         ) : null}
         {diagnosticPageSet.has(page) ? (
