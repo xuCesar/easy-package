@@ -6,7 +6,7 @@ import { collectAttentionItems } from "./attention";
 const baseline: EnvironmentScan = { ...mockScan, healthIssues: [], runtimeAssessments: [], projects: [] };
 
 describe("collectAttentionItems", () => {
-  it("聚合健康项、运行时不匹配与供应链警告并按严重度排序", () => {
+  it("仅聚合全局环境问题并按严重度排序", () => {
     const data: EnvironmentScan = {
       ...baseline,
       healthIssues: [
@@ -20,9 +20,17 @@ describe("collectAttentionItems", () => {
         {
           id: "broken",
           severity: "error",
-          code: "MANAGER_ERROR",
+          code: "MANAGER_COMMAND_FAILED",
           title: "npm 扫描失败",
           description: "命令退出码非零。",
+        },
+        {
+          id: "project-lock",
+          severity: "warning",
+          code: "DIRECT_DEPENDENCY_NOT_RESOLVED",
+          title: "api-lab 未在锁文件中解析 react",
+          description: "项目依赖问题应留在项目详情。",
+          path: "~/Code/api-lab",
         },
       ],
       runtimeAssessments: [
@@ -65,18 +73,9 @@ describe("collectAttentionItems", () => {
 
     const items = collectAttentionItems(data);
 
-    expect(items.map((item) => item.id)).toEqual([
-      "health:broken",
-      "health:updates",
-      "runtime:~/Code/api-lab:Node.js",
-      "supplyChain:~/Code/api-lab",
-    ]);
+    expect(items.map((item) => item.id)).toEqual(["health:broken", "health:updates"]);
     expect(items[0].severity).toBe("error");
     expect(items[0].target).toBe("environment");
-    expect(items[2].target).toBe("runtimes");
-    expect(items[3].target).toBe("analysis");
-    expect(items[3].analysisView).toBe("supplyChain");
-    expect(items[3].title).toBe("api-lab 存在 1 项供应链风险");
   });
 
   it("info 健康项与满足要求的运行时不计入", () => {
@@ -96,7 +95,7 @@ describe("collectAttentionItems", () => {
     expect(collectAttentionItems(data)).toEqual([]);
   });
 
-  it("缺失运行时标记为 error", () => {
+  it("项目运行时问题不在概览展开", () => {
     const data: EnvironmentScan = {
       ...baseline,
       runtimeAssessments: [
@@ -112,8 +111,6 @@ describe("collectAttentionItems", () => {
       ],
     };
 
-    const items = collectAttentionItems(data);
-    expect(items).toHaveLength(1);
-    expect(items[0].severity).toBe("error");
+    expect(collectAttentionItems(data)).toEqual([]);
   });
 });

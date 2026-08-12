@@ -407,6 +407,9 @@ const mockProjectSupplyChainReport = (projectPath: string): ProjectSupplyChainRe
 };
 
 const mockApi: DevPkgApi = {
+  async getLatestSnapshot() {
+    return null;
+  },
   async scanEnvironment(scanId) {
     const total = 13;
     for (let completed = 0; completed < total; completed += 1) {
@@ -725,6 +728,7 @@ const mockApi: DevPkgApi = {
 };
 
 const tauriApi: DevPkgApi = {
+  getLatestSnapshot: () => invoke<EnvironmentScan | null>("get_latest_snapshot"),
   scanEnvironment: (scanId) => invoke<EnvironmentScan>("scan_environment", { scanId }),
   cancelEnvironmentScan: (scanId) => invoke<void>("cancel_environment_scan", { scanId }),
   async listenToScanProgress(listener) {

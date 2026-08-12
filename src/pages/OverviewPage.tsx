@@ -3,7 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusDot } from "../components/Status";
 import { collectAttentionItems } from "../lib/attention";
 import { formatRelativeTime } from "../lib/format";
-import type { EnvironmentScan, PageId, ProjectAnalysisView, ScanProgress, SnapshotComparison } from "../types";
+import type { EnvironmentScan, PageId, ScanProgress, SnapshotComparison } from "../types";
 
 interface OverviewPageProps {
   data: EnvironmentScan;
@@ -13,7 +13,6 @@ interface OverviewPageProps {
   onRefresh: () => void;
   onCancel: () => void;
   onNavigate: (page: PageId) => void;
-  onOpenAnalysis: (view: ProjectAnalysisView) => void;
 }
 
 const phaseLabel: Record<ScanProgress["phase"], string> = {
@@ -32,83 +31,120 @@ export function OverviewPage({
   onRefresh,
   onCancel,
   onNavigate,
-  onOpenAnalysis,
 }: OverviewPageProps) {
   const managers = data.managers.slice(0, 4);
-  const projects = data.projects.slice(0, 4);
   const scanLogs = data.logs.slice(0, 3);
   const attentionItems = collectAttentionItems(data);
+  const availableUpdates = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
+  const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
 
   return (
     <>
       <PageHeader
-        title="概览"
+        title="本机开发环境"
         description={
+          isLoading && scanProgress
+            ? `${phaseLabel[scanProgress.phase]} ${scanProgress.completed}/${scanProgress.total}`
+            : `上次扫描：${formatRelativeTime(data.scannedAt)}`
+        }
+        actions={
           <>
-            <span>上次扫描：{formatRelativeTime(data.scannedAt)}</span>
-            <button className="overview-header-refresh" onClick={onRefresh} disabled={isLoading}>
+            {isLoading ? (
+              <button className="button button--secondary" onClick={onCancel}>
+                取消扫描
+              </button>
+            ) : null}
+            <button
+              className="icon-button overview-refresh"
+              onClick={onRefresh}
+              disabled={isLoading}
+              aria-label="刷新"
+              title="重新扫描本机环境"
+            >
               <Icon name="refresh" />
-              {isLoading && scanProgress
-                ? `${phaseLabel[scanProgress.phase]} ${scanProgress.completed}/${scanProgress.total}`
-                : isLoading
-                  ? "扫描中…"
-                  : "刷新"}
             </button>
           </>
         }
-        actions={
-          isLoading ? (
-            <button className="button button--secondary" onClick={onCancel}>
-              取消扫描
-            </button>
-          ) : null
-        }
       />
-      <section className="overview-intro" aria-label="本机环境摘要">
-        <h2>本机环境</h2>
-        <p>
-          已发现 {data.managers.length} 个包管理器、{data.packages.length} 个已安装软件包与 {data.projects.length}{" "}
-          个项目。
-        </p>
+      <section className="overview-summary" aria-label="本机环境摘要">
+        <button className="overview-summary-card" onClick={() => onNavigate("environment")}>
+          <span className="overview-summary-card__label">
+            <Icon name="packages" />
+            包管理器
+          </span>
+          <strong>{data.managers.length}</strong>
+          <small>{availableManagers} 个可用</small>
+        </button>
+        <button className="overview-summary-card" onClick={() => onNavigate("packages")}>
+          <span className="overview-summary-card__label">
+            <Icon name="dependencies" />
+            已安装软件包
+          </span>
+          <strong>{data.packages.length}</strong>
+          <small>{availableUpdates > 0 ? `${availableUpdates} 个可更新` : "均为最新"}</small>
+        </button>
+        <button
+          className="overview-summary-card"
+          onClick={() => onNavigate("projects")}
+          aria-label={data.projects.length === 0 ? "添加扫描目录" : "查看已扫描项目"}
+        >
+          <span className="overview-summary-card__label">
+            <Icon name="projects" />
+            已扫描项目
+          </span>
+          <strong>{data.projects.length}</strong>
+          <small>{data.projects.length === 0 ? "添加扫描目录" : "查看项目清单"}</small>
+        </button>
+        <button
+          className="overview-summary-card overview-summary-card--health"
+          onClick={() => onNavigate("environment")}
+        >
+          <span className="overview-summary-card__label">
+            <Icon name="environment" />
+            环境健康
+          </span>
+          <strong>{attentionItems.length > 0 ? `${attentionItems.length} 项` : "良好"}</strong>
+          <small>{attentionItems.length > 0 ? "需要进一步检查" : "未发现风险问题"}</small>
+        </button>
       </section>
-      <section className="overview-section overview-section--attention" aria-label="待关注问题">
-        <div className="overview-section__header">
-          <h2>{attentionItems.length > 0 ? `${attentionItems.length} 项需关注` : "一切正常"}</h2>
-        </div>
-        <div className="overview-rows">
-          {attentionItems.map((item) => (
-            <button
-              key={item.id}
-              className="overview-row"
-              onClick={() => (item.analysisView ? onOpenAnalysis(item.analysisView) : onNavigate(item.target))}
-            >
-              <span>
-                <Icon
-                  name={item.severity === "info" ? "info" : "warning"}
-                  className={`attention-icon attention-icon--${item.severity}`}
-                />
-                {item.title}
-              </span>
-              <span className="overview-row__quiet">{item.detail}</span>
-              <span className="overview-row__quiet">
+      <div className="overview-workspace">
+        <section className="overview-section overview-section--attention" aria-label="待关注问题">
+          <div className="overview-section__header">
+            <h2>{attentionItems.length > 0 ? `${attentionItems.length} 项需关注` : "一切正常"}</h2>
+          </div>
+          <div className="overview-rows">
+            {attentionItems.map((item) => (
+              <button
+                key={item.id}
+                className="overview-row overview-row--attention"
+                onClick={() => onNavigate(item.target)}
+              >
+                <span>
+                  <Icon
+                    name={item.severity === "info" ? "info" : "warning"}
+                    className={`attention-icon attention-icon--${item.severity}`}
+                  />
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>{item.detail}</small>
+                  </span>
+                </span>
                 <Icon name="chevron" />
-              </span>
-            </button>
-          ))}
-          {attentionItems.length === 0 ? (
-            <div className="overview-row overview-row--static">
-              <span>
-                <Icon name="check" className="attention-icon attention-icon--ok" />
-                未发现需要关注的问题，环境状态良好。
-              </span>
-            </div>
-          ) : null}
-        </div>
-      </section>
-      <div className="overview-simple-grid">
+              </button>
+            ))}
+            {attentionItems.length === 0 ? (
+              <div className="overview-row overview-row--static">
+                <span>
+                  <Icon name="check" className="attention-icon attention-icon--ok" />
+                  未发现需要关注的问题，环境状态良好。
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </section>
         <section className="overview-section">
           <div className="overview-section__header">
-            <h2>已发现的管理器</h2>
+            <h2>管理器状态</h2>
             <button className="text-button" onClick={() => onNavigate("environment")}>
               查看详情 <Icon name="chevron" />
             </button>
@@ -117,35 +153,16 @@ export function OverviewPage({
             {managers.map((manager) => (
               <button key={manager.id} className="overview-row" onClick={() => onNavigate("environment")}>
                 <span>
-                  <StatusDot status={manager.status} />
+                  <span className={`manager-logo manager-logo--${manager.id}`}>{manager.displayName.slice(0, 1)}</span>
                   {manager.displayName}
                 </span>
                 <span>{manager.version ?? "—"}</span>
-                <span>{manager.status === "available" ? "可用" : "查看状态"}</span>
+                <span>
+                  <StatusDot status={manager.status} />
+                  {manager.status === "available" ? "可用" : "检查"}
+                </span>
               </button>
             ))}
-          </div>
-        </section>
-        <section className="overview-section">
-          <div className="overview-section__header">
-            <h2>扫描的项目</h2>
-            <button className="text-button" onClick={() => onNavigate("projects")}>
-              查看全部 <Icon name="chevron" />
-            </button>
-          </div>
-          <div className="overview-rows">
-            {projects.map((project) => (
-              <button key={project.path} className="overview-row" onClick={() => onNavigate("projects")}>
-                <span>{project.name}</span>
-                <span className="overview-row__quiet">{project.ecosystems.join(" · ") || "未识别生态"}</span>
-              </button>
-            ))}
-            {projects.length === 0 ? (
-              <button className="overview-add-project" onClick={() => onNavigate("projects")}>
-                <Icon name="plus" />
-                <span>添加扫描目录</span>
-              </button>
-            ) : null}
           </div>
         </section>
       </div>

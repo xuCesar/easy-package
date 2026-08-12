@@ -1,54 +1,81 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { apiErrorCode, apiErrorMessage } from "../lib/apiError";
 import type { EnvironmentScan, ReportFormat, ScanProgress, ScanSettings } from "../types";
 
 interface DevPkgState {
   data?: EnvironmentScan;
-  isLoading: boolean;
   error?: string;
+  status: "initializing" | "idle" | "scanning" | "ready" | "error";
 }
 
 export const useDevPkg = () => {
-  const [state, setState] = useState<DevPkgState>({ isLoading: true });
+  const [state, setState] = useState<DevPkgState>({ status: "initializing" });
   const [scanProgress, setScanProgress] = useState<ScanProgress>();
   const [notice, setNotice] = useState<string>();
   const activeScanId = useRef<string | undefined>(undefined);
+  const startupLoadGeneration = useRef(0);
 
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void api
       .listenToScanProgress((progress) => {
         if (progress.scanId === activeScanId.current) setScanProgress(progress);
       })
       .then((cleanup) => {
-        unlisten = cleanup;
+        if (disposed) cleanup();
+        else unlisten = cleanup;
       });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const generation = ++startupLoadGeneration.current;
+    void api
+      .getLatestSnapshot()
+      .then((data) => {
+        if (startupLoadGeneration.current !== generation) return;
+        setState({ data: data ?? undefined, status: data ? "ready" : "idle" });
+      })
+      .catch((error) => {
+        if (startupLoadGeneration.current !== generation) return;
+        setState({
+          error: apiErrorMessage(error, "无法读取上次扫描记录，仍可重新扫描。"),
+          status: "error",
+        });
+      });
+    return () => {
+      if (startupLoadGeneration.current === generation) startupLoadGeneration.current += 1;
+    };
   }, []);
 
   const refresh = useCallback(async () => {
     // 后端拒绝并发扫描；若已有扫描进行中则忽略本次调用，避免覆盖 activeScanId 导致进度与取消失效
     if (activeScanId.current) return;
+    startupLoadGeneration.current += 1;
     const scanId = crypto.randomUUID();
     activeScanId.current = scanId;
-    setState((current) => ({ ...current, isLoading: true, error: undefined }));
+    setState((current) => ({ ...current, error: undefined, status: "scanning" }));
     setScanProgress({ scanId, phase: "managers", completed: 0, total: 13 });
     setNotice(undefined);
     try {
       const data = await api.scanEnvironment(scanId);
       if (activeScanId.current !== scanId) return;
-      startTransition(() => setState({ data, isLoading: false }));
+      setState({ data, status: "ready" });
     } catch (error) {
       if (activeScanId.current !== scanId) return;
       if (apiErrorCode(error) === "SCAN_CANCELLED") {
-        setState((current) => ({ ...current, isLoading: false, error: undefined }));
+        setState((current) => ({ ...current, error: undefined, status: current.data ? "ready" : "idle" }));
         setNotice("本次扫描已取消，保留上次成功结果。");
       } else {
         setState((current) => ({
           ...current,
-          isLoading: false,
           error: apiErrorMessage(error, "扫描失败，请查看诊断日志后重试。"),
+          status: "error",
         }));
       }
     } finally {
@@ -58,10 +85,6 @@ export const useDevPkg = () => {
       }
     }
   }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const addRoot = useCallback(async (path: string) => {
     const analysis = await api.addScanRoot(path);
@@ -109,7 +132,7 @@ export const useDevPkg = () => {
   );
   const exportProjectSbom = useCallback((projectPath: string) => api.exportProjectSbom(projectPath), []);
   const applyEnvironment = useCallback((data: EnvironmentScan) => {
-    setState({ data, isLoading: false });
+    setState({ data, status: "ready" });
   }, []);
 
   const cancelScan = useCallback(async () => {
@@ -118,6 +141,8 @@ export const useDevPkg = () => {
 
   return {
     ...state,
+    isInitializing: state.status === "initializing",
+    isLoading: state.status === "scanning",
     scanProgress,
     notice,
     refresh,

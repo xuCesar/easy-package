@@ -2,6 +2,7 @@ import { memo, type ReactNode, useCallback, useState } from "react";
 import { isTauriRuntime } from "./api";
 import { AppShell } from "./components/AppShell";
 import { Icon } from "./components/Icon";
+import { ScanLauncher } from "./components/ScanLauncher";
 import { useDevPkg } from "./hooks/useDevPkg";
 import { useSnapshotHistory } from "./hooks/useSnapshotHistory";
 import type { UpgradePlanPrefill } from "./lib/upgradePlanBridge";
@@ -45,19 +46,13 @@ export function App() {
     setUpgradePrefill(undefined);
     setPage(next);
   }, []);
-  const openAnalysis = useCallback(
-    (view: ProjectAnalysisView) => {
-      setAnalysisView(view);
-      navigate("analysis");
-    },
-    [navigate],
-  );
   const startUpgradePlan = useCallback((prefill: UpgradePlanPrefill) => {
     setUpgradePrefill(prefill);
     setPage("actions");
   }, []);
   const {
     data,
+    isInitializing,
     isLoading,
     error,
     scanProgress,
@@ -78,33 +73,16 @@ export function App() {
   const cancelScanNow = useCallback(() => void cancelScan(), [cancelScan]);
 
   let content: ReactNode;
-  if (!data && isLoading) {
+  if (!data) {
     content = (
-      <div className="app-state">
-        <span className="scan-indicator">
-          <Icon name="refresh" />
-        </span>
-        <h1>正在扫描本机环境</h1>
-        <p>
-          {scanProgress
-            ? `扫描进度 ${scanProgress.completed}/${scanProgress.total}`
-            : "读取包管理器版本、软件包和缓存信息…"}
-        </p>
-        <button className="button button--secondary" onClick={() => void cancelScan()}>
-          取消扫描
-        </button>
-      </div>
-    );
-  } else if (!data) {
-    content = (
-      <div className="app-state app-state--error">
-        <Icon name="warning" />
-        <h1>无法完成环境扫描</h1>
-        <p>{error}</p>
-        <button className="button button--primary" onClick={() => void refresh()}>
-          重新扫描
-        </button>
-      </div>
+      <ScanLauncher
+        error={error}
+        isInitializing={isInitializing}
+        isScanning={isLoading}
+        progress={scanProgress}
+        onCancel={() => void cancelScan()}
+        onScan={() => void refresh()}
+      />
     );
   } else {
     content = (
@@ -137,7 +115,6 @@ export function App() {
             onRefresh={refreshNow}
             onCancel={cancelScanNow}
             onNavigate={navigate}
-            onOpenAnalysis={openAnalysis}
           />
         ) : null}
         {diagnosticPageSet.has(page) ? (

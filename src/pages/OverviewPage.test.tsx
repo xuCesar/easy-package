@@ -15,7 +15,6 @@ describe("OverviewPage", () => {
         onRefresh={vi.fn()}
         onCancel={vi.fn()}
         onNavigate={onNavigate}
-        onOpenAnalysis={vi.fn()}
       />,
     );
 
@@ -24,28 +23,18 @@ describe("OverviewPage", () => {
     expect(onNavigate).toHaveBeenCalledWith("projects");
   });
 
-  it("展示待关注问题聚合列表并可跳转对应页面", () => {
+  it("概览仅展示全局环境提醒，不展开项目问题", () => {
     const onNavigate = vi.fn();
-    const onOpenAnalysis = vi.fn();
     render(
-      <OverviewPage
-        data={mockScan}
-        isLoading={false}
-        onRefresh={vi.fn()}
-        onCancel={vi.fn()}
-        onNavigate={onNavigate}
-        onOpenAnalysis={onOpenAnalysis}
-      />,
+      <OverviewPage data={mockScan} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={onNavigate} />,
     );
 
     const attention = screen.getByRole("region", { name: "待关注问题" });
-    expect(within(attention).getByRole("heading", { name: "2 项需关注" })).toBeInTheDocument();
+    expect(within(attention).getByRole("heading", { name: "1 项需关注" })).toBeInTheDocument();
 
     fireEvent.click(within(attention).getByRole("button", { name: /3 个软件包可更新/ }));
     expect(onNavigate).toHaveBeenCalledWith("environment");
-
-    fireEvent.click(within(attention).getByRole("button", { name: /api-lab 存在 1 项供应链风险/ }));
-    expect(onOpenAnalysis).toHaveBeenCalledWith("supplyChain");
+    expect(within(attention).queryByText(/api-lab 存在 1 项供应链风险/)).not.toBeInTheDocument();
   });
 
   it("没有待关注问题时展示一切正常", () => {
@@ -55,16 +44,7 @@ describe("OverviewPage", () => {
       runtimeAssessments: [],
       projects: mockScan.projects.map((project) => ({ ...project, supplyChainRiskSummary: undefined })),
     };
-    render(
-      <OverviewPage
-        data={data}
-        isLoading={false}
-        onRefresh={vi.fn()}
-        onCancel={vi.fn()}
-        onNavigate={vi.fn()}
-        onOpenAnalysis={vi.fn()}
-      />,
-    );
+    render(<OverviewPage data={data} isLoading={false} onRefresh={vi.fn()} onCancel={vi.fn()} onNavigate={vi.fn()} />);
 
     const attention = screen.getByRole("region", { name: "待关注问题" });
     expect(within(attention).getByRole("heading", { name: "一切正常" })).toBeInTheDocument();

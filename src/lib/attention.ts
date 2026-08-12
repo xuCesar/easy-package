@@ -1,4 +1,4 @@
-import type { EnvironmentScan, HealthSeverity, PageId, ProjectAnalysisView } from "../types";
+import type { EnvironmentScan, HealthSeverity, PageId } from "../types";
 
 export interface AttentionItem {
   id: string;
@@ -6,16 +6,23 @@ export interface AttentionItem {
   title: string;
   detail: string;
   target: PageId;
-  analysisView?: ProjectAnalysisView;
 }
 
 const severityRank: Record<HealthSeverity, number> = { error: 0, warning: 1, info: 2 };
+const overviewHealthCodes = new Set([
+  "MANAGER_COMMAND_FAILED",
+  "UNVERIFIED_EXECUTABLE",
+  "LARGE_CACHE",
+  "UPDATES_AVAILABLE",
+  "COMMAND_PATH_CONFLICT",
+  "RUNTIME_MANAGER_MISMATCH",
+]);
 
 export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
   const items: AttentionItem[] = [];
 
   for (const issue of data.healthIssues) {
-    if (issue.severity === "info") {
+    if (issue.severity === "info" || !overviewHealthCodes.has(issue.code)) {
       continue;
     }
     items.push({
@@ -24,34 +31,6 @@ export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
       title: issue.title,
       detail: issue.description,
       target: "environment",
-    });
-  }
-
-  for (const assessment of data.runtimeAssessments) {
-    if (assessment.status !== "mismatch" && assessment.status !== "missing") {
-      continue;
-    }
-    items.push({
-      id: `runtime:${assessment.projectPath}:${assessment.runtime}`,
-      severity: assessment.status === "missing" ? "error" : "warning",
-      title: `${assessment.projectName} 需要 ${assessment.runtime} ${assessment.requirement}`,
-      detail: assessment.message,
-      target: "runtimes",
-    });
-  }
-
-  for (const project of data.projects) {
-    const warningCount = project.supplyChainRiskSummary?.warningCount ?? 0;
-    if (warningCount === 0) {
-      continue;
-    }
-    items.push({
-      id: `supplyChain:${project.path}`,
-      severity: "warning",
-      title: `${project.name} 存在 ${warningCount} 项供应链风险`,
-      detail: "查看供应链风险明细并导出 SBOM。",
-      target: "analysis",
-      analysisView: "supplyChain",
     });
   }
 

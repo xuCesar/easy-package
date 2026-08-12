@@ -88,6 +88,16 @@ fn finish_project_rescan(
 }
 
 #[tauri::command]
+pub async fn get_latest_snapshot(
+    storage: State<'_, Storage>,
+) -> Result<Option<EnvironmentScan>, AppError> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.latest_snapshot())
+        .await
+        .map_err(|error| AppError::Command(error.to_string()))?
+}
+
+#[tauri::command]
 pub async fn scan_environment(
     scan_id: String,
     app: AppHandle,

@@ -4,12 +4,24 @@ import { App } from "./App";
 
 afterEach(cleanup);
 
+async function scanAndWaitForOverview() {
+  const scanButton = await screen.findByRole("button", { name: "扫描" });
+  await waitFor(() => expect(scanButton).toBeEnabled());
+  fireEvent.click(scanButton);
+  expect(screen.getByRole("button", { name: "取消扫描" })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
+}
+
 describe("App", () => {
   it("加载后展示概览并支持页面导航", async () => {
     const { container } = render(<App />);
     expect(container.querySelector(".window-controls")).not.toBeInTheDocument();
-    expect(screen.getByText("正在扫描本机环境")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    expect(container.querySelector(".app-topbar")).toHaveAttribute("data-tauri-drag-region");
+    expect(screen.getByRole("button", { name: "返回概览" })).toBeInTheDocument();
+    expect(screen.queryByText("Easy Package")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "扫描" })).toBeDisabled();
+    expect(screen.queryByText("正在扫描本机环境")).not.toBeInTheDocument();
+    await scanAndWaitForOverview();
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
@@ -40,23 +52,23 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "系统扫描设置" })).toBeInTheDocument();
   });
 
-  it("操作中心可从侧栏一级入口与「安全操作模式」标签直达", async () => {
+  it("操作中心可从顶部导航与「安全操作模式」入口直达", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
     expect(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "操作" }),
     ).toHaveAttribute("aria-current", "page");
     fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "概览" }));
-    expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "安全操作模式" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
   });
 
   it("软件包页可更新筛选可一键预填批量升级计划", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
@@ -78,7 +90,7 @@ describe("App", () => {
 
   it("无可写管理器可更新包时批量升级入口禁用", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
@@ -89,7 +101,7 @@ describe("App", () => {
 
   it("软件包筛选展示空态", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
@@ -99,7 +111,7 @@ describe("App", () => {
 
   it("按文本、管理器和更新状态组合筛选软件包", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
@@ -114,7 +126,7 @@ describe("App", () => {
 
   it("可按 RubyGems 和 Composer 筛选只读全局包", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
@@ -130,12 +142,12 @@ describe("App", () => {
 
   it("取消刷新后保留已有扫描结果", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument());
+    await scanAndWaitForOverview();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     fireEvent.click(screen.getByRole("button", { name: "取消扫描" }));
 
     expect(await screen.findByText("本次扫描已取消，保留上次成功结果。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "概览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
   });
 });

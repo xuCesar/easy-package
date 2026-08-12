@@ -43,6 +43,7 @@ export type ProjectAnalysisView = "index" | "graph" | "supplyChain";
 export type WritableManagerId = "homebrew" | "npm" | "pnpm";
 
 export interface DevPkgApi {
+  getLatestSnapshot(): Promise<EnvironmentScan | null>;
   scanEnvironment(scanId: string): Promise<EnvironmentScan>;
   cancelEnvironmentScan(scanId: string): Promise<void>;
   listenToScanProgress(listener: (progress: ScanProgress) => void): Promise<() => void>;

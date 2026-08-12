@@ -530,6 +530,29 @@ mod tests {
     }
 
     #[test]
+    fn latest_snapshot_returns_none_then_reads_the_most_recent_scan() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();
+        assert!(storage.latest_snapshot().unwrap().is_none());
+
+        let first: EnvironmentScan = serde_json::from_str(
+            r#"{"managers":[],"packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"2026-01-01T00:00:00Z","partialFailures":0}"#,
+        )
+        .unwrap();
+        let latest: EnvironmentScan = serde_json::from_str(
+            r#"{"managers":[],"packages":[],"projects":[],"scanRoots":[],"healthIssues":[],"logs":[],"pathObservations":[],"scannedAt":"2026-01-02T00:00:00Z","partialFailures":0}"#,
+        )
+        .unwrap();
+        storage.save_snapshot(&first).unwrap();
+        storage.save_snapshot(&latest).unwrap();
+
+        assert_eq!(
+            storage.latest_snapshot().unwrap().unwrap().scanned_at,
+            "2026-01-02T00:00:00Z"
+        );
+    }
+
+    #[test]
     fn lists_snapshot_summaries_and_reads_snapshots_by_id() {
         let directory = tempdir().unwrap();
         let storage = Storage::at(directory.path().join("test.sqlite3")).unwrap();

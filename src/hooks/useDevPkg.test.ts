@@ -6,6 +6,7 @@ import { useDevPkg } from "./useDevPkg";
 
 const { mocks } = vi.hoisted(() => ({
   mocks: {
+    getLatestSnapshot: vi.fn<() => Promise<EnvironmentScan | null>>(),
     scanEnvironment: vi.fn<(scanId: string) => Promise<EnvironmentScan>>(),
     cancelEnvironmentScan: vi.fn<(scanId: string) => Promise<void>>(),
     listenToScanProgress: vi.fn<(listener: (progress: ScanProgress) => void) => Promise<() => void>>(),
@@ -46,6 +47,7 @@ describe("useDevPkg 扫描竞态", () => {
     vi.clearAllMocks();
     scanCalls = [];
     emitProgress = undefined;
+    mocks.getLatestSnapshot.mockResolvedValue(null);
     mocks.scanEnvironment.mockImplementation((scanId) => {
       const deferred = createDeferred<EnvironmentScan>();
       scanCalls.push({ scanId, deferred });
@@ -62,8 +64,28 @@ describe("useDevPkg 扫描竞态", () => {
 
   afterEach(cleanup);
 
+  it("启动时只读取最近快照，不自动扫描", async () => {
+    mocks.getLatestSnapshot.mockResolvedValue(fakeScan);
+    const { result } = renderHook(() => useDevPkg());
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.data).toBe(fakeScan);
+    expect(mocks.getLatestSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.scanEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("没有快照时进入待扫描状态", async () => {
+    const { result } = renderHook(() => useDevPkg());
+
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(result.current.data).toBeUndefined();
+    expect(mocks.scanEnvironment).not.toHaveBeenCalled();
+  });
+
   it("扫描进行中重复 refresh 被忽略，不会丢失进度与取消能力", async () => {
     const { result } = renderHook(() => useDevPkg());
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    act(() => void result.current.refresh());
     await waitFor(() => expect(scanCalls).toHaveLength(1));
     const firstScanId = scanCalls[0].scanId;
 
@@ -91,6 +113,8 @@ describe("useDevPkg 扫描竞态", () => {
 
   it("扫描结束后可以再次 refresh，并写回新结果", async () => {
     const { result } = renderHook(() => useDevPkg());
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    act(() => void result.current.refresh());
     await waitFor(() => expect(scanCalls).toHaveLength(1));
 
     await act(async () => {
@@ -117,6 +141,8 @@ describe("useDevPkg 扫描竞态", () => {
 
   it("扫描失败展示错误，且不影响后续 refresh", async () => {
     const { result } = renderHook(() => useDevPkg());
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    act(() => void result.current.refresh());
     await waitFor(() => expect(scanCalls).toHaveLength(1));
 
     await act(async () => {
@@ -130,5 +156,24 @@ describe("useDevPkg 扫描竞态", () => {
       void result.current.refresh();
     });
     expect(scanCalls).toHaveLength(2);
+  });
+
+  it("手动扫描开始后忽略迟到的启动快照", async () => {
+    const snapshot = createDeferred<EnvironmentScan | null>();
+    mocks.getLatestSnapshot.mockReturnValue(snapshot.promise);
+    const { result } = renderHook(() => useDevPkg());
+
+    act(() => void result.current.refresh());
+    await waitFor(() => expect(scanCalls).toHaveLength(1));
+
+    const scannedData = { ...fakeScan };
+    await act(async () => {
+      snapshot.resolve(fakeScan);
+      scanCalls[0].deferred.resolve(scannedData);
+      await Promise.all([snapshot.promise, scanCalls[0].deferred.promise]);
+    });
+
+    await waitFor(() => expect(result.current.data).toBe(scannedData));
+    expect(result.current.status).toBe("ready");
   });
 });
