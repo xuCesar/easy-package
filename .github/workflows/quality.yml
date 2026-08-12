@@ -27,6 +27,9 @@ jobs:
       - run: pnpm check
 
   desktop-build:
+    # PR 上只跑 check。原生 release 构建约 3–5 分钟，对文档/UI 改动收益低。
+    # develop 推送、手动触发仍构建，发布走 release.yml。
+    if: github.event_name != 'pull_request'
     needs: check
     runs-on: macos-latest
     steps:

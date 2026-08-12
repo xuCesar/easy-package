@@ -34,7 +34,7 @@ pnpm test:e2e
 
 后端使用 `tracing` 输出结构化日志：默认 `devpkg_lib=info`，可用环境变量 `EASY_PACKAGE_LOG` 调整（如 `EASY_PACKAGE_LOG=devpkg_lib=debug pnpm tauri dev` 可看到扫描阶段进度与外部命令 trace）。dev 构建为可读格式，release 构建为 JSON 行；日志不包含命令输出等已脱敏内容。
 `pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
-GitHub Actions 会在 macOS 上对 `develop` 推送与 Pull Request 执行质量门禁和原生二进制构建。
+GitHub Actions 会对 Pull Request 与 `develop` 推送执行质量门禁（`pnpm check`）。原生二进制构建（`pnpm build:desktop`）只在 `develop` 推送或手动触发 `quality.yml` 时运行，以缩短 PR 等待；发布打包仍由 `release.yml` 负责。
 
 `pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。它不属于常规 CI 门禁：`tauri-driver` 不支持 macOS，且 Linux WebKit 驱动与固定 fixture 的维护成本不适合当前 macOS-first MVP。需要发布级原生验证时，在受控 Linux 环境或后续稳定的 macOS 原生方案中手动运行；该模式不读取本机包管理器、扫描目录或 SQLite。在 macOS 上以下方「桌面烟测」清单作为替代验证手段。
 
