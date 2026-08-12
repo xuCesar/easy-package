@@ -102,6 +102,23 @@ describe("App", () => {
     expect(notice).toHaveTextContent("1 个可更新包不属于受控可写管理器，已被过滤");
   });
 
+  it("软件包页单行升级只预填当前软件包", async () => {
+    render(<App />);
+    await scanAndWaitForOverview();
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "升级 git" }));
+
+    expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "升级" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Homebrew" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("checkbox", { name: /git/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /ripgrep/ })).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent("已从软件包页带入 1 个 Homebrew 升级目标");
+  });
+
   it("无可写管理器可更新包时批量升级入口禁用", async () => {
     render(<App />);
     await scanAndWaitForOverview();

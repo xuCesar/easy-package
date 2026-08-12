@@ -5,7 +5,12 @@ import { PageHeader } from "../components/PageHeader";
 import { RegistryPolicyNotice } from "../components/RegistryPolicyNotice";
 import { UpdateBadge } from "../components/Status";
 import { filterPackages, managerLabel } from "../lib/format";
-import { buildUpgradePlanPrefill, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
+import {
+  buildSingleUpgradePlanPrefill,
+  buildUpgradePlanPrefill,
+  isWritableManagerId,
+  type UpgradePlanPrefill,
+} from "../lib/upgradePlanBridge";
 import type { ManagedPackage, PackageManagerId, PageId, ScanSettings, UpdateStatus } from "../types";
 
 interface PackagesPageProps {
@@ -96,28 +101,50 @@ export function PackagesPage({
                   <th>已安装</th>
                   <th>最新版本</th>
                   <th>状态</th>
+                  <th className="package-action-cell">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((pkg) => (
-                  <tr key={pkg.id}>
-                    <td>
-                      <strong>{pkg.name}</strong>
-                      <small className="table-subtitle">{pkg.id}</small>
-                    </td>
-                    <td>
-                      <span className={`manager-chip manager-chip--${pkg.managerId}`}>
-                        {managerLabel[pkg.managerId]}
-                      </span>
-                    </td>
-                    <td>{pkg.scope === "system" ? "系统" : pkg.scope === "global" ? "全局" : "工具"}</td>
-                    <td className="mono">{pkg.version}</td>
-                    <td className="mono">{pkg.latestVersion ?? "—"}</td>
-                    <td>
-                      <UpdateBadge status={pkg.updateStatus} />
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((pkg) => {
+                  const writable = isWritableManagerId(pkg.managerId);
+                  const singleUpgradePrefill = buildSingleUpgradePlanPrefill(pkg);
+
+                  return (
+                    <tr key={pkg.id}>
+                      <td>
+                        <strong>{pkg.name}</strong>
+                        <small className="table-subtitle">{pkg.id}</small>
+                      </td>
+                      <td>
+                        <span className={`manager-chip manager-chip--${pkg.managerId}`}>
+                          {managerLabel[pkg.managerId]}
+                        </span>
+                      </td>
+                      <td>{pkg.scope === "system" ? "系统" : pkg.scope === "global" ? "全局" : "工具"}</td>
+                      <td className="mono">{pkg.version}</td>
+                      <td className="mono">{pkg.latestVersion ?? "—"}</td>
+                      <td>
+                        <UpdateBadge status={pkg.updateStatus} />
+                      </td>
+                      <td className="package-action-cell">
+                        {singleUpgradePrefill ? (
+                          <button
+                            type="button"
+                            className="button button--secondary package-upgrade-button"
+                            aria-label={`升级 ${pkg.name}`}
+                            onClick={() => onStartUpgradePlan(singleUpgradePrefill)}
+                          >
+                            升级
+                          </button>
+                        ) : (
+                          <span className={`package-access-label${writable ? " package-access-label--writable" : ""}`}>
+                            {writable ? "可管理" : "仅查看"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
