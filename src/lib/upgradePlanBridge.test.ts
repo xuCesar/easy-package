@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ManagedPackage } from "../types";
-import { buildUpgradePlanPrefill, UPGRADE_PLAN_TARGET_LIMIT } from "./upgradePlanBridge";
+import { buildSingleUpgradePlanPrefill, buildUpgradePlanPrefill, UPGRADE_PLAN_TARGET_LIMIT } from "./upgradePlanBridge";
 
 function pkg(overrides: Partial<ManagedPackage> & Pick<ManagedPackage, "id" | "managerId" | "name">): ManagedPackage {
   return { version: "1.0.0", latestVersion: "1.1.0", scope: "global", updateStatus: "available", ...overrides };
@@ -62,5 +62,23 @@ describe("buildUpgradePlanPrefill", () => {
     ];
 
     expect(buildUpgradePlanPrefill(packages)?.targets).toEqual(["git"]);
+  });
+});
+
+describe("buildSingleUpgradePlanPrefill", () => {
+  it("只为可写且可更新的软件包生成单目标预填", () => {
+    expect(buildSingleUpgradePlanPrefill(pkg({ id: "homebrew:git", managerId: "homebrew", name: "git" }))).toEqual({
+      managerId: "homebrew",
+      targets: ["git"],
+      truncatedCount: 0,
+      otherWritableCount: 0,
+      unwritableCount: 0,
+    });
+    expect(buildSingleUpgradePlanPrefill(pkg({ id: "pip:black", managerId: "pip", name: "black" }))).toBeUndefined();
+    expect(
+      buildSingleUpgradePlanPrefill(
+        pkg({ id: "npm:typescript", managerId: "npm", name: "typescript", updateStatus: "upToDate" }),
+      ),
+    ).toBeUndefined();
   });
 });

@@ -59,3 +59,7 @@ export function buildUpgradePlanPrefill(packages: ManagedPackage[]): UpgradePlan
     unwritableCount,
   };
 }
+
+export function buildSingleUpgradePlanPrefill(pkg: ManagedPackage): UpgradePlanPrefill | undefined {
+  return buildUpgradePlanPrefill([pkg]);
+}
