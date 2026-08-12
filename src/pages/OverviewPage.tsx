@@ -42,8 +42,8 @@ export function OverviewPage({
         ? "前往安全操作模式"
         : "查看更新列表"
       : updatesChecked
-        ? "暂未发现更新"
-        : "未检查更新";
+        ? "均为最新"
+        : "未检查更新（当前离线）";
 
   return (
     <>

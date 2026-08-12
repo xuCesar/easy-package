@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PackageActionPlan, PackageActionResult } from "../types";
 import { ActionCenterPage } from "./ActionCenterPage";
@@ -80,6 +80,8 @@ const baseProps = {
   onCancel: vi.fn().mockResolvedValue(undefined),
   onReconcile: vi.fn().mockResolvedValue(undefined),
   onClearPlan: vi.fn(),
+  onUpdateSettings: vi.fn().mockResolvedValue(undefined),
+  onRefresh: vi.fn(),
 };
 
 afterEach(() => {
@@ -169,7 +171,7 @@ describe("ActionCenterPage", () => {
     expect(baseProps.onCreatePlan).not.toHaveBeenCalled();
   });
 
-  it("在离线策略下展示稳定目录搜索阻塞码", () => {
+  it("在离线策略下解释并禁用目录搜索，可显式允许检查更新", async () => {
     const catalogResponse = {
       searchId: "search-1",
       managerId: "npm" as const,
@@ -187,7 +189,19 @@ describe("ActionCenterPage", () => {
       />,
     );
     expect(screen.getByText("NETWORK_POLICY_OFFLINE")).toBeInTheDocument();
-    expect(screen.getByText(/当前为离线策略/)).toBeInTheDocument();
+    expect(screen.getByText(/当前为离线模式；允许检查更新并重新扫描后才能搜索目录/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Homebrew 目录搜索词")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "搜索目录" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "允许检查更新" }));
+    await waitFor(() =>
+      expect(baseProps.onUpdateSettings).toHaveBeenCalledWith({
+        ...baseProps.scanSettings,
+        networkPolicy: "registry",
+      }),
+    );
+    expect(baseProps.onRefresh).not.toHaveBeenCalled();
+    expect(screen.getByText(/需要重新扫描后才会显示可更新状态/)).toBeInTheDocument();
   });
 
   it("阻止中断操作恢复前生成新计划并支持审计筛选", () => {

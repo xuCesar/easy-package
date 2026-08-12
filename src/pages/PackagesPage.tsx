@@ -2,18 +2,29 @@ import { useDeferredValue, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { RegistryPolicyNotice } from "../components/RegistryPolicyNotice";
 import { UpdateBadge } from "../components/Status";
 import { filterPackages, managerLabel } from "../lib/format";
 import { buildUpgradePlanPrefill, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
-import type { ManagedPackage, PackageManagerId, PageId, UpdateStatus } from "../types";
+import type { ManagedPackage, PackageManagerId, PageId, ScanSettings, UpdateStatus } from "../types";
 
 interface PackagesPageProps {
   packages: ManagedPackage[];
+  scanSettings: ScanSettings;
   onNavigate: (page: PageId) => void;
   onStartUpgradePlan: (prefill: UpgradePlanPrefill) => void;
+  onUpdateSettings: (settings: ScanSettings) => Promise<void>;
+  onRefresh: () => void;
 }
 
-export function PackagesPage({ packages, onNavigate, onStartUpgradePlan }: PackagesPageProps) {
+export function PackagesPage({
+  packages,
+  scanSettings,
+  onNavigate,
+  onStartUpgradePlan,
+  onUpdateSettings,
+  onRefresh,
+}: PackagesPageProps) {
   const [query, setQuery] = useState("");
   const [manager, setManager] = useState<"all" | PackageManagerId>("all");
   const [status, setStatus] = useState<"all" | UpdateStatus>("all");
@@ -32,6 +43,7 @@ export function PackagesPage({ packages, onNavigate, onStartUpgradePlan }: Packa
           </button>
         }
       />
+      <RegistryPolicyNotice scanSettings={scanSettings} onUpdateSettings={onUpdateSettings} onRefresh={onRefresh} />
       <section className="toolbar" aria-label="软件包筛选">
         <label className="search-field">
           <Icon name="search" />
@@ -110,7 +122,14 @@ export function PackagesPage({ packages, onNavigate, onStartUpgradePlan }: Packa
             </table>
           </div>
         ) : (
-          <EmptyState title="没有匹配的软件包" description="调整搜索词或筛选条件后重试。" />
+          <EmptyState
+            title="没有匹配的软件包"
+            description={
+              status === "available" && scanSettings.networkPolicy === "offline"
+                ? "当前为离线模式，不会查询最新版本。允许检查更新并重新扫描后再查看。"
+                : "调整搜索词或筛选条件后重试。"
+            }
+          />
         )}
       </section>
     </>
