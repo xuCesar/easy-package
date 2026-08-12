@@ -3,7 +3,11 @@ import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { RegistryPolicyNotice } from "../components/RegistryPolicyNotice";
-import { isWritableManagerId, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
+import {
+  buildUpgradePlanPrefillsByManager,
+  isWritableManagerId,
+  type UpgradePlanPrefill,
+} from "../lib/upgradePlanBridge";
 import type {
   ActionCapability,
   CatalogSearchResponse,
@@ -69,6 +73,7 @@ const actionDisplay = (managerId: PackageManagerId, action: PackageAction) =>
 export function ActionCenterPage(props: ActionCenterPageProps) {
   const [managerId, setManagerId] = useState<WritableManagerId>(props.upgradePrefill?.managerId ?? "homebrew");
   const [action, setAction] = useState<PackageAction>(props.upgradePrefill ? "upgrade" : "install");
+  const [upgradePrefillNotice, setUpgradePrefillNotice] = useState(props.upgradePrefill);
   const [installTarget, setInstallTarget] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [upgradeTargets, setUpgradeTargets] = useState<string[]>(props.upgradePrefill?.targets ?? []);
@@ -89,6 +94,12 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
   );
   const recoveryRecords = props.audit.filter((record) => record.status === "running" || record.rescanRequired);
   const recoveryRequired = recoveryRecords.length > 0;
+  const pendingUpgradePrefills =
+    props.scanSettings.networkPolicy === "registry" ? buildUpgradePlanPrefillsByManager(props.packages) : [];
+  const pendingUpdateCount = pendingUpgradePrefills.reduce(
+    (total, prefill) => total + prefill.targets.length + prefill.truncatedCount,
+    0,
+  );
   const capability = props.capabilities.find((item) => item.managerId === managerId && item.action === action);
   const canCancel = props.progress.at(-1)?.cancellable === true;
   const targets =
@@ -108,6 +119,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
   };
   const changeManager = (next: WritableManagerId) => {
     setManagerId(next);
+    setUpgradePrefillNotice(undefined);
     setInstallTarget("");
     setUpgradeTargets([]);
     setUninstallTarget("");
@@ -117,6 +129,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
   };
   const changeAction = (next: PackageAction) => {
     setAction(next);
+    setUpgradePrefillNotice(undefined);
     if (next !== "install") props.onClearCatalogSearch();
     resetPlan();
   };
@@ -129,6 +142,17 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
     setInstallTarget(name);
     resetPlan();
   };
+  const selectPendingUpgrade = (prefill: UpgradePlanPrefill) => {
+    setManagerId(prefill.managerId);
+    setAction("upgrade");
+    setUpgradePrefillNotice(undefined);
+    setInstallTarget("");
+    setUpgradeTargets(prefill.targets);
+    setUninstallTarget("");
+    setCatalogQuery("");
+    props.onClearCatalogSearch();
+    resetPlan();
+  };
 
   return (
     <>
@@ -136,6 +160,72 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
         title="操作中心"
         description="通过后端固定白名单执行 Homebrew Formula、npm 与 pnpm 全局包操作；每次修改都先预检、确认并在完成后重新扫描。"
       />
+      <section className="panel pending-actions" aria-label="待处理操作">
+        <div className="panel__header">
+          <h2>待处理</h2>
+          <span className="count-label">{recoveryRecords.length + pendingUpdateCount}</span>
+        </div>
+        <div className="pending-actions__list">
+          {recoveryRequired ? (
+            <article className="pending-action pending-action--recovery">
+              <Icon name="warning" />
+              <div>
+                <strong>上次操作可能没做完</strong>
+                <span>{recoveryRecords.length} 条操作需要先重新扫描并核对实际结果，再继续执行新的写操作。</span>
+              </div>
+              <button
+                className="button button--primary"
+                onClick={() => void props.onReconcile(recoveryRecords[0].actionId)}
+                disabled={props.isReconciling}
+              >
+                {props.isReconciling ? "正在核对…" : "重新扫描并核对"}
+              </button>
+            </article>
+          ) : null}
+          {props.scanSettings.networkPolicy === "offline" ? (
+            <article className="pending-action pending-action--quiet">
+              <Icon name="info" />
+              <div>
+                <strong>未检查更新</strong>
+                <span>当前为离线模式，不会把已有版本信息当作可更新任务。</span>
+              </div>
+            </article>
+          ) : (
+            pendingUpgradePrefills.map((prefill) => {
+              const updateCount = prefill.targets.length + prefill.truncatedCount;
+              return (
+                <button
+                  key={prefill.managerId}
+                  type="button"
+                  className="pending-action pending-action--upgrade"
+                  aria-label={`处理 ${managerLabels[prefill.managerId]} 的 ${updateCount} 个可更新项`}
+                  onClick={() => selectPendingUpgrade(prefill)}
+                  disabled={props.isExecuting}
+                >
+                  <Icon name="refresh" />
+                  <span>
+                    <strong>
+                      {managerLabels[prefill.managerId]} · {updateCount} 个可更新项
+                    </strong>
+                    <small>
+                      {prefill.targets.join("、")}
+                      {prefill.truncatedCount > 0 ? ` 等，单次先处理 ${prefill.targets.length} 个` : ""}
+                    </small>
+                  </span>
+                  <span className="pending-action__cta">
+                    预填升级 <Icon name="chevron" />
+                  </span>
+                </button>
+              );
+            })
+          )}
+          {!recoveryRequired &&
+          props.scanSettings.networkPolicy === "registry" &&
+          pendingUpgradePrefills.length === 0 ? (
+            <p className="pending-actions__empty">没有待处理的操作</p>
+          ) : null}
+        </div>
+      </section>
       <div className="write-boundary-banner">
         <Icon name="warning" />
         <div>
@@ -150,34 +240,25 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
           onRefresh={props.onRefresh}
         />
       ) : null}
-      {recoveryRequired ? (
-        <div className="inline-alert inline-alert--error">
-          <Icon name="warning" />
-          <span>存在尚未核对的写操作。完成重新扫描与结果核对前不能继续写入。</span>
-          <button onClick={() => void props.onReconcile(recoveryRecords[0].actionId)} disabled={props.isReconciling}>
-            {props.isReconciling ? "正在核对…" : "重新扫描并核对"}
-          </button>
-        </div>
-      ) : null}
       {props.error ? (
         <div className="inline-alert inline-alert--error">
           <Icon name="warning" />
           <span>{props.error}</span>
         </div>
       ) : null}
-      {props.upgradePrefill ? (
+      {upgradePrefillNotice ? (
         <div className="inline-alert" role="status">
           <Icon name="info" />
           <span>
-            {`已从软件包页带入 ${props.upgradePrefill.targets.length} 个 ${managerLabels[props.upgradePrefill.managerId]} 升级目标。`}
-            {props.upgradePrefill.truncatedCount > 0
-              ? `超出单次计划上限，已截断 ${props.upgradePrefill.truncatedCount} 个，可在执行后分批处理。`
+            {`已从软件包页带入 ${upgradePrefillNotice.targets.length} 个 ${managerLabels[upgradePrefillNotice.managerId]} 升级目标。`}
+            {upgradePrefillNotice.truncatedCount > 0
+              ? `超出单次计划上限，已截断 ${upgradePrefillNotice.truncatedCount} 个，可在执行后分批处理。`
               : ""}
-            {props.upgradePrefill.otherWritableCount > 0
-              ? `另有 ${props.upgradePrefill.otherWritableCount} 个可更新包属于其他可写管理器，请切换管理器后单独生成计划。`
+            {upgradePrefillNotice.otherWritableCount > 0
+              ? `另有 ${upgradePrefillNotice.otherWritableCount} 个可更新包属于其他可写管理器，请切换管理器后单独生成计划。`
               : ""}
-            {props.upgradePrefill.unwritableCount > 0
-              ? `${props.upgradePrefill.unwritableCount} 个可更新包不属于受控可写管理器，已被过滤。`
+            {upgradePrefillNotice.unwritableCount > 0
+              ? `${upgradePrefillNotice.unwritableCount} 个可更新包不属于受控可写管理器，已被过滤。`
               : ""}
           </span>
         </div>

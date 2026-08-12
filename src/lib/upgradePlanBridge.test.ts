@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ManagedPackage } from "../types";
-import { buildSingleUpgradePlanPrefill, buildUpgradePlanPrefill, UPGRADE_PLAN_TARGET_LIMIT } from "./upgradePlanBridge";
+import {
+  buildSingleUpgradePlanPrefill,
+  buildUpgradePlanPrefill,
+  buildUpgradePlanPrefillsByManager,
+  UPGRADE_PLAN_TARGET_LIMIT,
+} from "./upgradePlanBridge";
 
 function pkg(overrides: Partial<ManagedPackage> & Pick<ManagedPackage, "id" | "managerId" | "name">): ManagedPackage {
   return { version: "1.0.0", latestVersion: "1.1.0", scope: "global", updateStatus: "available", ...overrides };
@@ -80,5 +85,40 @@ describe("buildSingleUpgradePlanPrefill", () => {
         pkg({ id: "npm:typescript", managerId: "npm", name: "typescript", updateStatus: "upToDate" }),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("buildUpgradePlanPrefillsByManager", () => {
+  it("按固定管理器顺序生成彼此独立的升级预填", () => {
+    const prefills = buildUpgradePlanPrefillsByManager([
+      pkg({ id: "pnpm:typescript", managerId: "pnpm", name: "typescript" }),
+      pkg({ id: "pip:black", managerId: "pip", name: "black" }),
+      pkg({ id: "homebrew:git", managerId: "homebrew", name: "git" }),
+      pkg({ id: "npm:eslint", managerId: "npm", name: "eslint" }),
+    ]);
+
+    expect(prefills).toEqual([
+      {
+        managerId: "homebrew",
+        targets: ["git"],
+        truncatedCount: 0,
+        otherWritableCount: 0,
+        unwritableCount: 0,
+      },
+      {
+        managerId: "npm",
+        targets: ["eslint"],
+        truncatedCount: 0,
+        otherWritableCount: 0,
+        unwritableCount: 0,
+      },
+      {
+        managerId: "pnpm",
+        targets: ["typescript"],
+        truncatedCount: 0,
+        otherWritableCount: 0,
+        unwritableCount: 0,
+      },
+    ]);
   });
 });

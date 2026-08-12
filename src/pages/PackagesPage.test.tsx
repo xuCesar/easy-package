@@ -151,6 +151,6 @@ describe("PackagesPage", () => {
       expect(onUpdateSettings).toHaveBeenCalledWith({ ...mockScan.scanSettings, networkPolicy: "registry" }),
     );
     expect(onRefresh).not.toHaveBeenCalled();
-    expect(screen.getByText(/需要重新扫描后才会显示可更新状态/)).toBeInTheDocument();
+    expect(await screen.findByText(/需要重新扫描后才会显示可更新状态/)).toBeInTheDocument();
   });
 });

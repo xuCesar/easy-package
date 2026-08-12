@@ -90,6 +90,45 @@ afterEach(() => {
 });
 
 describe("ActionCenterPage", () => {
+  it("待处理区按管理器预填可更新包并保留现有计划流程", () => {
+    render(
+      <ActionCenterPage
+        {...baseProps}
+        upgradePrefill={{
+          managerId: "homebrew",
+          targets: ["git"],
+          truncatedCount: 0,
+          otherWritableCount: 0,
+          unwritableCount: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "待处理操作" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("已从软件包页带入 1 个 Homebrew 升级目标");
+    expect(screen.getByRole("button", { name: "处理 Homebrew 的 1 个可更新项" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "处理 npm 的 1 个可更新项" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "处理 pnpm 的 1 个可更新项" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "处理 npm 的 1 个可更新项" }));
+
+    expect(screen.getByRole("tab", { name: "npm" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "升级" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("checkbox", { name: /npm-check-updates/ })).toBeChecked();
+    expect(screen.queryByText(/已从软件包页带入/)).not.toBeInTheDocument();
+    expect(baseProps.onCreatePlan).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "生成操作计划" }));
+    expect(baseProps.onCreatePlan).toHaveBeenCalledWith("npm", "upgrade", ["npm-check-updates"]);
+  });
+
+  it("离线时只说明未检查更新，不展示伪造的待更新任务", () => {
+    render(<ActionCenterPage {...baseProps} scanSettings={{ ...baseProps.scanSettings, networkPolicy: "offline" }} />);
+
+    expect(screen.getByRole("region", { name: "待处理操作" })).toHaveTextContent("未检查更新");
+    expect(screen.queryByRole("button", { name: /处理 .* 个可更新项/ })).not.toBeInTheDocument();
+  });
+
   it("生成安装预检并要求二次确认后才能执行", () => {
     const { rerender } = render(<ActionCenterPage {...baseProps} />);
     fireEvent.change(screen.getByLabelText("待安装 Formula"), { target: { value: "jq" } });
@@ -217,7 +256,10 @@ describe("ActionCenterPage", () => {
       rescanRequired: true,
     };
     render(<ActionCenterPage {...baseProps} audit={[interrupted]} />);
-    expect(screen.getByText(/存在尚未核对的写操作/)).toBeInTheDocument();
+    const pending = screen.getByRole("region", { name: "待处理操作" });
+    const builder = screen.getByRole("region", { name: "操作预检设置" });
+    expect(pending).toHaveTextContent("上次操作可能没做完");
+    expect(pending.compareDocumentPosition(builder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "生成操作计划" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "重新扫描并核对" }));
     expect(baseProps.onReconcile).toHaveBeenCalledWith("action-running");
