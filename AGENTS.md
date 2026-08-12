@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Easy Package is a macOS-first, read-only development-environment inspector built with Tauri 2.
+Easy Package is a macOS-first development-environment inspector that combines read-only scans with a controlled-write safe operation mode, built with Tauri 2.
 
 - `src/` contains the React 19 + TypeScript UI: pages, components, API access, and hooks.
 - `src/mock-data.ts` supplies browser-preview data when Tauri is unavailable.
