@@ -132,7 +132,14 @@ export function App() {
           </nav>
         ) : null}
         {page === "packages" ? (
-          <MemoPackagesPage packages={data.packages} onNavigate={navigate} onStartUpgradePlan={startUpgradePlan} />
+          <MemoPackagesPage
+            packages={data.packages}
+            scanSettings={data.scanSettings}
+            onNavigate={navigate}
+            onStartUpgradePlan={startUpgradePlan}
+            onUpdateSettings={updateScanSettings}
+            onRefresh={refreshNow}
+          />
         ) : null}
         {page === "actions" ? (
           <ActionCenterContainer
@@ -141,6 +148,8 @@ export function App() {
             scannedAt={data.scannedAt}
             upgradePrefill={upgradePrefill}
             onApplyEnvironment={applyEnvironment}
+            onUpdateSettings={updateScanSettings}
+            onRefresh={refreshNow}
           />
         ) : null}
         {page === "projects" ? (

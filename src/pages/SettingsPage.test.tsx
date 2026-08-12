@@ -39,4 +39,14 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(onExportReport).toHaveBeenCalledWith("json"));
     expect(screen.getByText("环境报告已导出。")).toBeInTheDocument();
   });
+
+  it("允许 registry 检查后提示需要重新扫描", async () => {
+    const onUpdateSettings = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsPage scanSettings={scanSettings} onUpdateSettings={onUpdateSettings} onExportReport={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("联网策略"), { target: { value: "registry" } });
+
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ ...scanSettings, networkPolicy: "registry" }));
+    expect(screen.getByText(/需要重新扫描后才会显示可更新状态/)).toBeInTheDocument();
+  });
 });

@@ -19,14 +19,14 @@ export function SettingsPage({ scanSettings, onUpdateSettings, onExportReport }:
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
 
-  const save = async (next: ScanSettings) => {
+  const save = async (next: ScanSettings, successMessage = "系统扫描设置已更新。") => {
     setIsSaving(true);
     setError(undefined);
     setNotice(undefined);
     try {
       await onUpdateSettings(next);
       setMaxDepth(String(next.maxDepth));
-      setNotice("系统扫描设置已更新。");
+      setNotice(successMessage);
     } catch (saveError) {
       setError(apiErrorMessage(saveError, "设置保存失败，请重试。"));
     } finally {
@@ -130,7 +130,12 @@ export function SettingsPage({ scanSettings, onUpdateSettings, onExportReport }:
                 id="network-policy"
                 value={scanSettings.networkPolicy}
                 onChange={(event) =>
-                  void save({ ...scanSettings, networkPolicy: event.target.value as ScanSettings["networkPolicy"] })
+                  void save(
+                    { ...scanSettings, networkPolicy: event.target.value as ScanSettings["networkPolicy"] },
+                    event.target.value === "registry"
+                      ? "已允许 registry 检查。需要重新扫描后才会显示可更新状态。"
+                      : "已切换为离线模式。",
+                  )
                 }
                 disabled={isSaving}
               >

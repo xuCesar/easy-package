@@ -10,6 +10,8 @@ interface ActionCenterContainerProps {
   scannedAt?: string;
   upgradePrefill?: UpgradePlanPrefill;
   onApplyEnvironment: (environment: EnvironmentScan) => void;
+  onUpdateSettings: (settings: ScanSettings) => Promise<void>;
+  onRefresh: () => void;
 }
 
 // 写操作与目录搜索的 hooks 只在操作中心挂载；离开页面即卸载。
@@ -20,6 +22,8 @@ export function ActionCenterContainer({
   scannedAt,
   upgradePrefill,
   onApplyEnvironment,
+  onUpdateSettings,
+  onRefresh,
 }: ActionCenterContainerProps) {
   const packageActions = usePackageActions(onApplyEnvironment, scannedAt);
   const catalogSearch = useCatalogSearch();
@@ -49,6 +53,8 @@ export function ActionCenterContainer({
       onCancel={packageActions.cancelAction}
       onReconcile={packageActions.reconcileAction}
       onClearPlan={packageActions.clearPlan}
+      onUpdateSettings={onUpdateSettings}
+      onRefresh={onRefresh}
     />
   );
 }

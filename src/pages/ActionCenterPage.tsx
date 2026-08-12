@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { RegistryPolicyNotice } from "../components/RegistryPolicyNotice";
 import { isWritableManagerId, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
 import type {
   ActionCapability,
@@ -45,6 +46,8 @@ interface ActionCenterPageProps {
   onCancel: () => Promise<void>;
   onReconcile: (actionId: string) => Promise<void>;
   onClearPlan: () => void;
+  onUpdateSettings: (settings: ScanSettings) => Promise<void>;
+  onRefresh: () => void;
 }
 
 const actionLabels: Record<PackageAction, string> = {
@@ -140,6 +143,13 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
           <span>不使用 Shell、不接受自定义参数、不请求 sudo；npm 与 pnpm 固定禁用 lifecycle scripts。</span>
         </div>
       </div>
+      {action === "install" ? (
+        <RegistryPolicyNotice
+          scanSettings={props.scanSettings}
+          onUpdateSettings={props.onUpdateSettings}
+          onRefresh={props.onRefresh}
+        />
+      ) : null}
       {recoveryRequired ? (
         <div className="inline-alert inline-alert--error">
           <Icon name="warning" />
@@ -258,7 +268,7 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
                   <small>
                     {props.scanSettings.networkPolicy === "registry"
                       ? "仅使用固定只读搜索命令；搜索结果只会填入安装目标。"
-                      : "当前为离线策略；请先在项目页允许访问软件源。"}
+                      : "当前为离线模式；允许检查更新并重新扫描后才能搜索目录。"}
                   </small>
                 </div>
                 <div className="catalog-search__controls">
@@ -267,12 +277,19 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
                     value={catalogQuery}
                     onChange={(event) => setCatalogQuery(event.target.value)}
                     placeholder="至少输入 2 个字符"
-                    disabled={props.isExecuting || props.isCatalogSearching}
+                    disabled={
+                      props.isExecuting || props.isCatalogSearching || props.scanSettings.networkPolicy === "offline"
+                    }
                   />
                   <button
                     className="button button--secondary"
                     onClick={searchCatalog}
-                    disabled={props.isExecuting || props.isCatalogSearching || catalogQuery.trim().length < 2}
+                    disabled={
+                      props.isExecuting ||
+                      props.isCatalogSearching ||
+                      props.scanSettings.networkPolicy === "offline" ||
+                      catalogQuery.trim().length < 2
+                    }
                   >
                     {props.isCatalogSearching ? "正在搜索…" : "搜索目录"}
                   </button>

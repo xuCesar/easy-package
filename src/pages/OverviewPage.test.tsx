@@ -90,10 +90,31 @@ describe("OverviewPage", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /可更新 — 未检查更新/ }));
+    fireEvent.click(screen.getByRole("button", { name: /可更新 — 未检查更新（当前离线）/ }));
 
     expect(onNavigate).toHaveBeenCalledWith("packages");
     expect(screen.queryByText("均为最新")).not.toBeInTheDocument();
+  });
+
+  it("联网检查后没有更新时展示均为最新", () => {
+    const data = {
+      ...mockScan,
+      packages: mockScan.packages.map((pkg) => ({ ...pkg, updateStatus: "upToDate" as const })),
+      scanSettings: { ...mockScan.scanSettings, networkPolicy: "registry" as const },
+      healthIssues: [],
+    };
+    render(
+      <OverviewPage
+        data={data}
+        isLoading={false}
+        onRefresh={vi.fn()}
+        onCancel={vi.fn()}
+        onNavigate={vi.fn()}
+        onStartUpgradePlan={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /可更新 0 均为最新/ })).toBeInTheDocument();
   });
 
   it("没有待关注问题时展示一切正常", () => {
