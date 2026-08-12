@@ -9,20 +9,21 @@ export interface AttentionItem {
 }
 
 const severityRank: Record<HealthSeverity, number> = { error: 0, warning: 1, info: 2 };
-const overviewHealthCodes = new Set([
-  "MANAGER_COMMAND_FAILED",
-  "UNVERIFIED_EXECUTABLE",
-  "LARGE_CACHE",
-  "UPDATES_AVAILABLE",
-  "COMMAND_PATH_CONFLICT",
-  "RUNTIME_MANAGER_MISMATCH",
-]);
+const overviewHealthTargets: Record<string, PageId> = {
+  MANAGER_COMMAND_FAILED: "environment",
+  UNVERIFIED_EXECUTABLE: "environment",
+  LARGE_CACHE: "environment",
+  UPDATES_AVAILABLE: "packages",
+  COMMAND_PATH_CONFLICT: "environment",
+  RUNTIME_MANAGER_MISMATCH: "environment",
+};
 
 export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
   const items: AttentionItem[] = [];
 
   for (const issue of data.healthIssues) {
-    if (issue.severity === "info" || !overviewHealthCodes.has(issue.code)) {
+    const target = overviewHealthTargets[issue.code];
+    if (issue.severity === "info" || !target) {
       continue;
     }
     items.push({
@@ -30,7 +31,7 @@ export function collectAttentionItems(data: EnvironmentScan): AttentionItem[] {
       severity: issue.severity,
       title: issue.title,
       detail: issue.description,
-      target: "environment",
+      target,
     });
   }
 

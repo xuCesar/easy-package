@@ -69,6 +69,17 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
   });
 
+  it("概览可更新入口进入已预填的升级流程", async () => {
+    render(<App />);
+    await scanAndWaitForOverview();
+
+    fireEvent.click(screen.getByRole("button", { name: /可更新 3 前往安全操作模式/ }));
+
+    expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "升级" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("checkbox", { name: /git/ })).toBeChecked();
+  });
+
   it("软件包页可更新筛选可一键预填批量升级计划", async () => {
     render(<App />);
     await scanAndWaitForOverview();

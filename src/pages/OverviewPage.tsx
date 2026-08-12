@@ -4,6 +4,7 @@ import { StatusDot } from "../components/Status";
 import { collectAttentionItems } from "../lib/attention";
 import { formatRelativeTime } from "../lib/format";
 import { formatScanProgress } from "../lib/scanProgress";
+import { buildUpgradePlanPrefill, type UpgradePlanPrefill } from "../lib/upgradePlanBridge";
 import type { EnvironmentScan, PageId, ScanProgress, SnapshotComparison } from "../types";
 
 interface OverviewPageProps {
@@ -14,6 +15,7 @@ interface OverviewPageProps {
   onRefresh: () => void;
   onCancel: () => void;
   onNavigate: (page: PageId) => void;
+  onStartUpgradePlan: (prefill: UpgradePlanPrefill) => void;
 }
 
 export function OverviewPage({
@@ -24,12 +26,24 @@ export function OverviewPage({
   onRefresh,
   onCancel,
   onNavigate,
+  onStartUpgradePlan,
 }: OverviewPageProps) {
   const managers = data.managers.slice(0, 4);
   const scanLogs = data.logs.slice(0, 3);
   const attentionItems = collectAttentionItems(data);
   const availableUpdates = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
+  const upgradePrefill = buildUpgradePlanPrefill(data.packages);
   const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
+  const environmentIssueCount = attentionItems.filter((item) => item.target === "environment").length;
+  const updatesChecked = data.scanSettings.networkPolicy === "registry";
+  const updateStatusText =
+    availableUpdates > 0
+      ? upgradePrefill
+        ? "前往安全操作模式"
+        : "查看更新列表"
+      : updatesChecked
+        ? "暂未发现更新"
+        : "未检查更新";
 
   return (
     <>
@@ -74,19 +88,18 @@ export function OverviewPage({
             已安装软件包
           </span>
           <strong>{data.packages.length}</strong>
-          <small>{availableUpdates > 0 ? `${availableUpdates} 个可更新` : "均为最新"}</small>
+          <small>跨管理器汇总</small>
         </button>
         <button
           className="overview-summary-card"
-          onClick={() => onNavigate("projects")}
-          aria-label={data.projects.length === 0 ? "添加扫描目录" : "查看已扫描项目"}
+          onClick={() => (upgradePrefill ? onStartUpgradePlan(upgradePrefill) : onNavigate("packages"))}
         >
           <span className="overview-summary-card__label">
-            <Icon name="projects" />
-            已扫描项目
+            <Icon name="refresh" />
+            可更新
           </span>
-          <strong>{data.projects.length}</strong>
-          <small>{data.projects.length === 0 ? "添加扫描目录" : "查看项目清单"}</small>
+          <strong>{availableUpdates > 0 ? availableUpdates : updatesChecked ? 0 : "—"}</strong>
+          <small>{updateStatusText}</small>
         </button>
         <button
           className="overview-summary-card overview-summary-card--health"
@@ -96,8 +109,8 @@ export function OverviewPage({
             <Icon name="environment" />
             环境健康
           </span>
-          <strong>{attentionItems.length > 0 ? `${attentionItems.length} 项` : "良好"}</strong>
-          <small>{attentionItems.length > 0 ? "需要进一步检查" : "未发现风险问题"}</small>
+          <strong>{environmentIssueCount > 0 ? `${environmentIssueCount} 项` : "良好"}</strong>
+          <small>{environmentIssueCount > 0 ? "需要进一步检查" : "未发现风险问题"}</small>
         </button>
       </section>
       <div className="overview-workspace">
@@ -132,6 +145,18 @@ export function OverviewPage({
                   未发现需要关注的问题，环境状态良好。
                 </span>
               </div>
+            ) : null}
+            {data.scanRoots.length === 0 ? (
+              <button className="overview-row overview-row--attention" onClick={() => onNavigate("projects")}>
+                <span>
+                  <Icon name="projects" className="attention-icon attention-icon--info" />
+                  <span>
+                    <strong>项目分析（可选）</strong>
+                    <small>添加代码目录后，可以检查项目与本机运行时是否匹配。</small>
+                  </span>
+                </span>
+                <Icon name="chevron" />
+              </button>
             ) : null}
           </div>
         </section>
