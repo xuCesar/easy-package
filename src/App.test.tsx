@@ -9,6 +9,7 @@ async function scanAndWaitForOverview() {
   await waitFor(() => expect(scanButton).toBeEnabled());
   fireEvent.click(scanButton);
   expect(screen.getByRole("button", { name: "取消扫描" })).toBeInTheDocument();
+  expect(await screen.findByRole("status")).toHaveTextContent("正在读取包管理器 0/13");
   await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
 }
 
@@ -20,6 +21,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "返回概览" })).toBeInTheDocument();
     expect(screen.queryByText("Easy Package")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "扫描" })).toBeDisabled();
+    expect(screen.getByText(/读取本机包管理器、全局软件包、命令来源和运行时安装/)).toBeInTheDocument();
+    expect(screen.getByText(/不会修改任何文件/)).toBeInTheDocument();
     expect(screen.queryByText("正在扫描本机环境")).not.toBeInTheDocument();
     await scanAndWaitForOverview();
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();

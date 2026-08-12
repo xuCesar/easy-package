@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { formatScanProgress } from "../lib/scanProgress";
 import type { ScanProgress } from "../types";
+
+const scanDescription = "扫描会读取本机包管理器、全局软件包、命令来源和运行时安装。不会修改任何文件。";
 
 const outlinePoints = [
   "80 18 136 50 136 114 80 146 24 114 24 50 80 18",
@@ -40,11 +43,7 @@ interface ScanLauncherProps {
 export function ScanLauncher({ error, isInitializing, isScanning, progress, onCancel, onScan }: ScanLauncherProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const morphDuration = isScanning ? "2.8s" : "6.4s";
-  const progressText = progress
-    ? `正在扫描 ${progress.completed}/${progress.total}`
-    : isScanning
-      ? "正在准备扫描"
-      : undefined;
+  const progressText = progress ? formatScanProgress(progress) : isScanning ? "正在准备扫描" : undefined;
 
   return (
     <section className={isScanning ? "scan-launcher scan-launcher--scanning" : "scan-launcher"} aria-label="环境扫描">
@@ -107,8 +106,13 @@ export function ScanLauncher({ error, isInitializing, isScanning, progress, onCa
         {isScanning ? "取消扫描" : "扫描"}
       </button>
       <div className="scan-launcher__message" aria-live="polite">
-        {progressText ? <span role="status">{progressText}</span> : null}
-        {!isScanning && error ? <span role="alert">{error}</span> : null}
+        {progressText ? <span role="status">{progressText}</span> : scanDescription}
+        {!isScanning && error ? (
+          <>
+            <br />
+            <span role="alert">{error}</span>
+          </>
+        ) : null}
       </div>
     </section>
   );

@@ -3,6 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusDot } from "../components/Status";
 import { collectAttentionItems } from "../lib/attention";
 import { formatRelativeTime } from "../lib/format";
+import { formatScanProgress } from "../lib/scanProgress";
 import type { EnvironmentScan, PageId, ScanProgress, SnapshotComparison } from "../types";
 
 interface OverviewPageProps {
@@ -14,14 +15,6 @@ interface OverviewPageProps {
   onCancel: () => void;
   onNavigate: (page: PageId) => void;
 }
-
-const phaseLabel: Record<ScanProgress["phase"], string> = {
-  managers: "正在扫描包管理器",
-  projects: "正在扫描项目",
-  runtimes: "正在扫描运行时",
-  health: "正在生成健康报告",
-  complete: "扫描完成",
-};
 
 export function OverviewPage({
   data,
@@ -44,7 +37,7 @@ export function OverviewPage({
         title="本机开发环境"
         description={
           isLoading && scanProgress
-            ? `${phaseLabel[scanProgress.phase]} ${scanProgress.completed}/${scanProgress.total}`
+            ? formatScanProgress(scanProgress)
             : `上次扫描：${formatRelativeTime(data.scannedAt)}`
         }
         actions={
