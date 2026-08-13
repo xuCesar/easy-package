@@ -36,7 +36,9 @@ pnpm test:e2e
 `pnpm build:desktop` 以 release 模式构建 Tauri 原生二进制，但通过 `--no-bundle` 保持不生成 `.app`、DMG 或安装包；产物位于已忽略的 `src-tauri/target/release/`。
 GitHub Actions 会对 Pull Request 与 `develop` 推送执行质量门禁（`pnpm check`）。原生二进制构建（`pnpm build:desktop`）只在 `develop` 推送或手动触发 `quality.yml` 时运行，以缩短 PR 等待；发布打包仍由 `release.yml` 负责。
 
-`pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。它不属于常规 CI 门禁：`tauri-driver` 不支持 macOS，且 Linux WebKit 驱动与固定 fixture 的维护成本不适合当前 macOS-first MVP。需要发布级原生验证时，在受控 Linux 环境或后续稳定的 macOS 原生方案中手动运行；该模式不读取本机包管理器、扫描目录或 SQLite。在 macOS 上以下方「桌面烟测」清单作为替代验证手段。
+`pnpm test:e2e` 通过 `tauri-driver` 驱动真实 Tauri 窗口，并以 Rust `e2e` feature 和 `EASY_PACKAGE_E2E=1` 返回固定扫描 fixture。E2E 模式会固定忽略 SQLite 中的历史快照，从无快照启动器开始：等待「扫描」可用后点击，完成扫描进入「本机开发环境」，再覆盖软件包筛选、环境、项目详情、日志以及刷新后取消扫描。扫描 fixture 不读取本机包管理器或扫描目录，因此重复运行不会被开发机历史状态影响。
+
+原生 E2E 不属于常规 CI 门禁：`tauri-driver` 不支持 macOS，且 Linux WebKit 驱动与固定 fixture 的维护成本不适合当前 macOS-first MVP。需要发布级原生验证时，在安装了 WebKit WebDriver 与 `tauri-driver` 的受控 Linux 环境运行；macOS 使用 `pnpm check`、`pnpm build:desktop` 和下方「桌面烟测」清单替代。
 
 ## 桌面烟测
 

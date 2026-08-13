@@ -91,6 +91,10 @@ fn finish_project_rescan(
 pub async fn get_latest_snapshot(
     storage: State<'_, Storage>,
 ) -> Result<Option<EnvironmentScan>, AppError> {
+    #[cfg(feature = "e2e")]
+    if crate::e2e::is_enabled() {
+        return Ok(crate::e2e::startup_snapshot());
+    }
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || storage.latest_snapshot())
         .await
