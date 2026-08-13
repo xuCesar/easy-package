@@ -59,8 +59,23 @@ async function waitForElement(xpath) {
   throw failure;
 }
 
+async function waitForEnabledElement(xpath) {
+  let failure;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const id = await element(xpath);
+      const enabled = await request(`/session/${sessionId}/element/${id}/enabled`);
+      if (enabled) return id;
+    } catch (error) {
+      failure = error;
+    }
+    await sleep(100);
+  }
+  throw failure ?? new Error(`等待可用控件超时：${xpath}`);
+}
+
 async function click(xpath) {
-  const id = await waitForElement(xpath);
+  const id = await waitForEnabledElement(xpath);
   await request(`/session/${sessionId}/element/${id}/click`, { method: "POST", body: "{}" });
 }
 
@@ -125,7 +140,8 @@ async function run() {
     await waitForDriver(driver);
     await createSession();
 
-    await waitForElement("//h1[normalize-space()='概览']");
+    await click("//section[@aria-label='环境扫描']//button[normalize-space()='扫描']");
+    await waitForElement("//h1[normalize-space()='本机开发环境']");
     await waitForElement("//span[normalize-space()='Homebrew']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='软件包']]");
@@ -151,7 +167,7 @@ async function run() {
     await waitForElement("//*[normalize-space()='E2E 固定环境扫描完成']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='概览']]");
-    await click("//button[normalize-space()='刷新']");
+    await click("//button[@aria-label='刷新']");
     await click("//button[normalize-space()='取消扫描']");
     await waitForElement("//*[normalize-space()='本次扫描已取消，保留上次成功结果。']");
   } catch (error) {

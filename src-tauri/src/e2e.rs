@@ -15,6 +15,11 @@ pub fn is_enabled() -> bool {
     std::env::var("EASY_PACKAGE_E2E").as_deref() == Ok("1")
 }
 
+/// 原生 E2E 固定覆盖首次启动流程，不读取开发机可能遗留的 SQLite 快照。
+pub fn startup_snapshot() -> Option<EnvironmentScan> {
+    None
+}
+
 pub fn scan(
     cancelled: &AtomicBool,
     scan_id: &str,
@@ -60,5 +65,10 @@ mod tests {
         let scan = scan(&AtomicBool::new(false), "fixture", &|_| {}).unwrap();
         assert_eq!(scan.packages[0].name, "typescript");
         assert_eq!(scan.dependency_insights[0].name, "react");
+    }
+
+    #[test]
+    fn starts_without_a_snapshot_so_the_launcher_is_deterministic() {
+        assert!(startup_snapshot().is_none());
     }
 }
