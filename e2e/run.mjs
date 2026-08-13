@@ -167,7 +167,7 @@ async function run() {
     await waitForElement("//*[normalize-space()='E2E 固定环境扫描完成']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='概览']]");
-    await click("//button[normalize-space()='刷新']");
+    await click("//button[@aria-label='刷新']");
     await click("//button[normalize-space()='取消扫描']");
     await waitForElement("//*[normalize-space()='本次扫描已取消，保留上次成功结果。']");
   } catch (error) {
