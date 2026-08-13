@@ -77,6 +77,26 @@ describe("EnvironmentPage", () => {
     expect(onNavigate).toHaveBeenCalledWith("runtimes");
   });
 
+  it("将依赖健康项先定位到项目工作区", () => {
+    const onNavigate = vi.fn();
+    const data = structuredClone(mockScan);
+    data.scanRoots = ["/tmp/project"];
+    data.healthIssues = [
+      {
+        id: "dependency-warning",
+        severity: "warning",
+        code: "DIRECT_DEPENDENCY_NOT_RESOLVED",
+        title: "依赖未解析",
+        description: "请检查锁文件",
+        path: "/tmp/project",
+      },
+    ];
+    render(<EnvironmentPage data={data} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: "查看健康详情 project" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看相关项目" }));
+    expect(onNavigate).toHaveBeenCalledWith("projects");
+  });
+
   it("可只显示命令冲突并展示候选来源", () => {
     const view = render(<EnvironmentPage data={mockScan} onNavigate={() => undefined} />);
     const commands = within(view.container);

@@ -18,15 +18,47 @@ import { RuntimesPage } from "./pages/RuntimesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import type { PageId, ProjectAnalysisView } from "./types";
 
-const diagnosticPages = ["environment", "analysis", "runtimes", "history", "logs"] as const satisfies readonly PageId[];
-const diagnosticLabels: Record<(typeof diagnosticPages)[number], string> = {
-  environment: "环境",
-  analysis: "项目分析",
-  runtimes: "运行时",
-  history: "历史",
-  logs: "日志",
-};
-const diagnosticPageSet = new Set<PageId>(diagnosticPages);
+const localWorkspacePages = [
+  { id: "environment", label: "环境" },
+  { id: "runtimes", label: "运行时" },
+  { id: "history", label: "历史" },
+  { id: "logs", label: "日志" },
+] as const satisfies ReadonlyArray<{ id: PageId; label: string }>;
+const projectWorkspacePages = [
+  { id: "projects", label: "项目列表" },
+  { id: "analysis", label: "项目分析" },
+] as const satisfies ReadonlyArray<{ id: PageId; label: string }>;
+const localWorkspacePageSet = new Set<PageId>(localWorkspacePages.map((item) => item.id));
+const projectWorkspacePageSet = new Set<PageId>(projectWorkspacePages.map((item) => item.id));
+
+function WorkspaceNavigation({
+  label,
+  pages,
+  currentPage,
+  onNavigate,
+}: {
+  label: string;
+  pages: ReadonlyArray<{ id: PageId; label: string }>;
+  currentPage: PageId;
+  onNavigate: (page: PageId) => void;
+}) {
+  return (
+    <nav className="workspace-nav" aria-label={label}>
+      {pages.map((item) => (
+        <button
+          key={item.id}
+          className={
+            currentPage === item.id ? "workspace-nav__item workspace-nav__item--active" : "workspace-nav__item"
+          }
+          onClick={() => onNavigate(item.id)}
+          aria-current={currentPage === item.id ? "page" : undefined}
+        >
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 // 扫描进度高频更新只应重渲染消费它的概览页；其余页面通过 memo + 稳定 props 跳过。
 const MemoPackagesPage = memo(PackagesPage);
@@ -118,18 +150,21 @@ export function App() {
             onStartUpgradePlan={startUpgradePlan}
           />
         ) : null}
-        {diagnosticPageSet.has(page) ? (
-          <nav className="diagnostic-nav" aria-label="诊断视图">
-            {diagnosticPages.map((item) => (
-              <button
-                key={item}
-                className={page === item ? "diagnostic-nav__item diagnostic-nav__item--active" : "diagnostic-nav__item"}
-                onClick={() => navigate(item)}
-              >
-                {diagnosticLabels[item]}
-              </button>
-            ))}
-          </nav>
+        {localWorkspacePageSet.has(page) ? (
+          <WorkspaceNavigation
+            label="本机工作区导航"
+            pages={localWorkspacePages}
+            currentPage={page}
+            onNavigate={navigate}
+          />
+        ) : null}
+        {projectWorkspacePageSet.has(page) ? (
+          <WorkspaceNavigation
+            label="项目工作区导航"
+            pages={data.scanRoots.length > 0 ? projectWorkspacePages : projectWorkspacePages.slice(0, 1)}
+            currentPage={page}
+            onNavigate={navigate}
+          />
         ) : null}
         {page === "packages" ? (
           <MemoPackagesPage
