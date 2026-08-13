@@ -53,6 +53,7 @@ pub fn run() {
             }
             app.manage(storage);
             app.manage(commands::ScanRegistry::default());
+            app.manage(scan::dependency_graph::DependencyGraphCache::default());
             app.manage(actions::ActionRegistry::default());
             app.manage(actions::catalog::CatalogRegistry::default());
             app.manage(operation_guard::OperationCoordinator::default());

@@ -57,7 +57,7 @@ GitHub Actions 会对 Pull Request 与 `develop` 推送执行质量门禁（`pnp
 - `src-tauri/src/adapters/`：包管理器发现、命令执行与输出解析。
 - `src-tauri/src/scan/`：扫描编排、PATH 检查与健康规则。
   - `scan/projects/`：目录遍历、manifest 解析、锁文件关联、工作区与依赖索引。
-  - `scan/dependency_graph/`：受预算限制的完整依赖图（构建 / 解析器 / SBOM)与 digest 缓存。
+  - `scan/dependency_graph/`：受预算限制的按需完整依赖图（构建 / 解析器 / SBOM）、历史摘要复用与进程内有界缓存；主扫描不构建完整图。
   - `scan/supply_chain.rs`：不联网的锁文件结构规则、稳定规则 ID、证据和依赖路径。
 - `src-tauri/src/actions/`：受控写操作（计划 / 执行 / 固定参数 / 可执行文件验证 / 能力矩阵 / 复扫核对 / 目录搜索）。
 - `src-tauri/src/services.rs`：命令层背后的业务编排（报告导出、快照比较、写操作流程）。

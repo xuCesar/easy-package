@@ -1,9 +1,12 @@
-//! 完整依赖图构建：来源选择、digest 缓存、图组装与摘要 enrich。
+//! 完整依赖图构建：来源选择、按需缓存、图组装与扫描摘要复用。
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use serde_json::Value as JsonValue;
@@ -29,6 +32,110 @@ pub use sbom::build_cyclonedx_sbom_with_risk_summary;
 const MAX_LOCK_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_GRAPH_NODES: usize = 50_000;
 const MAX_GRAPH_EDGES: usize = 200_000;
+const GRAPH_CACHE_CAPACITY: usize = 4;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GraphCacheKey {
+    project_path: String,
+    project_name: String,
+    project_input_digest: String,
+    source_digest: String,
+}
+
+#[derive(Debug, Clone)]
+struct GraphCacheEntry {
+    key: GraphCacheKey,
+    graph: ProjectDependencyGraph,
+}
+
+#[derive(Debug)]
+struct GraphCacheState {
+    entries: VecDeque<GraphCacheEntry>,
+    capacity: usize,
+}
+
+/// 完整依赖图只保存在当前进程内，避免把大图写入 SQLite。
+/// Mutex 在构建期间保持占用，确保图、锁文件问题与 SBOM 并发请求只解析一次。
+#[derive(Debug, Clone)]
+pub struct DependencyGraphCache {
+    state: Arc<Mutex<GraphCacheState>>,
+}
+
+impl Default for DependencyGraphCache {
+    fn default() -> Self {
+        Self::with_capacity(GRAPH_CACHE_CAPACITY)
+    }
+}
+
+impl DependencyGraphCache {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(GraphCacheState {
+                entries: VecDeque::new(),
+                capacity: capacity.max(1),
+            })),
+        }
+    }
+
+    pub fn get_or_build(
+        &self,
+        project: &ProjectMetadata,
+        cancelled: &AtomicBool,
+    ) -> Result<ProjectDependencyGraph, AppError> {
+        self.get_or_build_with(project, cancelled, build_project_dependency_graph)
+    }
+
+    fn get_or_build_with<F>(
+        &self,
+        project: &ProjectMetadata,
+        cancelled: &AtomicBool,
+        builder: F,
+    ) -> Result<ProjectDependencyGraph, AppError>
+    where
+        F: FnOnce(&ProjectMetadata, &AtomicBool) -> Result<ProjectDependencyGraph, AppError>,
+    {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err(AppError::ScanCancelled);
+        }
+        let source_digest = quick_source_digest(project).unwrap_or_default();
+        if source_digest.is_empty() {
+            return builder(project, cancelled);
+        }
+        let key = GraphCacheKey {
+            project_path: project.path.clone(),
+            project_name: project.name.clone(),
+            project_input_digest: project_input_digest(project),
+            source_digest: source_digest.clone(),
+        };
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| AppError::Command(error.to_string()))?;
+        if let Some(index) = state.entries.iter().position(|entry| entry.key == key) {
+            let entry = state.entries.remove(index).expect("缓存索引必须存在");
+            let graph = entry.graph.clone();
+            state.entries.push_front(entry);
+            return Ok(graph);
+        }
+
+        let graph = builder(project, cancelled)?;
+        // 解析前后锁文件发生变化时仍返回本次结果，但不缓存不确定版本。
+        if graph.source_digest == source_digest {
+            state.entries.retain(|entry| {
+                entry.key.project_path != key.project_path
+                    || entry.key.project_name != key.project_name
+            });
+            state.entries.push_front(GraphCacheEntry {
+                key,
+                graph: graph.clone(),
+            });
+            while state.entries.len() > state.capacity {
+                state.entries.pop_back();
+            }
+        }
+        Ok(graph)
+    }
+}
 
 #[derive(Debug)]
 struct ParsedGraph {
@@ -264,7 +371,7 @@ fn select_lock_candidates(project: &ProjectMetadata, directory: &Path) -> Vec<Lo
 /// 用与完整图构建相同的来源选择与摘要算法计算 source digest，但只读取锁文件、
 /// 不解析。返回 None 表示无法快速判定（读取失败），调用方应视为缓存未命中。
 /// 无效锁文件会得到与解析路径不同的 digest —— 只会造成多余重建，不会错误复用。
-pub(super) fn quick_source_digest(project: &ProjectMetadata) -> Option<String> {
+pub(crate) fn quick_source_digest(project: &ProjectMetadata) -> Option<String> {
     let directory = PathBuf::from(&project.path);
     let mut digests = Vec::new();
     for candidate in select_lock_candidates(project, &directory) {
@@ -292,13 +399,16 @@ pub(super) fn quick_source_digest(project: &ProjectMetadata) -> Option<String> {
     })
 }
 
-/// 以上一次扫描的摘要为缓存：锁文件 digest 未变的项目直接复用摘要，
-/// 只为新增或锁文件变化的项目构建完整依赖图。
-pub fn enrich_dependency_graph_summaries(
+/// 只复用上一次扫描中 digest 仍匹配的摘要；冷扫描或锁文件变化时保持待分析，
+/// 完整图统一留给项目详情按需构建。
+pub fn reuse_dependency_graph_summaries(
     projects: &mut [ProjectMetadata],
     cancelled: &AtomicBool,
     previous_projects: &[ProjectMetadata],
 ) -> Result<(), AppError> {
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(AppError::ScanCancelled);
+    }
     let previous_by_path: std::collections::HashMap<&str, &ProjectMetadata> = previous_projects
         .iter()
         .map(|project| (project.path.as_str(), project))
@@ -310,6 +420,7 @@ pub fn enrich_dependency_graph_summaries(
         if let Some(previous) = previous_by_path.get(project.path.as_str()) {
             if let Some(previous_summary) = previous.dependency_graph_summary.as_ref() {
                 if !previous_summary.source_digest.is_empty()
+                    && same_project_graph_inputs(previous, project)
                     && quick_source_digest(project).as_deref()
                         == Some(previous_summary.source_digest.as_str())
                 {
@@ -319,12 +430,6 @@ pub fn enrich_dependency_graph_summaries(
                 }
             }
         }
-        let graph = build_project_dependency_graph(project, cancelled)?;
-        let risk_summary = super::supply_chain::build_supply_chain_report(project, &graph).summary;
-        project.dependency_graph_summary = (graph.completeness
-            != DependencyGraphCompleteness::Unsupported)
-            .then_some(graph.summary);
-        project.supply_chain_risk_summary = (risk_summary.total_count > 0).then_some(risk_summary);
     }
     Ok(())
 }
@@ -552,6 +657,24 @@ fn stable_digest(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
+fn project_input_digest(project: &ProjectMetadata) -> String {
+    let serialized = serde_json::to_vec(&(
+        project.name.as_str(),
+        &project.ecosystems,
+        project.package_manager.as_deref(),
+        &project.dependencies,
+    ))
+    .unwrap_or_default();
+    stable_digest(&serialized)
+}
+
+fn same_project_graph_inputs(previous: &ProjectMetadata, current: &ProjectMetadata) -> bool {
+    previous.name == current.name
+        && previous.ecosystems == current.ecosystems
+        && previous.package_manager == current.package_manager
+        && previous.dependencies == current.dependencies
+}
+
 fn push_unique(values: &mut Vec<String>, value: String) {
     if !values.contains(&value) {
         values.push(value);
@@ -562,6 +685,7 @@ fn push_unique(values: &mut Vec<String>, value: String) {
 mod tests {
     use super::*;
     use crate::models::{ProjectDependency, RuntimeRequirement};
+    use std::sync::atomic::AtomicUsize;
     use tempfile::tempdir;
 
     fn project(path: &Path, name: &str, ecosystem: &str, manager: Option<&str>) -> ProjectMetadata {
@@ -582,7 +706,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn bench_enrich_cold_vs_warm() {
+    fn bench_graph_cache_cold_vs_warm() {
         let directory = tempdir().unwrap();
         let mut projects = Vec::new();
         for index in 0..30 {
@@ -612,26 +736,22 @@ mod tests {
                 Some("npm@11"),
             ));
         }
+        let cache = DependencyGraphCache::with_capacity(projects.len());
         let start = std::time::Instant::now();
-        enrich_dependency_graph_summaries(&mut projects, &AtomicBool::new(false), &[]).unwrap();
+        for project in &projects {
+            cache
+                .get_or_build(project, &AtomicBool::new(false))
+                .unwrap();
+        }
         let cold = start.elapsed();
-        let previous = projects.clone();
-        let mut rescanned = previous
-            .iter()
-            .map(|item| ProjectMetadata {
-                dependency_graph_summary: None,
-                supply_chain_risk_summary: None,
-                ..item.clone()
-            })
-            .collect::<Vec<_>>();
         let start = std::time::Instant::now();
-        enrich_dependency_graph_summaries(&mut rescanned, &AtomicBool::new(false), &previous)
-            .unwrap();
+        for project in &projects {
+            cache
+                .get_or_build(project, &AtomicBool::new(false))
+                .unwrap();
+        }
         let warm = start.elapsed();
-        println!("cold(30 projects x ~800 nodes): {cold:?}, warm(digest hit): {warm:?}");
-        assert!(rescanned
-            .iter()
-            .all(|item| item.dependency_graph_summary.is_some()));
+        println!("cold(30 projects x ~800 nodes): {cold:?}, warm(graph cache): {warm:?}");
     }
 
     #[test]
@@ -658,24 +778,108 @@ mod tests {
     }
 
     #[test]
-    fn enrich_reuses_previous_summary_when_digest_is_unchanged() {
+    fn graph_cache_reuses_same_digest_and_rebuilds_after_change() {
+        let directory = tempdir().unwrap();
+        let lock_path = directory.path().join("package-lock.json");
+        fs::write(
+            &lock_path,
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        let metadata = project(directory.path(), "app", "JavaScript", Some("npm@11"));
+        let first_graph =
+            build_project_dependency_graph(&metadata, &AtomicBool::new(false)).unwrap();
+        let cache = DependencyGraphCache::default();
+        let builds = AtomicUsize::new(0);
+
+        for _ in 0..2 {
+            cache
+                .get_or_build_with(&metadata, &AtomicBool::new(false), |_, _| {
+                    builds.fetch_add(1, Ordering::SeqCst);
+                    Ok(first_graph.clone())
+                })
+                .unwrap();
+        }
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+
+        fs::write(
+            lock_path,
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"2"}},"node_modules/a":{"name":"a","version":"2.0.0"}}}"#,
+        )
+        .unwrap();
+        let changed_graph =
+            build_project_dependency_graph(&metadata, &AtomicBool::new(false)).unwrap();
+        cache
+            .get_or_build_with(&metadata, &AtomicBool::new(false), |_, _| {
+                builds.fetch_add(1, Ordering::SeqCst);
+                Ok(changed_graph.clone())
+            })
+            .unwrap();
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn graph_cache_coalesces_concurrent_builds_and_honors_cancellation() {
         let directory = tempdir().unwrap();
         fs::write(
             directory.path().join("package-lock.json"),
             r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"}}}"#,
         )
         .unwrap();
-        let mut projects = vec![project(
+        let metadata = project(directory.path(), "app", "JavaScript", Some("npm@11"));
+        let graph = build_project_dependency_graph(&metadata, &AtomicBool::new(false)).unwrap();
+        let cache = DependencyGraphCache::default();
+        let builds = Arc::new(AtomicUsize::new(0));
+        let handles = (0..4)
+            .map(|_| {
+                let cache = cache.clone();
+                let metadata = metadata.clone();
+                let graph = graph.clone();
+                let builds = builds.clone();
+                std::thread::spawn(move || {
+                    cache
+                        .get_or_build_with(&metadata, &AtomicBool::new(false), |_, _| {
+                            builds.fetch_add(1, Ordering::SeqCst);
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            Ok(graph)
+                        })
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+
+        let cancelled = AtomicBool::new(true);
+        assert!(matches!(
+            cache.get_or_build(&metadata, &cancelled),
+            Err(AppError::ScanCancelled)
+        ));
+    }
+
+    #[test]
+    fn scan_reuses_previous_summary_only_when_digest_is_unchanged() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join("package-lock.json"),
+            r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        let mut previous = vec![project(
             directory.path(),
             "app",
             "JavaScript",
             Some("npm@11"),
         )];
-        enrich_dependency_graph_summaries(&mut projects, &AtomicBool::new(false), &[]).unwrap();
-        let built = projects[0].dependency_graph_summary.clone().unwrap();
+        let graph = build_project_dependency_graph(&previous[0], &AtomicBool::new(false)).unwrap();
+        let risk_summary =
+            super::super::supply_chain::build_supply_chain_report(&previous[0], &graph).summary;
+        previous[0].dependency_graph_summary = Some(graph.summary);
+        previous[0].supply_chain_risk_summary = Some(risk_summary);
 
         // 上一次快照携带同 digest 但哨兵计数的摘要：digest 命中时必须原样复用，证明未重建。
-        let mut previous = projects.clone();
         let sentinel = previous[0].dependency_graph_summary.as_mut().unwrap();
         sentinel.node_count = 999;
         let mut rescanned = vec![project(
@@ -684,7 +888,7 @@ mod tests {
             "JavaScript",
             Some("npm@11"),
         )];
-        enrich_dependency_graph_summaries(&mut rescanned, &AtomicBool::new(false), &previous)
+        reuse_dependency_graph_summaries(&mut rescanned, &AtomicBool::new(false), &previous)
             .unwrap();
         assert_eq!(
             rescanned[0]
@@ -695,7 +899,27 @@ mod tests {
             999
         );
 
-        // 锁文件变化后 digest 失配，重建得到真实值。
+        let mut manifest_changed = vec![project(
+            directory.path(),
+            "app",
+            "JavaScript",
+            Some("npm@11"),
+        )];
+        manifest_changed[0].dependencies.push(ProjectDependency {
+            ecosystem: "JavaScript".into(),
+            name: "b".into(),
+            normalized_name: "b".into(),
+            version_requirement: "1".into(),
+            scopes: vec!["runtime".into()],
+            resolved_version: None,
+            resolution_source: None,
+            resolution_checked: false,
+        });
+        reuse_dependency_graph_summaries(&mut manifest_changed, &AtomicBool::new(false), &previous)
+            .unwrap();
+        assert!(manifest_changed[0].dependency_graph_summary.is_none());
+
+        // 锁文件变化后 digest 失配，扫描保持待分析，不再同步重建完整图。
         fs::write(
             directory.path().join("package-lock.json"),
             r#"{"lockfileVersion":3,"packages":{"":{"name":"app","dependencies":{"a":"1","b":"1"}},"node_modules/a":{"name":"a","version":"1.0.0"},"node_modules/b":{"name":"b","version":"1.0.0"}}}"#,
@@ -707,11 +931,9 @@ mod tests {
             "JavaScript",
             Some("npm@11"),
         )];
-        enrich_dependency_graph_summaries(&mut changed, &AtomicBool::new(false), &previous)
-            .unwrap();
-        let rebuilt = changed[0].dependency_graph_summary.as_ref().unwrap();
-        assert_ne!(rebuilt.node_count, 999);
-        assert_eq!(rebuilt.node_count, built.node_count + 1);
+        reuse_dependency_graph_summaries(&mut changed, &AtomicBool::new(false), &previous).unwrap();
+        assert!(changed[0].dependency_graph_summary.is_none());
+        assert!(changed[0].supply_chain_risk_summary.is_none());
     }
 
     #[test]

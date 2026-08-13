@@ -113,13 +113,15 @@ fn append_error(target: &mut Option<String>, value: String) {
 #[tauri::command]
 pub(crate) fn build_project_dependency_graph_for_path(
     storage: &Storage,
+    cache: &scan::dependency_graph::DependencyGraphCache,
     project_path: &str,
 ) -> Result<ProjectDependencyGraph, AppError> {
-    Ok(build_project_and_dependency_graph_for_path(storage, project_path)?.1)
+    Ok(build_project_and_dependency_graph_for_path(storage, cache, project_path)?.1)
 }
 
 pub(crate) fn build_project_and_dependency_graph_for_path(
     storage: &Storage,
+    cache: &scan::dependency_graph::DependencyGraphCache,
     project_path: &str,
 ) -> Result<(ProjectMetadata, ProjectDependencyGraph), AppError> {
     let requested = PathBuf::from(project_path);
@@ -149,8 +151,7 @@ pub(crate) fn build_project_and_dependency_graph_for_path(
             .find(|project| PathBuf::from(&project.path) == canonical)
             .ok_or_else(|| AppError::InvalidScanRoot("该路径不是已识别项目".into()))?,
     };
-    let graph =
-        scan::dependency_graph::build_project_dependency_graph(&project, &AtomicBool::new(false))?;
+    let graph = cache.get_or_build(&project, &AtomicBool::new(false))?;
     Ok((project, graph))
 }
 
