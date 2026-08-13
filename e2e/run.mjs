@@ -134,16 +134,18 @@ async function run() {
     await type("//input[@placeholder='搜索软件包']", "not-a-real-package");
     await waitForElement("//strong[normalize-space()='没有匹配的软件包']");
 
-    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='诊断']]");
+    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='环境']]");
     await waitForElement("//h1[normalize-space()='环境']");
     await waitForElement("//h2[normalize-space()='命令解析']");
 
-    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='项目分析']");
+    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='项目']]");
+    await click("//nav[@aria-label='项目工作区导航']//button[normalize-space()='项目分析']");
     await selectOption("//select[@aria-label='依赖生态']", "JavaScript");
     await waitForElement("//h2[normalize-space()='react']");
     await waitForElement("//span[normalize-space()='pnpm-lock.yaml']");
 
-    await click("//nav[@aria-label='诊断视图']//button[normalize-space()='日志']");
+    await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='环境']]");
+    await click("//nav[@aria-label='本机工作区导航']//button[normalize-space()='日志']");
     await waitForElement("//h2[normalize-space()='扫描记录']");
     await waitForElement("//*[normalize-space()='E2E 固定环境扫描完成']");
 

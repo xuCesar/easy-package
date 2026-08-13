@@ -2,15 +2,25 @@ import type { ReactNode } from "react";
 import type { PageId } from "../types";
 import { Icon, type IconName } from "./Icon";
 
-const navItems: Array<{ id: PageId; label: string; icon: IconName }> = [
+const localNavItems: Array<{ id: PageId; label: string; icon: IconName }> = [
   { id: "overview", label: "概览", icon: "overview" },
   { id: "packages", label: "软件包", icon: "packages" },
   { id: "actions", label: "操作", icon: "terminal" },
-  { id: "projects", label: "项目", icon: "projects" },
-  { id: "environment", label: "诊断", icon: "environment" },
+  { id: "environment", label: "环境", icon: "environment" },
 ];
 
-const diagnosticPages = new Set<PageId>(["environment", "analysis", "runtimes", "history", "logs"]);
+const projectNavItems: Array<{ id: PageId; label: string; icon: IconName }> = [
+  { id: "projects", label: "项目", icon: "projects" },
+];
+
+const environmentPages = new Set<PageId>(["environment", "runtimes", "history", "logs"]);
+const projectPages = new Set<PageId>(["projects", "analysis"]);
+
+function isActivePage(item: PageId, page: PageId): boolean {
+  if (item === "environment") return environmentPages.has(page);
+  if (item === "projects") return projectPages.has(page);
+  return item === page;
+}
 
 interface AppShellProps {
   page: PageId;
@@ -29,19 +39,33 @@ export function AppShell({ page, onNavigate, children }: AppShellProps) {
             </span>
           </button>
           <nav className="nav" aria-label="主要导航" data-tauri-drag-region>
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                className={`nav__item ${(item.id === "environment" ? diagnosticPages.has(page) : page === item.id) ? "nav__item--active" : ""}`}
-                onClick={() => onNavigate(item.id)}
-                aria-current={
-                  (item.id === "environment" ? diagnosticPages.has(page) : page === item.id) ? "page" : undefined
-                }
-              >
-                <Icon name={item.icon} className="nav__icon" />
-                <span>{item.label}</span>
-              </button>
-            ))}
+            <div className="nav__group" role="group" aria-label="本机工作区">
+              {localNavItems.map((item) => (
+                <button
+                  key={item.id}
+                  className={`nav__item ${isActivePage(item.id, page) ? "nav__item--active" : ""}`}
+                  onClick={() => onNavigate(item.id)}
+                  aria-current={isActivePage(item.id, page) ? "page" : undefined}
+                >
+                  <Icon name={item.icon} className="nav__icon" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+            <span className="nav__divider" aria-hidden="true" />
+            <div className="nav__group" role="group" aria-label="项目工作区">
+              {projectNavItems.map((item) => (
+                <button
+                  key={item.id}
+                  className={`nav__item ${isActivePage(item.id, page) ? "nav__item--active" : ""}`}
+                  onClick={() => onNavigate(item.id)}
+                  aria-current={isActivePage(item.id, page) ? "page" : undefined}
+                >
+                  <Icon name={item.icon} className="nav__icon" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
         <div className="app-topbar__actions">

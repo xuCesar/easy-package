@@ -26,23 +26,29 @@ describe("App", () => {
     expect(screen.queryByText("正在扫描本机环境")).not.toBeInTheDocument();
     await scanAndWaitForOverview();
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
-    fireEvent.click(
-      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
-    );
+    const mainNavigation = within(screen.getByRole("navigation", { name: "主要导航" }));
+    const localWorkspace = within(screen.getByRole("group", { name: "本机工作区" }));
+    const projectWorkspace = within(screen.getByRole("group", { name: "项目工作区" }));
+    expect(mainNavigation.queryByRole("button", { name: "诊断" })).not.toBeInTheDocument();
+    fireEvent.click(localWorkspace.getByRole("button", { name: "软件包" }));
     expect(screen.getByRole("heading", { name: "软件包" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "诊断" }));
-    fireEvent.click(screen.getByRole("button", { name: "运行时" }));
+    fireEvent.click(localWorkspace.getByRole("button", { name: "环境" }));
+    const localWorkspaceNavigation = within(screen.getByRole("navigation", { name: "本机工作区导航" }));
+    expect(localWorkspaceNavigation.queryByRole("button", { name: "项目分析" })).not.toBeInTheDocument();
+    fireEvent.click(localWorkspaceNavigation.getByRole("button", { name: "运行时" }));
     expect(screen.getByRole("heading", { name: "运行时" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "日志" }));
+    fireEvent.click(localWorkspaceNavigation.getByRole("button", { name: "日志" }));
     expect(screen.getByRole("heading", { name: "日志" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "项目分析" }));
+    fireEvent.click(projectWorkspace.getByRole("button", { name: "项目" }));
+    expect(screen.getByRole("heading", { name: "项目" })).toBeInTheDocument();
+    const projectWorkspaceNavigation = within(screen.getByRole("navigation", { name: "项目工作区导航" }));
+    fireEvent.click(projectWorkspaceNavigation.getByRole("button", { name: "项目分析" }));
     expect(screen.getByRole("heading", { name: "项目分析" })).toBeInTheDocument();
+    expect(projectWorkspace.getByRole("button", { name: "项目" })).toHaveAttribute("aria-current", "page");
     fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
     fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
-    fireEvent.click(
-      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
-    );
+    fireEvent.click(localWorkspace.getByRole("button", { name: "软件包" }));
     fireEvent.click(screen.getByRole("button", { name: "管理操作" }));
     expect(screen.getByRole("heading", { name: "操作中心" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "缓存清理" }));
@@ -180,5 +186,22 @@ describe("App", () => {
 
     expect(await screen.findByText("本次扫描已取消，保留上次成功结果。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
+  });
+
+  it("项目工作区没有扫描目录时不展示项目分析入口", async () => {
+    render(<App />);
+    await scanAndWaitForOverview();
+    fireEvent.click(within(screen.getByRole("group", { name: "项目工作区" })).getByRole("button", { name: "项目" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "移除扫描目录 ~/Code" }));
+
+    const projectNavigation = within(screen.getByRole("navigation", { name: "项目工作区导航" }));
+    await waitFor(() => expect(projectNavigation.queryByRole("button", { name: "项目分析" })).not.toBeInTheDocument());
+    const addScanRootButton = screen.getByRole("button", { name: /^添加扫描目录/ });
+    expect(addScanRootButton).toBeInTheDocument();
+
+    // 还原浏览器预览的扫描目录状态，避免当前测试进程持续停留在无目录状态。
+    fireEvent.click(addScanRootButton);
+    await waitFor(() => expect(projectNavigation.getByRole("button", { name: "项目分析" })).toBeInTheDocument());
   });
 });

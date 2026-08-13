@@ -260,7 +260,7 @@ function HealthGroupDetail({
                   </div>
                   {destination && !ignored ? (
                     <button className="text-button health-item__link" onClick={() => onNavigate(destination)}>
-                      查看相关{destination === "analysis" ? "依赖" : destination === "runtimes" ? "运行时" : "项目"}
+                      查看相关{destination === "runtimes" ? "运行时" : "项目"}
                       <Icon name="chevron" />
                     </button>
                   ) : null}
@@ -330,7 +330,7 @@ function healthDestination(issue: HealthIssue): PageId | undefined {
   return issue.code.startsWith("RUNTIME_") || issue.code === "ACTIVE_RUNTIME_MISMATCH"
     ? "runtimes"
     : issue.code.includes("DEPENDENCY") || issue.code === "LOCAL_DEPENDENCY_REFERENCE"
-      ? "analysis"
+      ? "projects"
       : issue.path
         ? "projects"
         : undefined;
