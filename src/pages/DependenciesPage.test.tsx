@@ -254,7 +254,7 @@ describe("DependenciesPage", () => {
     expect(screen.queryByText(".next · 已忽略")).not.toBeInTheDocument();
     expect(screen.getByText("已索引项目").parentElement?.querySelector("strong")).toHaveTextContent("1");
 
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     expect(screen.getByRole("option", { name: "easy-mes · 工作区 · 完整" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /@easy-mes\/admin/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /\.next/ })).not.toBeInTheDocument();
@@ -409,7 +409,7 @@ describe("DependenciesPage", () => {
 
   it("按需加载项目依赖图并筛选节点、展示最短路径", async () => {
     const { props } = renderPage();
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     expect(screen.getByText("尚未解析项目依赖图")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     await waitFor(() => expect(props.onLoadGraph).toHaveBeenCalledWith("/tmp/web"));
@@ -426,7 +426,7 @@ describe("DependenciesPage", () => {
     expect(screen.queryByText("scheduler")).not.toBeInTheDocument();
   });
 
-  it("依赖图与供应链风险共享同一项目选择", () => {
+  it("依赖图与锁文件问题共享同一项目选择", () => {
     const docs: ProjectMetadata = {
       ...projects[0],
       name: "docs",
@@ -435,13 +435,13 @@ describe("DependenciesPage", () => {
     };
     renderPage({ projects: [...projects, docs] });
 
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     fireEvent.change(screen.getByLabelText("依赖图项目"), { target: { value: "/tmp/docs" } });
 
-    fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
-    expect(screen.getByLabelText("供应链项目")).toHaveValue("/tmp/docs");
+    fireEvent.click(screen.getByRole("tab", { name: "锁文件问题" }));
+    expect(screen.getByLabelText("锁文件问题项目")).toHaveValue("/tmp/docs");
 
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     expect(screen.getByLabelText("依赖图项目")).toHaveValue("/tmp/docs");
   });
 
@@ -452,7 +452,7 @@ describe("DependenciesPage", () => {
       .mockResolvedValueOnce({ saved: false })
       .mockRejectedValueOnce(new Error("保存失败"));
     renderPage({ onExportSbom });
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     const exportButton = await screen.findByRole("button", { name: "导出 CycloneDX SBOM" });
 
@@ -474,7 +474,7 @@ describe("DependenciesPage", () => {
       summary: { ...graph.summary, completeness: "unsupported" as const },
     };
     renderPage({ onLoadGraph: vi.fn().mockResolvedValue(unsupported) });
-    fireEvent.click(screen.getByRole("tab", { name: "依赖图" }));
+    fireEvent.click(screen.getByRole("tab", { name: "完整依赖图" }));
     fireEvent.click(screen.getByRole("button", { name: "解析依赖图" }));
     expect(await screen.findByText("不支持")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导出 CycloneDX SBOM" })).toBeDisabled();

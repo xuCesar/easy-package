@@ -23,7 +23,7 @@ describe("OverviewPage", () => {
     expect(within(summary).queryByText("已扫描项目")).not.toBeInTheDocument();
     expect(screen.getByText("添加代码目录后，可以检查项目与本机运行时是否匹配。")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /项目分析（可选）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /项目工作区（可选）/ }));
 
     expect(onNavigate).toHaveBeenCalledWith("projects");
   });

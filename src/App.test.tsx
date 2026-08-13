@@ -42,11 +42,14 @@ describe("App", () => {
     fireEvent.click(projectWorkspace.getByRole("button", { name: "项目" }));
     expect(screen.getByRole("heading", { name: "项目" })).toBeInTheDocument();
     const projectWorkspaceNavigation = within(screen.getByRole("navigation", { name: "项目工作区导航" }));
-    fireEvent.click(projectWorkspaceNavigation.getByRole("button", { name: "项目分析" }));
-    expect(screen.getByRole("heading", { name: "项目分析" })).toBeInTheDocument();
+    expect(projectWorkspaceNavigation.getAllByRole("button")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "查看项目 developer-tools" }));
+    expect(screen.getByRole("heading", { name: "developer-tools" })).toBeInTheDocument();
     expect(projectWorkspace.getByRole("button", { name: "项目" })).toHaveAttribute("aria-current", "page");
-    fireEvent.click(screen.getByRole("tab", { name: "供应链风险" }));
-    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
+    expect(screen.getByText("运行时匹配")).toBeInTheDocument();
+    expect(screen.getByText("锁文件问题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看锁文件问题" }));
+    fireEvent.click(screen.getByRole("button", { name: "检查锁文件问题" }));
     expect((await screen.findAllByText("依赖来源无法规范化")).length).toBeGreaterThan(0);
     fireEvent.click(localWorkspace.getByRole("button", { name: "软件包" }));
     fireEvent.click(screen.getByRole("button", { name: "管理操作" }));
@@ -188,20 +191,25 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument();
   });
 
-  it("项目工作区没有扫描目录时不展示项目分析入口", async () => {
+  it("项目工作区没有扫描目录时只展示加目录空态", async () => {
     render(<App />);
     await scanAndWaitForOverview();
     fireEvent.click(within(screen.getByRole("group", { name: "项目工作区" })).getByRole("button", { name: "项目" }));
 
     fireEvent.click(screen.getByRole("button", { name: "移除扫描目录 ~/Code" }));
 
+    const addScanRootButton = await screen.findByRole("button", { name: /^添加扫描目录/ });
     const projectNavigation = within(screen.getByRole("navigation", { name: "项目工作区导航" }));
-    await waitFor(() => expect(projectNavigation.queryByRole("button", { name: "项目分析" })).not.toBeInTheDocument());
-    const addScanRootButton = screen.getByRole("button", { name: /^添加扫描目录/ });
+    expect(projectNavigation.getAllByRole("button")).toHaveLength(1);
     expect(addScanRootButton).toBeInTheDocument();
+    expect(screen.getByText(/不会执行安装或修改项目/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看完整依赖图" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导出 CycloneDX SBOM" })).not.toBeInTheDocument();
 
     // 还原浏览器预览的扫描目录状态，避免当前测试进程持续停留在无目录状态。
     fireEvent.click(addScanRootButton);
-    await waitFor(() => expect(projectNavigation.getByRole("button", { name: "项目分析" })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "移除扫描目录 /Users/demo/Code/new-project" })).toBeInTheDocument(),
+    );
   });
 });

@@ -12,11 +12,10 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PackagesPage } from "./pages/PackagesPage";
-import { ProjectAnalysisPage } from "./pages/ProjectAnalysisPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { RuntimesPage } from "./pages/RuntimesPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { PageId, ProjectAnalysisView } from "./types";
+import type { PageId } from "./types";
 
 const localWorkspacePages = [
   { id: "environment", label: "环境" },
@@ -24,10 +23,10 @@ const localWorkspacePages = [
   { id: "history", label: "历史" },
   { id: "logs", label: "日志" },
 ] as const satisfies ReadonlyArray<{ id: PageId; label: string }>;
-const projectWorkspacePages = [
-  { id: "projects", label: "项目列表" },
-  { id: "analysis", label: "项目分析" },
-] as const satisfies ReadonlyArray<{ id: PageId; label: string }>;
+const projectWorkspacePages = [{ id: "projects", label: "项目列表" }] as const satisfies ReadonlyArray<{
+  id: PageId;
+  label: string;
+}>;
 const localWorkspacePageSet = new Set<PageId>(localWorkspacePages.map((item) => item.id));
 const projectWorkspacePageSet = new Set<PageId>(projectWorkspacePages.map((item) => item.id));
 
@@ -63,7 +62,6 @@ function WorkspaceNavigation({
 // 扫描进度高频更新只应重渲染消费它的概览页；其余页面通过 memo + 稳定 props 跳过。
 const MemoPackagesPage = memo(PackagesPage);
 const MemoProjectsPage = memo(ProjectsPage);
-const MemoProjectAnalysisPage = memo(ProjectAnalysisPage);
 const MemoRuntimesPage = memo(RuntimesPage);
 const MemoHistoryPage = memo(HistoryPage);
 const MemoEnvironmentPage = memo(EnvironmentPage);
@@ -73,7 +71,6 @@ const MemoSettingsPage = memo(SettingsPage);
 export function App() {
   const [page, setPage] = useState<PageId>("overview");
   const [upgradePrefill, setUpgradePrefill] = useState<UpgradePlanPrefill>();
-  const [analysisView, setAnalysisView] = useState<ProjectAnalysisView>("index");
   const navigate = useCallback((next: PageId) => {
     setUpgradePrefill(undefined);
     setPage(next);
@@ -192,29 +189,18 @@ export function App() {
             projects={data.projects}
             workspaces={data.workspaces}
             scanRoots={data.scanRoots}
+            dependencyInsights={data.dependencyInsights}
+            runtimeAssessments={data.runtimeAssessments}
             ignoredDirectoryNames={data.scanSettings.defaultIgnoredDirectoryNames}
             onAddRoot={addRoot}
             onRemoveRoot={removeRoot}
             onRefresh={refreshNow}
-          />
-        ) : null}
-        {page === "analysis" ? (
-          <MemoProjectAnalysisPage
-            view={analysisView}
-            onChangeView={setAnalysisView}
-            insights={data.dependencyInsights}
-            projects={data.projects}
-            workspaces={data.workspaces}
-            scanRoots={data.scanRoots}
-            ignoredDirectoryNames={data.scanSettings.defaultIgnoredDirectoryNames}
             onLoadGraph={getProjectDependencyGraph}
             onLoadReport={getProjectSupplyChainReport}
             onExportSbom={exportProjectSbom}
           />
         ) : null}
-        {page === "runtimes" ? (
-          <MemoRuntimesPage installations={data.runtimeInstallations} assessments={data.runtimeAssessments} />
-        ) : null}
+        {page === "runtimes" ? <MemoRuntimesPage installations={data.runtimeInstallations} /> : null}
         {page === "history" ? (
           <MemoHistoryPage
             summaries={history.summaries}

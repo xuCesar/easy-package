@@ -3396,14 +3396,19 @@ tbody tr:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-detail-summary {
+.project-detail-summary,
+.project-hub-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 22px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
-.project-detail-summary > div {
+.project-hub-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.project-detail-summary > div,
+.project-hub-summary > div {
   min-height: 82px;
   padding: 17px 20px;
   display: grid;
@@ -3411,20 +3416,48 @@ tbody tr:hover {
   gap: 7px;
   border-right: 1px solid var(--border-soft);
 }
-.project-detail-summary > div:last-child {
+.project-detail-summary > div:last-child,
+.project-hub-summary > div:last-child {
   border-right: 0;
 }
-.project-detail-summary span {
+.project-detail-summary span,
+.project-hub-summary span {
   color: var(--text-3);
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-.project-detail-summary strong {
+.project-detail-summary strong,
+.project-hub-summary strong {
   overflow: hidden;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.project-hub-summary__attention strong {
+  color: var(--amber);
+}
+.project-advanced-actions {
+  min-height: 82px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.project-advanced-actions h2 {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+.project-advanced-actions p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 10px;
+}
+.project-advanced-actions > div:last-child {
+  display: flex;
+  gap: 8px;
 }
 .project-detail-layout {
   display: grid;
@@ -3436,6 +3469,9 @@ tbody tr:hover {
 }
 .project-detail-panel--wide {
   grid-column: 1 / -1;
+}
+.project-runtime-assessments {
+  display: grid;
 }
 .project-detail-section {
   padding: 18px 20px;
@@ -3717,7 +3753,7 @@ tbody tr:hover {
   background: #f2f7fd;
 }
 
-/* 供应链发现保持稳定的等级列，并将代码证据切换到浅色可滚动表面。 */
+/* 锁文件问题保持稳定的等级列，并将代码证据切换到浅色可滚动表面。 */
 .risk-item {
   grid-template-columns: 58px minmax(0, 1fr);
   gap: 14px;
@@ -3795,6 +3831,9 @@ tbody tr:hover {
   .project-detail-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .project-hub-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .project-detail-summary > div:nth-child(2) {
     border-right: 0;
   }
@@ -3803,6 +3842,10 @@ tbody tr:hover {
   }
   .project-detail-layout {
     grid-template-columns: 1fr;
+  }
+  .project-advanced-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

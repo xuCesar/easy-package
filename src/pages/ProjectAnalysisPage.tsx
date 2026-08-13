@@ -16,6 +16,9 @@ import { SupplyChainPage } from "./SupplyChainPage";
 interface ProjectAnalysisPageProps {
   view: ProjectAnalysisView;
   onChangeView: (view: ProjectAnalysisView) => void;
+  projectName?: string;
+  projectPath?: string;
+  onBack?: () => void;
   insights: DependencyInsight[];
   projects: ProjectMetadata[];
   workspaces: ProjectWorkspace[];
@@ -28,13 +31,16 @@ interface ProjectAnalysisPageProps {
 
 const viewLabels: Record<ProjectAnalysisView, string> = {
   index: "依赖索引",
-  graph: "依赖图",
-  supplyChain: "供应链风险",
+  graph: "完整依赖图",
+  lockIssues: "锁文件问题",
 };
 
 export function ProjectAnalysisPage({
   view,
   onChangeView,
+  projectName,
+  projectPath: fixedProjectPath,
+  onBack,
   insights,
   projects,
   workspaces,
@@ -49,46 +55,63 @@ export function ProjectAnalysisPage({
     () => buildProjectAnalysisOptions(projects, workspaces, scanRoots, ignoredDirectoryNames, showIgnoredProjects),
     [ignoredDirectoryNames, projects, scanRoots, showIgnoredProjects, workspaces],
   );
-  const [projectPath, setProjectPath] = useState(() => defaultAnalysisProjectPath(projectOptions));
+  const [selectedProjectPath, setSelectedProjectPath] = useState(() => defaultAnalysisProjectPath(projectOptions));
+  const projectPath = fixedProjectPath ?? selectedProjectPath;
 
   useEffect(() => {
+    if (fixedProjectPath) return;
     if (projectOptions.some((option) => option.project.path === projectPath)) return;
-    setProjectPath(defaultAnalysisProjectPath(projectOptions));
-  }, [projectOptions, projectPath]);
+    setSelectedProjectPath(defaultAnalysisProjectPath(projectOptions));
+  }, [fixedProjectPath, projectOptions, projectPath]);
 
   const sharedSelection = {
     projectPath,
-    onSelectProject: setProjectPath,
+    onSelectProject: setSelectedProjectPath,
     showIgnoredProjects,
     onToggleIgnoredProjects: setShowIgnoredProjects,
   };
+  const isProjectDetail = Boolean(fixedProjectPath);
 
   return (
     <>
       <PageHeader
-        title="项目分析"
-        description="以项目为中心查看跨项目依赖索引、完整只读依赖图与供应链结构性风险；分析均离线读取本机锁文件。"
+        title={isProjectDetail ? `${projectName ?? "项目"} · ${viewLabels[view]}` : "项目依赖"}
+        description={
+          view === "lockIssues"
+            ? "按需读取当前锁文件并展示结构性问题；全程离线，不查询漏洞或许可证。"
+            : "按需读取当前锁文件构建完整依赖关系；不会执行包管理器命令或修改项目。"
+        }
+        actions={
+          onBack ? (
+            <button className="button button--secondary" onClick={onBack}>
+              返回项目概览
+            </button>
+          ) : undefined
+        }
       />
-      <div className="view-tabs" role="tablist" aria-label="项目分析视图">
-        {(Object.keys(viewLabels) as ProjectAnalysisView[]).map((item) => (
-          <button
-            key={item}
-            role="tab"
-            aria-selected={view === item}
-            className={view === item ? "view-tab view-tab--active" : "view-tab"}
-            onClick={() => onChangeView(item)}
-          >
-            {viewLabels[item]}
-          </button>
-        ))}
-      </div>
-      {view === "supplyChain" ? (
+      {!isProjectDetail ? (
+        <div className="view-tabs" role="tablist" aria-label="项目依赖视图">
+          {(Object.keys(viewLabels) as ProjectAnalysisView[]).map((item) => (
+            <button
+              key={item}
+              role="tab"
+              aria-selected={view === item}
+              className={view === item ? "view-tab view-tab--active" : "view-tab"}
+              onClick={() => onChangeView(item)}
+            >
+              {viewLabels[item]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {view === "lockIssues" ? (
         <SupplyChainPage
           projects={projects}
           workspaces={workspaces}
           scanRoots={scanRoots}
           ignoredDirectoryNames={ignoredDirectoryNames}
           {...sharedSelection}
+          embedded={isProjectDetail}
           onLoadReport={onLoadReport}
           onExportSbom={onExportSbom}
         />
@@ -101,6 +124,7 @@ export function ProjectAnalysisPage({
           scanRoots={scanRoots}
           ignoredDirectoryNames={ignoredDirectoryNames}
           {...sharedSelection}
+          embedded={isProjectDetail}
           onLoadGraph={onLoadGraph}
           onExportSbom={onExportSbom}
         />

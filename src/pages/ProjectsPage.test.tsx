@@ -31,10 +31,15 @@ const pageProps = {
   projects: [project],
   workspaces: [],
   scanRoots: [project.path],
+  dependencyInsights: [],
+  runtimeAssessments: [],
   ignoredDirectoryNames: ["node_modules", ".next", ".git", "target", "dist", "build", ".venv", "vendor"],
   onAddRoot: vi.fn().mockResolvedValue(undefined),
   onRemoveRoot: vi.fn().mockResolvedValue(undefined),
   onRefresh: vi.fn(),
+  onLoadGraph: vi.fn(),
+  onLoadReport: vi.fn(),
+  onExportSbom: vi.fn(),
 };
 
 describe("ProjectsPage", () => {
@@ -62,7 +67,29 @@ describe("ProjectsPage", () => {
   });
 
   it("按项目展示列表并进入详情后返回", () => {
-    render(<ProjectsPage {...pageProps} />);
+    render(
+      <ProjectsPage
+        {...pageProps}
+        projects={[
+          {
+            ...project,
+            supplyChainRiskSummary: { totalCount: 2, warningCount: 1, infoCount: 1, ruleIds: ["LOCKFILE_MISSING"] },
+          },
+        ]}
+        runtimeAssessments={[
+          {
+            projectName: "demo-app",
+            projectPath: project.path,
+            runtime: "Node.js",
+            requirement: ">=22",
+            status: "mismatch",
+            activeVersion: "20.19.4",
+            installedVersions: ["20.19.4"],
+            message: "当前版本不满足项目声明",
+          },
+        ]}
+      />,
+    );
 
     expect(screen.getByRole("region", { name: "项目列表" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看项目 demo-app" }));
@@ -70,9 +97,29 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("heading", { name: "demo-app" })).toBeInTheDocument();
     expect(screen.getByText("react")).toBeInTheDocument();
     expect(screen.getByText("19.1.1", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("1 项需关注")).toBeInTheDocument();
+    expect(screen.getByText("当前版本不满足项目声明")).toBeInTheDocument();
+    expect(screen.getByText("2", { selector: ".project-hub-summary__attention strong" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看完整依赖图" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看锁文件问题" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "返回项目列表" }));
     expect(screen.getByRole("region", { name: "项目列表" })).toBeInTheDocument();
+  });
+
+  it("从项目详情进入完整依赖图和锁文件问题", () => {
+    render(<ProjectsPage {...pageProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "查看项目 demo-app" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "查看完整依赖图" }));
+    expect(screen.getByRole("heading", { name: "demo-app · 完整依赖图" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("依赖图项目")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回项目概览" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "查看锁文件问题" }));
+    expect(screen.getByRole("heading", { name: "demo-app · 锁文件问题" })).toBeInTheDocument();
+    expect(screen.getByText(/不查询漏洞或许可证/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("锁文件问题项目")).not.toBeInTheDocument();
   });
 
   it("将工作区聚合为一个项目并在详情展示成员", () => {
