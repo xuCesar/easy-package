@@ -4,16 +4,30 @@ import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { apiErrorMessage } from "../lib/apiError";
 import { isIgnoredScanPath, isSameOrNestedPath, projectNameFromPath } from "../lib/projectPaths";
-import type { ProjectMetadata, ProjectWorkspace } from "../types";
+import type {
+  DependencyInsight,
+  ProjectDependencyGraph,
+  ProjectMetadata,
+  ProjectSupplyChainReport,
+  ProjectWorkspace,
+  ReportExportResult,
+  RuntimeRequirementAssessment,
+} from "../types";
+import { ProjectAnalysisPage } from "./ProjectAnalysisPage";
 
 interface ProjectsPageProps {
   projects: ProjectMetadata[];
   workspaces: ProjectWorkspace[];
   scanRoots: string[];
+  dependencyInsights: DependencyInsight[];
+  runtimeAssessments: RuntimeRequirementAssessment[];
   ignoredDirectoryNames: string[];
   onAddRoot: (path: string) => Promise<void>;
   onRemoveRoot: (path: string) => Promise<void>;
   onRefresh: () => void;
+  onLoadGraph: (projectPath: string) => Promise<ProjectDependencyGraph>;
+  onLoadReport: (projectPath: string) => Promise<ProjectSupplyChainReport>;
+  onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
 }
 
 const inTauri = () => "__TAURI_INTERNALS__" in window;
@@ -28,8 +42,11 @@ interface ProjectListEntry {
   workspace?: ProjectWorkspace;
   rootProject?: ProjectMetadata;
   members: ProjectMetadata[];
+  analysisProjectPath?: string;
   unrecognized?: boolean;
 }
+
+type ProjectDetailView = "overview" | "graph" | "lockIssues";
 
 function ProjectListItem({ entry, onSelect }: { entry: ProjectListEntry; onSelect: () => void }) {
   return (
@@ -57,11 +74,78 @@ function ProjectListItem({ entry, onSelect }: { entry: ProjectListEntry; onSelec
   );
 }
 
-function ProjectDetail({ entry, onBack }: { entry: ProjectListEntry; onBack: () => void }) {
-  const project = entry.rootProject;
-  const dependencies = [project, ...entry.members]
-    .filter((item): item is ProjectMetadata => Boolean(item))
-    .flatMap((item) => item.dependencies.map((dependency) => ({ dependency, projectName: item.name })));
+function ProjectDetail({
+  entry,
+  dependencyInsights,
+  runtimeAssessments,
+  projects,
+  workspaces,
+  scanRoots,
+  ignoredDirectoryNames,
+  onLoadGraph,
+  onLoadReport,
+  onExportSbom,
+  onBack,
+}: {
+  entry: ProjectListEntry;
+  dependencyInsights: DependencyInsight[];
+  runtimeAssessments: RuntimeRequirementAssessment[];
+  projects: ProjectMetadata[];
+  workspaces: ProjectWorkspace[];
+  scanRoots: string[];
+  ignoredDirectoryNames: string[];
+  onLoadGraph: (projectPath: string) => Promise<ProjectDependencyGraph>;
+  onLoadReport: (projectPath: string) => Promise<ProjectSupplyChainReport>;
+  onExportSbom: (projectPath: string) => Promise<ReportExportResult>;
+  onBack: () => void;
+}) {
+  const [view, setView] = useState<ProjectDetailView>("overview");
+  const relatedProjects = [entry.rootProject, ...entry.members].filter((item): item is ProjectMetadata =>
+    Boolean(item),
+  );
+  const relatedPaths = new Set(relatedProjects.map((item) => item.path));
+  const dependencies = relatedProjects.flatMap((item) =>
+    item.dependencies.map((dependency) => ({ dependency, projectName: item.name })),
+  );
+  const lockFiles = [...new Set(relatedProjects.flatMap((item) => item.lockFiles))];
+  const projectAssessments = runtimeAssessments.filter((assessment) => relatedPaths.has(assessment.projectPath));
+  const runtimeIssueCount = projectAssessments.filter(
+    (assessment) => assessment.status === "missing" || assessment.status === "mismatch",
+  ).length;
+  const lockIssueCount = relatedProjects.reduce(
+    (total, project) => total + (project.supplyChainRiskSummary?.totalCount ?? 0),
+    0,
+  );
+  const runtimeSummary = runtimeIssueCount
+    ? `${runtimeIssueCount} 项需关注`
+    : projectAssessments.length
+      ? projectAssessments.some((assessment) => assessment.status === "unknown")
+        ? "待确认"
+        : "匹配"
+      : relatedProjects.some((project) => project.runtimeRequirements.length)
+        ? "待检查"
+        : "未声明";
+
+  if (view !== "overview" && entry.analysisProjectPath) {
+    return (
+      <ProjectAnalysisPage
+        view={view}
+        onChangeView={(nextView) => setView(nextView === "lockIssues" ? "lockIssues" : "graph")}
+        projectName={entry.name}
+        projectPath={entry.analysisProjectPath}
+        onBack={() => setView("overview")}
+        insights={dependencyInsights}
+        projects={projects}
+        workspaces={workspaces}
+        scanRoots={scanRoots}
+        ignoredDirectoryNames={ignoredDirectoryNames}
+        onLoadGraph={onLoadGraph}
+        onLoadReport={onLoadReport}
+        onExportSbom={onExportSbom}
+      />
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -73,28 +157,48 @@ function ProjectDetail({ entry, onBack }: { entry: ProjectListEntry; onBack: () 
           </button>
         }
       />
-      <section className="project-detail-summary" aria-label="项目摘要">
+      <section className="project-hub-summary" aria-label="项目概览">
         <div>
           <span>生态</span>
           <strong>{entry.ecosystems.join(" · ") || "未识别"}</strong>
         </div>
         <div>
-          <span>包管理器</span>
-          <strong>{entry.packageManager ?? "未声明"}</strong>
+          <span>锁文件</span>
+          <strong>{lockFiles.length || "未发现"}</strong>
         </div>
         <div>
-          <span>{entry.workspace ? "成员项目" : "直接依赖"}</span>
-          <strong>{entry.workspace ? entry.members.length : entry.dependencyCount}</strong>
+          <span>直接依赖</span>
+          <strong>{entry.dependencyCount}</strong>
         </div>
-        <div>
-          <span>类型</span>
-          <strong>{entry.workspace ? "工作区" : entry.unrecognized ? "未识别目录" : "独立项目"}</strong>
+        <div className={runtimeIssueCount ? "project-hub-summary__attention" : undefined}>
+          <span>运行时匹配</span>
+          <strong>{runtimeSummary}</strong>
+        </div>
+        <div className={lockIssueCount ? "project-hub-summary__attention" : undefined}>
+          <span>锁文件问题</span>
+          <strong>{lockIssueCount}</strong>
         </div>
       </section>
+      {entry.analysisProjectPath ? (
+        <section className="panel project-advanced-actions" aria-label="项目进阶分析">
+          <div>
+            <h2>进阶分析</h2>
+            <p>完整图和结构问题仅在打开时读取当前锁文件，不执行安装，也不会修改项目。</p>
+          </div>
+          <div>
+            <button className="button button--secondary" onClick={() => setView("graph")}>
+              查看完整依赖图
+            </button>
+            <button className="button button--secondary" onClick={() => setView("lockIssues")}>
+              查看锁文件问题
+            </button>
+          </div>
+        </section>
+      ) : null}
       <div className="project-detail-layout">
         <section className="panel project-detail-panel">
           <div className="panel__header">
-            <h2>根项目声明</h2>
+            <h2>项目声明</h2>
           </div>
           <div className="project-detail-section">
             {entry.unrecognized ? (
@@ -112,41 +216,53 @@ function ProjectDetail({ entry, onBack }: { entry: ProjectListEntry; onBack: () 
               <>
                 <h3>锁文件</h3>
                 <div className="file-list">
-                  {project?.lockFiles.length ? (
-                    project.lockFiles.map((file) => <code key={file}>{file}</code>)
+                  {lockFiles.length ? (
+                    lockFiles.map((file) => <code key={file}>{file}</code>)
                   ) : (
                     <span>未发现锁文件</span>
                   )}
                 </div>
-                <h3>运行时</h3>
+                <h3>包管理器</h3>
                 <div className="runtime-list">
-                  {project?.runtimeRequirements.length ? (
-                    project.runtimeRequirements.map((runtime) => (
-                      <span key={`${runtime.runtime}-${runtime.requirement}`}>
-                        <b>{runtime.runtime}</b> {runtime.requirement}
-                      </span>
-                    ))
-                  ) : (
-                    <span>未声明运行时</span>
-                  )}
+                  <span>{entry.packageManager ?? "未声明包管理器"}</span>
                 </div>
-                {project?.warnings.length ? (
-                  <>
-                    <h3>扫描提示</h3>
-                    {project.warnings.map((warning) => (
-                      <p className="project-warning" key={warning}>
-                        <Icon name="warning" />
-                        {warning}
-                      </p>
-                    ))}
-                  </>
-                ) : null}
               </>
             )}
           </div>
         </section>
+        <section className="panel project-detail-panel">
+          <div className="panel__header">
+            <h2>本项目运行时</h2>
+            <span className="count-label">{projectAssessments.length}</span>
+          </div>
+          {projectAssessments.length ? (
+            <div className="project-runtime-assessments">
+              {projectAssessments.map((assessment) => (
+                <article
+                  className={`runtime-assessment runtime-assessment--${assessment.status}`}
+                  key={`${assessment.projectPath}:${assessment.runtime}`}
+                >
+                  <div>
+                    <strong>{assessment.projectName}</strong>
+                    <span>
+                      {assessment.runtime} {assessment.requirement}
+                    </span>
+                  </div>
+                  <div>
+                    <b>当前 {assessment.activeVersion ?? "未发现"}</b>
+                    <small>{assessment.message}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="project-detail-section">
+              <p className="quiet-message">当前项目未声明运行时，或尚无匹配结果。</p>
+            </div>
+          )}
+        </section>
         {entry.workspace ? (
-          <section className="panel project-detail-panel">
+          <section className="panel project-detail-panel project-detail-panel--wide">
             <div className="panel__header">
               <h2>工作区成员</h2>
               <span className="count-label">{entry.members.length}</span>
@@ -167,11 +283,7 @@ function ProjectDetail({ entry, onBack }: { entry: ProjectListEntry; onBack: () 
             </div>
           </section>
         ) : null}
-        <section
-          className={
-            entry.workspace ? "panel project-detail-panel project-detail-panel--wide" : "panel project-detail-panel"
-          }
-        >
+        <section className="panel project-detail-panel project-detail-panel--wide">
           <div className="panel__header">
             <h2>直接依赖</h2>
             <span className="count-label">{dependencies.length}</span>
@@ -208,10 +320,15 @@ export function ProjectsPage({
   projects,
   workspaces,
   scanRoots,
+  dependencyInsights,
+  runtimeAssessments,
   ignoredDirectoryNames,
   onAddRoot,
   onRemoveRoot,
   onRefresh,
+  onLoadGraph,
+  onLoadReport,
+  onExportSbom,
 }: ProjectsPageProps) {
   const [isChoosing, setIsChoosing] = useState(false);
   const [actionError, setActionError] = useState<string>();
@@ -237,7 +354,22 @@ export function ProjectsPage({
     }
   };
 
-  if (selectedEntry) return <ProjectDetail entry={selectedEntry} onBack={() => setSelectedEntryId(undefined)} />;
+  if (selectedEntry)
+    return (
+      <ProjectDetail
+        entry={selectedEntry}
+        dependencyInsights={dependencyInsights}
+        runtimeAssessments={runtimeAssessments}
+        projects={projects}
+        workspaces={workspaces}
+        scanRoots={scanRoots}
+        ignoredDirectoryNames={ignoredDirectoryNames}
+        onLoadGraph={onLoadGraph}
+        onLoadReport={onLoadReport}
+        onExportSbom={onExportSbom}
+        onBack={() => setSelectedEntryId(undefined)}
+      />
+    );
 
   return (
     <>
@@ -295,7 +427,7 @@ export function ProjectsPage({
           <button onClick={() => void chooseRoot()} disabled={isChoosing}>
             <Icon name="plus" />
             <strong>{isChoosing ? "选择中…" : "添加扫描目录"}</strong>
-            <span>选择一个开发目录后，Easy Package 会识别项目元数据。</span>
+            <span>只读扫描所选路径内的项目声明和锁文件；不会执行安装或修改项目。</span>
           </button>
         </section>
       )}
@@ -319,6 +451,7 @@ function buildProjectEntries(
       (project) => workspace.memberPaths.includes(project.path) && project.path !== workspace.path,
     );
     const related = [rootProject, ...members].filter((project): project is ProjectMetadata => Boolean(project));
+    const analysisProject = preferredAnalysisProject(related);
     return {
       id: `workspace:${workspace.path}`,
       name: rootProject?.name ?? workspace.name,
@@ -329,6 +462,7 @@ function buildProjectEntries(
       workspace,
       rootProject,
       members,
+      analysisProjectPath: analysisProject?.path,
     } satisfies ProjectListEntry;
   });
   const standaloneEntries = visibleProjects
@@ -344,6 +478,7 @@ function buildProjectEntries(
           dependencyCount: project.dependencies.length,
           rootProject: project,
           members: [],
+          analysisProjectPath: project.path,
         }) satisfies ProjectListEntry,
     );
   const recognizedEntries = [...workspaceEntries, ...standaloneEntries];
@@ -362,4 +497,12 @@ function buildProjectEntries(
         }) satisfies ProjectListEntry,
     );
   return [...recognizedEntries, ...unrecognizedRoots];
+}
+
+function preferredAnalysisProject(projects: ProjectMetadata[]): ProjectMetadata | undefined {
+  return (
+    projects.find((project) => project.dependencyGraphSummary) ??
+    projects.find((project) => project.supplyChainRiskSummary) ??
+    projects[0]
+  );
 }

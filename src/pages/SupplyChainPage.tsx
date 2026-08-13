@@ -12,6 +12,7 @@ import type {
 } from "../types";
 
 interface SupplyChainPageProps {
+  embedded?: boolean;
   projects: ProjectMetadata[];
   workspaces: ProjectWorkspace[];
   scanRoots: string[];
@@ -37,6 +38,7 @@ const ruleLabels: Record<string, string> = {
 };
 
 export function SupplyChainPage({
+  embedded = false,
   projects,
   workspaces,
   scanRoots,
@@ -138,7 +140,7 @@ export function SupplyChainPage({
     setNotice(undefined);
     try {
       const result = await onExportSbom(report.projectPath);
-      setNotice(result.saved ? "已导出包含离线风险摘要的 CycloneDX SBOM。" : "已取消导出。");
+      setNotice(result.saved ? "CycloneDX SBOM 已导出。" : "已取消导出。");
     } catch (exportError) {
       setError(messageFrom(exportError));
     } finally {
@@ -160,81 +162,91 @@ export function SupplyChainPage({
           <span>{notice}</span>
         </div>
       ) : null}
-      <section className="metrics supply-chain-metrics" aria-label="供应链风险摘要">
-        <div className="metric">
-          <span className="metric__icon">
-            <Icon name="projects" />
-          </span>
-          <div>
-            <strong>{aggregate.projects}</strong>
-            <span>有风险摘要的项目</span>
+      {!embedded ? (
+        <section className="metrics supply-chain-metrics" aria-label="锁文件问题摘要">
+          <div className="metric">
+            <span className="metric__icon">
+              <Icon name="projects" />
+            </span>
+            <div>
+              <strong>{aggregate.projects}</strong>
+              <span>有问题摘要的项目</span>
+            </div>
           </div>
-        </div>
-        <div className="metric">
-          <span className="metric__icon">
-            <Icon name="warning" />
-          </span>
-          <div>
-            <strong>{aggregate.warnings}</strong>
-            <span>警告项</span>
+          <div className="metric">
+            <span className="metric__icon">
+              <Icon name="warning" />
+            </span>
+            <div>
+              <strong>{aggregate.warnings}</strong>
+              <span>警告项</span>
+            </div>
           </div>
-        </div>
-        <div className="metric">
-          <span className="metric__icon">
-            <Icon name="info" />
-          </span>
-          <div>
-            <strong>{aggregate.total}</strong>
-            <span>结构性发现</span>
+          <div className="metric">
+            <span className="metric__icon">
+              <Icon name="info" />
+            </span>
+            <div>
+              <strong>{aggregate.total}</strong>
+              <span>结构性发现</span>
+            </div>
           </div>
-        </div>
-      </section>
-      <section className="panel graph-controls" aria-label="供应链分析设置">
+        </section>
+      ) : null}
+      <section className="panel graph-controls" aria-label="锁文件问题分析设置">
         <div className="graph-controls__body">
-          <label className="select-field">
-            项目
-            <select aria-label="供应链项目" value={projectPath} onChange={(event) => selectProject(event.target.value)}>
-              <option value="">选择项目</option>
-              {projectOptions.map((option) => (
-                <option key={option.project.path} value={option.project.path}>
-                  {option.name}
-                  {option.isWorkspace ? " · 工作区" : ""}
-                  {option.isIgnored ? " · 已忽略" : ""}
-                  {option.supplyChainRiskSummary ? ` · ${option.supplyChainRiskSummary.warningCount} 个警告` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!embedded ? (
+            <label className="select-field">
+              项目
+              <select
+                aria-label="锁文件问题项目"
+                value={projectPath}
+                onChange={(event) => selectProject(event.target.value)}
+              >
+                <option value="">选择项目</option>
+                {projectOptions.map((option) => (
+                  <option key={option.project.path} value={option.project.path}>
+                    {option.name}
+                    {option.isWorkspace ? " · 工作区" : ""}
+                    {option.isIgnored ? " · 已忽略" : ""}
+                    {option.supplyChainRiskSummary ? ` · ${option.supplyChainRiskSummary.warningCount} 个警告` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button
             className="button button--primary"
             onClick={() => void loadReport()}
             disabled={!projectPath || isLoading}
           >
-            {isLoading ? "分析中…" : "分析供应链风险"}
+            {isLoading ? "检查中…" : "检查锁文件问题"}
           </button>
           <button
             className="button button--secondary"
             onClick={() => void exportSbom()}
             disabled={!report || isExporting}
           >
-            {isExporting ? "导出中…" : "导出含风险摘要的 SBOM"}
+            {isExporting ? "导出中…" : "导出 CycloneDX SBOM"}
           </button>
         </div>
         <div className="supply-chain-settings">
-          <label className="checkbox-field">
-            <input
-              type="checkbox"
-              checked={showIgnoredProjects}
-              onChange={(event) => onToggleIgnoredProjects(event.target.checked)}
-            />
-            显示已忽略的生成目录
-          </label>
-          <p>默认按工作区聚合，不重复列出成员；完整证据按需从当前锁文件重建，不写入 SQLite。</p>
+          {!embedded ? (
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={showIgnoredProjects}
+                onChange={(event) => onToggleIgnoredProjects(event.target.checked)}
+              />
+              显示已忽略的生成目录
+            </label>
+          ) : null}
+          <p>完整证据按需从当前锁文件重建，不写入 SQLite；结果不包含漏洞或许可证结论。</p>
         </div>
       </section>
       {report ? (
         <>
-          <section className="metrics graph-metrics" aria-label="当前项目风险摘要">
+          <section className="metrics graph-metrics" aria-label="当前项目锁文件问题摘要">
             <div className="metric">
               <div>
                 <strong>{report.summary.totalCount}</strong>
@@ -263,20 +275,20 @@ export function SupplyChainPage({
           <div className="toolbar" role="search">
             <label className="search-field">
               <Icon name="search" />
-              <span className="sr-only">搜索供应链发现</span>
+              <span className="sr-only">搜索锁文件问题</span>
               <input
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setSelectedFindingId(undefined);
                 }}
-                placeholder="搜索风险、规则或证据"
+                placeholder="搜索问题、规则或证据"
               />
             </label>
             <label className="select-field">
               级别
               <select
-                aria-label="风险级别"
+                aria-label="问题级别"
                 value={severity}
                 onChange={(event) => {
                   setSeverity(event.target.value as typeof severity);
@@ -291,7 +303,7 @@ export function SupplyChainPage({
             <label className="select-field">
               规则
               <select
-                aria-label="风险规则"
+                aria-label="问题规则"
                 value={rule}
                 onChange={(event) => {
                   setRule(event.target.value);
@@ -326,7 +338,7 @@ export function SupplyChainPage({
                   ))}
                 </div>
               ) : (
-                <EmptyState icon="dependencies" title="没有匹配的风险项" description="调整搜索、级别或规则筛选。" />
+                <EmptyState icon="dependencies" title="没有匹配的问题" description="调整搜索、级别或规则筛选。" />
               )}
             </section>
             <section className="panel risk-detail-panel">
@@ -368,7 +380,7 @@ export function SupplyChainPage({
               ) : (
                 <EmptyState
                   icon="dependencies"
-                  title="选择一个风险项"
+                  title="选择一个问题项"
                   description="查看稳定规则 ID、本机证据和从项目根开始的依赖路径。"
                 />
               )}
@@ -379,7 +391,7 @@ export function SupplyChainPage({
         <section className="panel">
           <EmptyState
             icon="dependencies"
-            title="尚未分析供应链风险"
+            title="尚未检查锁文件问题"
             description="选择项目后按需读取当前锁文件；不会联网或修改项目。"
           />
         </section>
@@ -412,5 +424,5 @@ function FindingButton({
 }
 
 function messageFrom(error: unknown): string {
-  return apiErrorMessage(error, "供应链分析失败，请重试。");
+  return apiErrorMessage(error, "锁文件问题检查失败，请重试。");
 }

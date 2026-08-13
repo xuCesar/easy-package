@@ -16,6 +16,7 @@ import type {
 
 interface DependenciesPageProps {
   view: "index" | "graph";
+  embedded?: boolean;
   insights: DependencyInsight[];
   projects: ProjectMetadata[];
   workspaces?: ProjectWorkspace[];
@@ -45,6 +46,7 @@ const completenessLabel = {
 
 export function DependenciesPage({
   view,
+  embedded = false,
   insights,
   projects,
   workspaces = [],
@@ -322,26 +324,28 @@ export function DependenciesPage({
         <>
           <section className="panel graph-controls" aria-label="项目依赖图设置">
             <div className="graph-controls__body">
-              <label className="select-field">
-                项目
-                <select
-                  aria-label="依赖图项目"
-                  value={selectedProjectPath}
-                  onChange={(event) => selectProject(event.target.value)}
-                >
-                  <option value="">选择项目</option>
-                  {projectOptions.map((option) => (
-                    <option key={option.project.path} value={option.project.path}>
-                      {option.name}
-                      {option.isWorkspace ? " · 工作区" : ""}
-                      {option.isIgnored ? " · 已忽略" : ""}
-                      {option.project.dependencyGraphSummary
-                        ? ` · ${completenessLabel[option.project.dependencyGraphSummary.completeness]}`
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {!embedded ? (
+                <label className="select-field">
+                  项目
+                  <select
+                    aria-label="依赖图项目"
+                    value={selectedProjectPath}
+                    onChange={(event) => selectProject(event.target.value)}
+                  >
+                    <option value="">选择项目</option>
+                    {projectOptions.map((option) => (
+                      <option key={option.project.path} value={option.project.path}>
+                        {option.name}
+                        {option.isWorkspace ? " · 工作区" : ""}
+                        {option.isIgnored ? " · 已忽略" : ""}
+                        {option.project.dependencyGraphSummary
+                          ? ` · ${completenessLabel[option.project.dependencyGraphSummary.completeness]}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <button
                 className="button button--primary"
                 onClick={() => void loadGraph()}
@@ -360,15 +364,17 @@ export function DependenciesPage({
               </button>
             </div>
             <div className="supply-chain-settings">
-              <label className="checkbox-field">
-                <input
-                  type="checkbox"
-                  checked={showIgnoredProjects}
-                  onChange={(event) => onToggleIgnoredProjects(event.target.checked)}
-                />
-                显示已忽略的生成目录
-              </label>
-              <p>默认按工作区聚合，不重复列出成员；完整图按需读取当前锁文件，不写入 SQLite 快照。</p>
+              {!embedded ? (
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={showIgnoredProjects}
+                    onChange={(event) => onToggleIgnoredProjects(event.target.checked)}
+                  />
+                  显示已忽略的生成目录
+                </label>
+              ) : null}
+              <p>完整图按需读取当前锁文件，不写入 SQLite 快照。</p>
             </div>
           </section>
           {graph ? (

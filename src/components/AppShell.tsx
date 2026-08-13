@@ -14,7 +14,7 @@ const projectNavItems: Array<{ id: PageId; label: string; icon: IconName }> = [
 ];
 
 const environmentPages = new Set<PageId>(["environment", "runtimes", "history", "logs"]);
-const projectPages = new Set<PageId>(["projects", "analysis"]);
+const projectPages = new Set<PageId>(["projects"]);
 
 function isActivePage(item: PageId, page: PageId): boolean {
   if (item === "environment") return environmentPages.has(page);

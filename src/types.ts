@@ -31,14 +31,13 @@ export type PageId =
   | "packages"
   | "actions"
   | "projects"
-  | "analysis"
   | "runtimes"
   | "history"
   | "environment"
   | "logs"
   | "settings";
 
-export type ProjectAnalysisView = "index" | "graph" | "supplyChain";
+export type ProjectAnalysisView = "index" | "graph" | "lockIssues";
 
 export type WritableManagerId = "homebrew" | "npm" | "pnpm";
 

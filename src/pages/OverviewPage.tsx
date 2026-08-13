@@ -151,7 +151,7 @@ export function OverviewPage({
                 <span>
                   <Icon name="projects" className="attention-icon attention-icon--info" />
                   <span>
-                    <strong>项目分析（可选）</strong>
+                    <strong>项目工作区（可选）</strong>
                     <small>添加代码目录后，可以检查项目与本机运行时是否匹配。</small>
                   </span>
                 </span>

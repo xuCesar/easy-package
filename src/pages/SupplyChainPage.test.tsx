@@ -39,7 +39,7 @@ interface HarnessProps {
 }
 
 function SupplyChainHarness(props: HarnessProps) {
-  const [view, setView] = useState<ProjectAnalysisView>("supplyChain");
+  const [view, setView] = useState<ProjectAnalysisView>("lockIssues");
   return <ProjectAnalysisPage view={view} onChangeView={setView} insights={[]} onLoadGraph={vi.fn()} {...props} />;
 }
 
@@ -91,11 +91,11 @@ describe("SupplyChainPage", () => {
         onExportSbom={vi.fn().mockResolvedValue({ saved: true })}
       />,
     );
-    expect(screen.getByText("尚未分析供应链风险")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
+    expect(screen.getByText("尚未检查锁文件问题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "检查锁文件问题" }));
     await waitFor(() => expect(onLoadReport).toHaveBeenCalledWith("/tmp/web"));
     expect(screen.getByText("同一依赖解析为多个版本")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("风险级别"), { target: { value: "info" } });
+    fireEvent.change(screen.getByLabelText("问题级别"), { target: { value: "info" } });
     expect(screen.getByText("依赖指向本地或工作区边界")).toBeInTheDocument();
     expect(screen.queryByText("同一依赖解析为多个版本")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /依赖指向本地或工作区边界/ }));
@@ -118,10 +118,10 @@ describe("SupplyChainPage", () => {
         onExportSbom={onExportSbom}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
-    const exportButton = await screen.findByRole("button", { name: "导出含风险摘要的 SBOM" });
+    fireEvent.click(screen.getByRole("button", { name: "检查锁文件问题" }));
+    const exportButton = await screen.findByRole("button", { name: "导出 CycloneDX SBOM" });
     fireEvent.click(exportButton);
-    expect(await screen.findByText("已导出包含离线风险摘要的 CycloneDX SBOM。")).toBeInTheDocument();
+    expect(await screen.findByText("CycloneDX SBOM 已导出。")).toBeInTheDocument();
     fireEvent.click(exportButton);
     expect(await screen.findByText("已取消导出。")).toBeInTheDocument();
     fireEvent.click(exportButton);
@@ -137,7 +137,7 @@ describe("SupplyChainPage", () => {
         onExportSbom={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
+    fireEvent.click(screen.getByRole("button", { name: "检查锁文件问题" }));
     expect(await screen.findByText("锁文件读取失败")).toBeInTheDocument();
     const cleanReport = {
       ...report,
@@ -152,8 +152,8 @@ describe("SupplyChainPage", () => {
         onExportSbom={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "分析供应链风险" }));
-    expect(await screen.findByText("没有匹配的风险项")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "检查锁文件问题" }));
+    expect(await screen.findByText("没有匹配的问题")).toBeInTheDocument();
   });
 
   it("按工作区聚合选择项并完整统计成员风险，同时允许显式显示忽略目录", () => {

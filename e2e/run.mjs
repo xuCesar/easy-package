@@ -139,10 +139,11 @@ async function run() {
     await waitForElement("//h2[normalize-space()='命令解析']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='项目']]");
-    await click("//nav[@aria-label='项目工作区导航']//button[normalize-space()='项目分析']");
-    await selectOption("//select[@aria-label='依赖生态']", "JavaScript");
-    await waitForElement("//h2[normalize-space()='react']");
-    await waitForElement("//span[normalize-space()='pnpm-lock.yaml']");
+    await click("//button[@aria-label='查看项目 e2e-web']");
+    await waitForElement("//span[normalize-space()='运行时匹配']");
+    await waitForElement("//span[normalize-space()='锁文件问题']");
+    await waitForElement("//button[normalize-space()='查看完整依赖图']");
+    await waitForElement("//button[normalize-space()='查看锁文件问题']");
 
     await click("//nav[@aria-label='主要导航']//button[.//span[normalize-space()='环境']]");
     await click("//nav[@aria-label='本机工作区导航']//button[normalize-space()='日志']");

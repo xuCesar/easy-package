@@ -57,7 +57,7 @@ export function buildProjectAnalysisOptions(
   return [...workspaceOptions, ...standaloneOptions].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** 统一的默认选中项：优先有依赖图摘要的项目，其次有供应链摘要的，最后取首个。 */
+/** 统一的默认选中项：优先有依赖图摘要的项目，其次有锁文件问题摘要的，最后取首个。 */
 export function defaultAnalysisProjectPath(options: ProjectAnalysisOption[]): string {
   return (
     options.find((option) => option.project.dependencyGraphSummary)?.project.path ??
