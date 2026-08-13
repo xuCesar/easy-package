@@ -537,10 +537,12 @@ pub async fn reconcile_package_action(
 pub async fn get_project_dependency_graph(
     project_path: String,
     storage: State<'_, Storage>,
+    cache: State<'_, scan::dependency_graph::DependencyGraphCache>,
 ) -> Result<ProjectDependencyGraph, AppError> {
     let storage = storage.inner().clone();
+    let cache = cache.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        services::build_project_dependency_graph_for_path(&storage, &project_path)
+        services::build_project_dependency_graph_for_path(&storage, &cache, &project_path)
     })
     .await
     .map_err(|error| AppError::Command(error.to_string()))?
@@ -550,11 +552,13 @@ pub async fn get_project_dependency_graph(
 pub async fn get_project_supply_chain_report(
     project_path: String,
     storage: State<'_, Storage>,
+    cache: State<'_, scan::dependency_graph::DependencyGraphCache>,
 ) -> Result<ProjectSupplyChainReport, AppError> {
     let storage = storage.inner().clone();
+    let cache = cache.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (project, graph) =
-            services::build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+            services::build_project_and_dependency_graph_for_path(&storage, &cache, &project_path)?;
         Ok(scan::supply_chain::build_supply_chain_report(
             &project, &graph,
         ))
@@ -568,11 +572,13 @@ pub async fn export_project_sbom(
     project_path: String,
     app: AppHandle,
     storage: State<'_, Storage>,
+    cache: State<'_, scan::dependency_graph::DependencyGraphCache>,
 ) -> Result<scan::report::ReportExportResult, AppError> {
     let storage = storage.inner().clone();
+    let cache = cache.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (project, graph) =
-            services::build_project_and_dependency_graph_for_path(&storage, &project_path)?;
+            services::build_project_and_dependency_graph_for_path(&storage, &cache, &project_path)?;
         let risk_report = scan::supply_chain::build_supply_chain_report(&project, &graph);
         let content = scan::dependency_graph::build_cyclonedx_sbom_with_risk_summary(
             &graph,
@@ -709,9 +715,11 @@ mod tests {
         storage
             .add_scan_root(&root.canonicalize().unwrap())
             .unwrap();
+        let cache = scan::dependency_graph::DependencyGraphCache::default();
 
         let outside_error = services::build_project_dependency_graph_for_path(
             &storage,
+            &cache,
             outside.to_string_lossy().as_ref(),
         )
         .unwrap_err()
@@ -720,6 +728,7 @@ mod tests {
 
         let non_project_error = services::build_project_dependency_graph_for_path(
             &storage,
+            &cache,
             not_project.to_string_lossy().as_ref(),
         )
         .unwrap_err()

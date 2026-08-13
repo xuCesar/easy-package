@@ -110,6 +110,7 @@ describe("ProjectsPage", () => {
   it("从项目详情进入完整依赖图和锁文件问题", () => {
     render(<ProjectsPage {...pageProps} />);
     fireEvent.click(screen.getByRole("button", { name: "查看项目 demo-app" }));
+    expect(screen.getByText("待分析", { selector: ".project-hub-summary strong" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看完整依赖图" }));
     expect(screen.getByRole("heading", { name: "demo-app · 完整依赖图" })).toBeInTheDocument();

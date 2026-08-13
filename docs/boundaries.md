@@ -30,7 +30,7 @@
 - 项目扫描会从 Yarn Classic、Yarn Berry 与文本 `bun.lock` 关联 JavaScript 直接依赖的锁定版本；`bun.lockb` 仅展示受控限制提示，不尝试解析二进制内容。
 - RubyGems 只读取本机的全局 gem 列表，不检查更新或执行写操作。
 - Composer 只读取 Composer Home 中的 `vendor/composer/installed.json` 全局元数据；缓存目录通过受控的只读配置查询取得，不执行 `composer global show` 或更新检查。
-- 项目扫描只读取 manifest、锁文件和运行时声明；npm、pnpm 与 Cargo 项目会生成完整依赖图摘要，完整节点与边仅在用户从项目详情打开完整依赖图或锁文件问题时按需重建，不写入 SQLite。
+- 项目扫描只读取 manifest、直接依赖、锁定版本和运行时声明，不构建完整依赖图；历史摘要仅在项目图输入与锁文件 digest 均未变化时复用。完整节点、边与锁文件问题只在用户从项目详情打开对应视图时按需构建，并在当前进程内有界缓存，不写入 SQLite。
 - “依赖”页面索引 JavaScript、Python、Rust、Go、Ruby 与 PHP 的直接声明依赖；跨生态同名包不会合并，并会标记跨项目的版本范围分歧。
 - 对 package-lock、pnpm-lock、yarn.lock、bun.lock、Cargo.lock、uv.lock、Gemfile.lock 与 composer.lock，应用会只读关联直接依赖的已解析版本；无法匹配时明确显示“未解析”，不推测版本。
 - 项目扫描支持 Poetry、Pipenv 与 Go modules；Poetry/Pipenv 分别读取其锁文件，Go 以 go.mod 的模块选择版本作为已解析版本来源，不执行模块下载。

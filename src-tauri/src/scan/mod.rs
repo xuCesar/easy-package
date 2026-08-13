@@ -93,7 +93,7 @@ pub fn scan_environment(
         .latest_snapshot()?
         .map(|snapshot| snapshot.projects)
         .unwrap_or_default();
-    dependency_graph::enrich_dependency_graph_summaries(
+    dependency_graph::reuse_dependency_graph_summaries(
         &mut project_scan.projects,
         cancelled,
         &previous_projects,

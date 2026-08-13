@@ -116,6 +116,16 @@ function ProjectDetail({
     (total, project) => total + (project.supplyChainRiskSummary?.totalCount ?? 0),
     0,
   );
+  const analyzedLockProjectCount = relatedProjects.filter((project) => project.supplyChainRiskSummary).length;
+  const lockIssueSummary = !relatedProjects.length
+    ? "不适用"
+    : !analyzedLockProjectCount
+      ? "待分析"
+      : analyzedLockProjectCount < relatedProjects.length
+        ? `${lockIssueCount} · 部分待分析`
+        : String(lockIssueCount);
+  const lockIssuesNeedAttention =
+    relatedProjects.length > 0 && (lockIssueCount > 0 || analyzedLockProjectCount < relatedProjects.length);
   const runtimeSummary = runtimeIssueCount
     ? `${runtimeIssueCount} 项需关注`
     : projectAssessments.length
@@ -174,9 +184,9 @@ function ProjectDetail({
           <span>运行时匹配</span>
           <strong>{runtimeSummary}</strong>
         </div>
-        <div className={lockIssueCount ? "project-hub-summary__attention" : undefined}>
+        <div className={lockIssuesNeedAttention ? "project-hub-summary__attention" : undefined}>
           <span>锁文件问题</span>
-          <strong>{lockIssueCount}</strong>
+          <strong>{lockIssueSummary}</strong>
         </div>
       </section>
       {entry.analysisProjectPath ? (

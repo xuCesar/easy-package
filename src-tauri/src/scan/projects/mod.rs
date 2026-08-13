@@ -150,7 +150,7 @@ pub fn analyze_projects(
     previous_projects: &[ProjectMetadata],
 ) -> Result<ProjectAnalysis, AppError> {
     let mut scan = scan_projects_with_settings(roots, settings, cancelled)?;
-    super::dependency_graph::enrich_dependency_graph_summaries(
+    super::dependency_graph::reuse_dependency_graph_summaries(
         &mut scan.projects,
         cancelled,
         previous_projects,
@@ -453,6 +453,30 @@ mod tests {
         let error = scan_projects(&[root.path().to_path_buf()], &cancelled).unwrap_err();
 
         assert!(matches!(error, AppError::ScanCancelled));
+    }
+
+    #[test]
+    fn cold_project_analysis_does_not_build_complete_graphs() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("package.json"),
+            r#"{"name":"cold-app","packageManager":"npm@11","dependencies":{"react":"^19"}}"#,
+        )
+        .unwrap();
+        // 完整图解析会将这个锁文件标记为 Invalid；冷项目扫描仍应只返回轻量元数据。
+        fs::write(root.path().join("package-lock.json"), "{invalid-json").unwrap();
+
+        let analysis = analyze_projects(
+            &[root.path().to_path_buf()],
+            &ScanSettings::default(),
+            &AtomicBool::new(false),
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(analysis.projects.len(), 1);
+        assert!(analysis.projects[0].dependency_graph_summary.is_none());
+        assert!(analysis.projects[0].supply_chain_risk_summary.is_none());
     }
 
     #[test]
