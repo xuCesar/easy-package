@@ -63,3 +63,10 @@ export function buildUpgradePlanPrefill(packages: ManagedPackage[]): UpgradePlan
 export function buildSingleUpgradePlanPrefill(pkg: ManagedPackage): UpgradePlanPrefill | undefined {
   return buildUpgradePlanPrefill([pkg]);
 }
+
+export function buildUpgradePlanPrefillsByManager(packages: ManagedPackage[]): UpgradePlanPrefill[] {
+  return writableManagerOrder.flatMap((managerId) => {
+    const prefill = buildUpgradePlanPrefill(packages.filter((pkg) => pkg.managerId === managerId));
+    return prefill ? [prefill] : [];
+  });
+}
