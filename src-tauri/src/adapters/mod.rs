@@ -1,3 +1,4 @@
+mod discovery;
 mod parsers;
 pub(crate) mod runner;
 
@@ -22,13 +23,12 @@ use crate::models::{
     ManagerStatus, NetworkPolicy, PackageManager, PackageManagerId, PackageScope, TaskLog,
     UpdateStatus,
 };
+use discovery::find_executable;
 use parsers::{
     parse_brew_packages, parse_cargo_packages, parse_npm_packages, parse_pip_packages,
     parse_pnpm_packages, parse_rubygems_packages, parse_uv_packages,
 };
-use runner::{
-    can_execute, execution_trust, find_executable, readable_path, CommandOutput, CommandRunner,
-};
+use runner::{can_execute, execution_trust, readable_path, CommandOutput, CommandRunner};
 
 #[derive(Debug)]
 pub struct AdapterScan {

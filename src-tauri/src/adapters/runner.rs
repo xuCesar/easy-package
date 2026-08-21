@@ -72,7 +72,8 @@ impl CommandRunner {
         args: &[&str],
         cancelled: &AtomicBool,
     ) -> CommandOutput {
-        let mut child = match Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .args(args)
             .env("NO_COLOR", "1")
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
@@ -80,9 +81,12 @@ impl CommandRunner {
             .env("HOMEBREW_NO_ENV_HINTS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+            .stderr(Stdio::piped());
+        // npm/pnpm 等脚本通过 `/usr/bin/env node` 启动，只为当前子进程补齐可信运行目录。
+        if let Some(path) = super::discovery::command_search_path(executable) {
+            command.env("PATH", path);
+        }
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
                 return CommandOutput {
@@ -163,22 +167,6 @@ fn join_reader(reader: Option<thread::JoinHandle<Vec<u8>>>) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-pub fn find_executable(names: &[&str], common_paths: &[&str]) -> Option<PathBuf> {
-    if let Some(path) = common_paths
-        .iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
-    {
-        return Some(path);
-    }
-    for name in names {
-        if let Some(path) = find_all_in_path(name).into_iter().next() {
-            return Some(path);
-        }
-    }
-    None
-}
-
 pub fn execution_trust(path: &Path, _common_paths: &[&str]) -> ExecutionTrust {
     execution_trust_with_home(path, dirs::home_dir().as_deref())
 }
@@ -222,10 +210,6 @@ fn execution_trust_with_home(path: &Path, home: Option<&Path>) -> ExecutionTrust
         }
     }
     ExecutionTrust::Unverified
-}
-
-pub fn find_all_in_path(command: &str) -> Vec<PathBuf> {
-    find_all_in_path_for_names(&[command])
 }
 
 pub fn find_all_in_path_for_names(names: &[&str]) -> Vec<PathBuf> {
@@ -327,20 +311,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discovers_executable_from_path() {
-        let directory = tempdir().unwrap();
-        let executable = directory.path().join("devpkg-test-bin");
-        fs::write(&executable, "").unwrap();
-        let previous = env::var_os("PATH");
-        env::set_var("PATH", directory.path());
-        assert_eq!(find_executable(&["devpkg-test-bin"], &[]), Some(executable));
-        match previous {
-            Some(value) => env::set_var("PATH", value),
-            None => env::remove_var("PATH"),
-        }
-    }
-
-    #[test]
     fn keeps_arguments_out_of_a_shell() {
         let output = CommandRunner {
             timeout: Duration::from_secs(2),
@@ -352,6 +322,28 @@ mod tests {
         );
         assert!(output.success);
         assert!(output.stdout.contains("$(touch"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepends_the_executable_directory_for_env_shebangs() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().unwrap();
+        let node = directory.path().join("node");
+        let npm = directory.path().join("npm");
+        std::os::unix::fs::symlink("/bin/echo", &node).unwrap();
+        fs::write(&npm, "#!/usr/bin/env node\n").unwrap();
+        fs::set_permissions(&npm, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let output = CommandRunner {
+            timeout: Duration::from_secs(2),
+        }
+        .run_cancellable(&npm, &["--version"], &AtomicBool::new(false));
+
+        assert!(output.success, "{}", output.stderr);
+        assert!(output.stdout.contains("npm"));
+        assert!(output.stdout.contains("--version"));
     }
 
     #[test]
