@@ -13,17 +13,32 @@ async function scanAndWaitForOverview() {
   await waitFor(() => expect(screen.getByRole("heading", { name: "本机开发环境" })).toBeInTheDocument());
 }
 
+async function enableRegistryChecksFromPackages() {
+  const allowButton = screen.queryByRole("button", { name: "允许检查更新" });
+  if (!allowButton) return;
+  fireEvent.click(allowButton);
+  const rescanButton = await screen.findByRole("button", { name: "重新扫描" });
+  expect(screen.queryByRole("button", { name: "升级 git" })).not.toBeInTheDocument();
+  fireEvent.click(rescanButton);
+  await screen.findByRole("button", { name: "升级 git" });
+}
+
 describe("App", () => {
   it("加载后展示概览并支持页面导航", async () => {
     const { container } = render(<App />);
     expect(container.querySelector(".window-controls")).not.toBeInTheDocument();
     expect(container.querySelector(".app-topbar")).toHaveAttribute("data-tauri-drag-region");
     expect(screen.getByRole("button", { name: "返回概览" })).toBeInTheDocument();
-    expect(screen.queryByText("Easy Package")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "扫描" })).toBeDisabled();
     expect(screen.getByText(/读取本机包管理器、全局软件包、命令来源和运行时安装/)).toBeInTheDocument();
     expect(screen.getByText(/不会修改任何文件/)).toBeInTheDocument();
     expect(screen.queryByText("正在扫描本机环境")).not.toBeInTheDocument();
+    const initialNavigation = within(screen.getByRole("navigation", { name: "主要导航" }));
+    expect(initialNavigation.getByRole("button", { name: "软件包" })).toBeDisabled();
+    expect(initialNavigation.getByRole("button", { name: "操作" })).toBeDisabled();
+    expect(initialNavigation.getByRole("button", { name: "环境" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "安全操作模式" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "系统设置" })).toBeDisabled();
     await scanAndWaitForOverview();
     expect(screen.getByText(/浏览器预览：当前展示模拟数据/)).toBeInTheDocument();
     const mainNavigation = within(screen.getByRole("navigation", { name: "主要导航" }));
@@ -81,6 +96,11 @@ describe("App", () => {
   it("概览可更新入口进入已预填的升级流程", async () => {
     render(<App />);
     await scanAndWaitForOverview();
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
+    );
+    await enableRegistryChecksFromPackages();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "概览" }));
 
     fireEvent.click(screen.getByRole("button", { name: /可更新 3 前往安全操作模式/ }));
 
@@ -95,6 +115,7 @@ describe("App", () => {
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
+    await enableRegistryChecksFromPackages();
     fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });
 
     const bridgeButton = screen.getByRole("button", { name: "批量生成升级计划（1）" });
@@ -117,6 +138,7 @@ describe("App", () => {
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
+    await enableRegistryChecksFromPackages();
 
     fireEvent.click(screen.getByRole("button", { name: "升级 git" }));
 
@@ -134,6 +156,7 @@ describe("App", () => {
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
+    await enableRegistryChecksFromPackages();
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "pip" } });
 
     expect(screen.getByRole("button", { name: "批量生成升级计划" })).toBeDisabled();
@@ -155,6 +178,7 @@ describe("App", () => {
     fireEvent.click(
       within(screen.getByRole("navigation", { name: "主要导航" })).getByRole("button", { name: "软件包" }),
     );
+    await enableRegistryChecksFromPackages();
     fireEvent.change(screen.getByPlaceholderText("搜索软件包"), { target: { value: "type" } });
     fireEvent.change(screen.getByLabelText("管理器"), { target: { value: "npm" } });
     fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });

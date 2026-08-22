@@ -225,7 +225,7 @@ export function App() {
   }
 
   return (
-    <AppShell page={page} onNavigate={navigate}>
+    <AppShell page={page} isNavigationReady={Boolean(data)} onNavigate={navigate}>
       {content}
     </AppShell>
   );

@@ -33,7 +33,7 @@ describe("OverviewPage", () => {
     const onStartUpgradePlan = vi.fn();
     render(
       <OverviewPage
-        data={mockScan}
+        data={{ ...mockScan, scanSettings: { ...mockScan.scanSettings, networkPolicy: "registry" } }}
         isLoading={false}
         onRefresh={vi.fn()}
         onCancel={vi.fn()}
@@ -55,7 +55,7 @@ describe("OverviewPage", () => {
     const onNavigate = vi.fn();
     render(
       <OverviewPage
-        data={mockScan}
+        data={{ ...mockScan, scanSettings: { ...mockScan.scanSettings, networkPolicy: "registry" } }}
         isLoading={false}
         onRefresh={vi.fn()}
         onCancel={vi.fn()}
@@ -72,11 +72,9 @@ describe("OverviewPage", () => {
     expect(within(attention).queryByText(/api-lab 存在 1 项供应链风险/)).not.toBeInTheDocument();
   });
 
-  it("离线且没有已知更新时展示未检查更新", () => {
+  it("离线时不把上次扫描的版本状态当作当前更新建议", () => {
     const data = {
       ...mockScan,
-      packages: mockScan.packages.map((pkg) => ({ ...pkg, updateStatus: "unknown" as const })),
-      healthIssues: [],
     };
     const onNavigate = vi.fn();
     render(
@@ -93,6 +91,7 @@ describe("OverviewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /可更新 — 未检查更新（当前离线）/ }));
 
     expect(onNavigate).toHaveBeenCalledWith("packages");
+    expect(screen.queryByRole("button", { name: /3 个软件包可更新/ })).not.toBeInTheDocument();
     expect(screen.queryByText("均为最新")).not.toBeInTheDocument();
   });
 

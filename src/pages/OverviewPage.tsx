@@ -30,20 +30,19 @@ export function OverviewPage({
 }: OverviewPageProps) {
   const managers = data.managers.slice(0, 4);
   const scanLogs = data.logs.slice(0, 3);
-  const attentionItems = collectAttentionItems(data);
+  const updatesChecked = data.scanSettings.networkPolicy === "registry";
+  const attentionItems = collectAttentionItems(data).filter((item) => updatesChecked || item.target !== "packages");
   const availableUpdates = data.packages.filter((pkg) => pkg.updateStatus === "available").length;
-  const upgradePrefill = buildUpgradePlanPrefill(data.packages);
+  const upgradePrefill = updatesChecked ? buildUpgradePlanPrefill(data.packages) : undefined;
   const availableManagers = data.managers.filter((manager) => manager.status === "available").length;
   const environmentIssueCount = attentionItems.filter((item) => item.target === "environment").length;
-  const updatesChecked = data.scanSettings.networkPolicy === "registry";
-  const updateStatusText =
-    availableUpdates > 0
+  const updateStatusText = updatesChecked
+    ? availableUpdates > 0
       ? upgradePrefill
         ? "前往安全操作模式"
         : "查看更新列表"
-      : updatesChecked
-        ? "均为最新"
-        : "未检查更新（当前离线）";
+      : "均为最新"
+    : "未检查更新（当前离线）";
 
   return (
     <>
@@ -98,7 +97,7 @@ export function OverviewPage({
             <Icon name="refresh" />
             可更新
           </span>
-          <strong>{availableUpdates > 0 ? availableUpdates : updatesChecked ? 0 : "—"}</strong>
+          <strong>{updatesChecked ? availableUpdates : "—"}</strong>
           <small>{updateStatusText}</small>
         </button>
         <button

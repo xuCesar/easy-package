@@ -34,8 +34,10 @@ export function PackagesPage({
   const [manager, setManager] = useState<"all" | PackageManagerId>("all");
   const [status, setStatus] = useState<"all" | UpdateStatus>("all");
   const deferredQuery = useDeferredValue(query);
-  const filtered = filterPackages(packages, { query: deferredQuery, manager, status });
-  const upgradePrefill = buildUpgradePlanPrefill(filtered);
+  const updatesChecked = scanSettings.networkPolicy === "registry";
+  const effectiveStatus = updatesChecked ? status : "all";
+  const filtered = filterPackages(packages, { query: deferredQuery, manager, status: effectiveStatus });
+  const upgradePrefill = updatesChecked ? buildUpgradePlanPrefill(filtered) : undefined;
 
   return (
     <>
@@ -68,11 +70,15 @@ export function PackagesPage({
         </label>
         <label className="select-field">
           <span>状态</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
-            <option value="all">全部</option>
-            <option value="available">可更新</option>
-            <option value="upToDate">已是最新</option>
-            <option value="unknown">未知</option>
+          <select
+            value={effectiveStatus}
+            onChange={(event) => setStatus(event.target.value as typeof status)}
+            disabled={!updatesChecked}
+          >
+            <option value="all">{updatesChecked ? "全部" : "未检查"}</option>
+            {updatesChecked ? <option value="available">可更新</option> : null}
+            {updatesChecked ? <option value="upToDate">已是最新</option> : null}
+            {updatesChecked ? <option value="unknown">未知</option> : null}
           </select>
         </label>
         <button
@@ -82,7 +88,9 @@ export function PackagesPage({
           title={
             upgradePrefill
               ? `为 ${managerLabel[upgradePrefill.managerId]} 预填 ${upgradePrefill.targets.length} 个升级目标`
-              : "当前筛选结果中没有可写管理器的可更新包"
+              : updatesChecked
+                ? "当前筛选结果中没有可写管理器的可更新包"
+                : "允许检查更新并重新扫描后可生成升级计划"
           }
         >
           批量生成升级计划{upgradePrefill ? `（${upgradePrefill.targets.length}）` : ""}
@@ -107,7 +115,7 @@ export function PackagesPage({
               <tbody>
                 {filtered.map((pkg) => {
                   const writable = isWritableManagerId(pkg.managerId);
-                  const singleUpgradePrefill = buildSingleUpgradePlanPrefill(pkg);
+                  const singleUpgradePrefill = updatesChecked ? buildSingleUpgradePlanPrefill(pkg) : undefined;
 
                   return (
                     <tr key={pkg.id}>
@@ -122,9 +130,9 @@ export function PackagesPage({
                       </td>
                       <td>{pkg.scope === "system" ? "系统" : pkg.scope === "global" ? "全局" : "工具"}</td>
                       <td className="mono">{pkg.version}</td>
-                      <td className="mono">{pkg.latestVersion ?? "—"}</td>
+                      <td className="mono">{updatesChecked ? (pkg.latestVersion ?? "—") : "—"}</td>
                       <td>
-                        <UpdateBadge status={pkg.updateStatus} />
+                        <UpdateBadge status={updatesChecked ? pkg.updateStatus : "unknown"} />
                       </td>
                       <td className="package-action-cell">
                         {singleUpgradePrefill ? (

@@ -135,16 +135,21 @@ describe("PackagesPage", () => {
     expect(onNavigate).toHaveBeenCalledWith("actions");
   });
 
-  it("离线时解释可更新空态，并允许用户显式开启检查", async () => {
-    const packages = mockScan.packages.map((pkg) => ({ ...pkg, updateStatus: "unknown" as const }));
+  it("离线时隐藏旧更新结果，并允许用户显式开启检查", async () => {
     const { onUpdateSettings, onRefresh } = renderPackagesPage({
-      packages,
       scanSettings: mockScan.scanSettings,
     });
 
     expect(screen.getByText(/离线模式，不会查询软件包最新版本/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("状态"), { target: { value: "available" } });
-    expect(screen.getByText(/当前为离线模式，不会查询最新版本/)).toBeInTheDocument();
+    expect(screen.getByLabelText("状态")).toBeDisabled();
+    expect(screen.getByLabelText("状态")).toHaveDisplayValue("未检查");
+    expect(screen.getByRole("button", { name: "批量生成升级计划" })).toBeDisabled();
+    const gitRow = screen.getByText("homebrew:git").closest("tr");
+    expect(gitRow).not.toBeNull();
+    if (!gitRow) throw new Error("未找到 homebrew:git 所在行");
+    expect(within(gitRow).getByText("未知")).toBeInTheDocument();
+    expect(within(gitRow).queryByText("2.50.1")).not.toBeInTheDocument();
+    expect(within(gitRow).queryByRole("button", { name: "升级 git" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "允许检查更新" }));
     await waitFor(() =>
