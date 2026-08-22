@@ -160,9 +160,9 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
         title="操作中心"
         description="通过后端固定白名单执行 Homebrew Formula、npm 与 pnpm 全局包操作；每次修改都先预检、确认并在完成后重新扫描。"
       />
-      <section className="panel pending-actions" aria-label="待处理操作">
+      <section className="panel pending-actions" aria-label="扫描建议与恢复">
         <div className="panel__header">
-          <h2>待处理</h2>
+          <h2>扫描建议</h2>
           <span className="count-label">{recoveryRecords.length + pendingUpdateCount}</span>
         </div>
         <div className="pending-actions__list">
@@ -247,10 +247,10 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
         </div>
       ) : null}
       {upgradePrefillNotice ? (
-        <div className="inline-alert" role="status">
+        <div className="inline-alert inline-alert--selection" role="status">
           <Icon name="info" />
           <span>
-            {`已从软件包页带入 ${upgradePrefillNotice.targets.length} 个 ${managerLabels[upgradePrefillNotice.managerId]} 升级目标。`}
+            {`当前计划已从软件包页带入 ${upgradePrefillNotice.targets.length} 个 ${managerLabels[upgradePrefillNotice.managerId]} 升级目标。`}
             {upgradePrefillNotice.truncatedCount > 0
               ? `超出单次计划上限，已截断 ${upgradePrefillNotice.truncatedCount} 个，可在执行后分批处理。`
               : ""}
@@ -264,33 +264,41 @@ export function ActionCenterPage(props: ActionCenterPageProps) {
         </div>
       ) : null}
 
-      <div className="view-tabs action-manager-tabs" role="tablist" aria-label="写操作包管理器">
-        {(["homebrew", "npm", "pnpm"] as const).map((item) => (
-          <button
-            key={item}
-            role="tab"
-            aria-selected={managerId === item}
-            className={managerId === item ? "view-tab view-tab--active" : "view-tab"}
-            onClick={() => changeManager(item)}
-            disabled={props.isExecuting}
-          >
-            {managerLabels[item]}
-          </button>
-        ))}
-      </div>
-      <div className="view-tabs action-tabs" role="tablist" aria-label="软件包操作">
-        {(Object.keys(actionLabels) as PackageAction[]).map((item) => (
-          <button
-            key={item}
-            role="tab"
-            aria-selected={action === item}
-            className={action === item ? "view-tab view-tab--active" : "view-tab"}
-            onClick={() => changeAction(item)}
-            disabled={props.isExecuting}
-          >
-            {actionDisplay(managerId, item)}
-          </button>
-        ))}
+      <div className="action-controls" role="group" aria-label="操作类型选择">
+        <div className="action-control-group">
+          <span className="action-control-group__label">包管理器</span>
+          <div className="view-tabs action-manager-tabs" role="tablist" aria-label="写操作包管理器">
+            {(["homebrew", "npm", "pnpm"] as const).map((item) => (
+              <button
+                key={item}
+                role="tab"
+                aria-selected={managerId === item}
+                className={managerId === item ? "view-tab view-tab--active" : "view-tab"}
+                onClick={() => changeManager(item)}
+                disabled={props.isExecuting}
+              >
+                {managerLabels[item]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="action-control-group">
+          <span className="action-control-group__label">操作类型</span>
+          <div className="view-tabs action-tabs" role="tablist" aria-label="软件包操作">
+            {(Object.keys(actionLabels) as PackageAction[]).map((item) => (
+              <button
+                key={item}
+                role="tab"
+                aria-selected={action === item}
+                className={action === item ? "view-tab view-tab--active" : "view-tab"}
+                onClick={() => changeAction(item)}
+                disabled={props.isExecuting}
+              >
+                {actionDisplay(managerId, item)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       {capability ? (
         <section

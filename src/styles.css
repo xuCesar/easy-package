@@ -4662,3 +4662,166 @@ tbody tr:hover,
 .scan-launcher__message [role="alert"] {
   color: #ef9492;
 }
+
+/* 核心工作流优化：保持现有视觉语言，同时提高状态辨识度与安全信息可读性。 */
+.nav__item:disabled,
+.safe-mode-button:disabled,
+.topbar-settings:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.nav__item:disabled:hover {
+  color: var(--text-3);
+  background: transparent;
+}
+.safe-mode-button:disabled:hover,
+.topbar-settings:disabled:hover {
+  color: var(--text-2);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.045);
+}
+.safe-mode-button__icon {
+  display: none;
+  width: 16px;
+  height: 16px;
+}
+
+.page-header p,
+.inline-alert,
+.runtime-banner,
+.scan-launcher__message {
+  font-size: 12px;
+  line-height: 1.55;
+}
+.button,
+.text-button,
+.workspace-nav__item {
+  font-size: 12px;
+}
+.panel__header h2,
+.overview-section__header h2 {
+  font-size: 13px;
+}
+.overview-summary-card__label,
+.overview-row > span:first-child,
+.overview-row--attention strong {
+  font-size: 12px;
+}
+.overview-summary-card small,
+.overview-row > span:not(:first-child),
+.overview-row--attention small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+th {
+  font-size: 11px;
+}
+td {
+  font-size: 12px;
+}
+.select-field {
+  font-size: 11px;
+}
+.select-field select,
+.update-badge,
+.package-access-label,
+.package-upgrade-button,
+.manager-chip,
+.table-subtitle {
+  font-size: 11px;
+}
+.select-field select:disabled {
+  color: var(--text-2);
+  opacity: 1;
+}
+
+.inline-alert--selection {
+  color: #8bc2e8;
+  border-color: rgba(88, 167, 227, 0.28);
+  background: rgba(88, 167, 227, 0.075);
+}
+.action-controls {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: end;
+  gap: 18px;
+}
+.action-control-group {
+  display: grid;
+  gap: 7px;
+}
+.action-control-group__label {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+.action-manager-tabs,
+.action-tabs {
+  margin-bottom: 0;
+}
+.pending-action strong,
+.write-boundary-banner strong,
+.catalog-search strong,
+.formula-selection strong,
+.action-plan__summary strong {
+  font-size: 12px;
+}
+.pending-action span,
+.pending-action small,
+.pending-action__cta,
+.pending-actions__empty,
+.write-boundary-banner span,
+.capability-check strong,
+.capability-check span,
+.action-input,
+.action-input small,
+.formula-selection small,
+.catalog-search small,
+.catalog-search__empty,
+.catalog-search__message,
+.catalog-search__results article span,
+.formula-checks code,
+.action-plan__summary span,
+.action-plan__body h3,
+.command-preview,
+.plan-lines li,
+.action-status {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.capability-check code {
+  font-size: 10px;
+}
+.plan-warnings li,
+.confirmation-field {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .nav__item {
+    height: 38px;
+    font-size: 11px;
+  }
+  .safe-mode-button__dot {
+    display: none;
+  }
+  .safe-mode-button__icon {
+    display: block;
+  }
+  .action-controls {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .action-control-group .view-tabs {
+    width: 100%;
+    display: flex;
+  }
+  .action-control-group .view-tab {
+    min-width: 0;
+    flex: 1;
+    padding: 0 8px;
+  }
+}

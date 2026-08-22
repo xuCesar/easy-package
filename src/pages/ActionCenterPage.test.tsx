@@ -104,7 +104,9 @@ describe("ActionCenterPage", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: "待处理操作" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "扫描建议与恢复" })).toBeInTheDocument();
+    expect(screen.getByText("包管理器")).toBeInTheDocument();
+    expect(screen.getByText("操作类型")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("已从软件包页带入 1 个 Homebrew 升级目标");
     expect(screen.getByRole("button", { name: "处理 Homebrew 的 1 个可更新项" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "处理 npm 的 1 个可更新项" })).toBeInTheDocument();
@@ -125,7 +127,7 @@ describe("ActionCenterPage", () => {
   it("离线时只说明未检查更新，不展示伪造的待更新任务", () => {
     render(<ActionCenterPage {...baseProps} scanSettings={{ ...baseProps.scanSettings, networkPolicy: "offline" }} />);
 
-    expect(screen.getByRole("region", { name: "待处理操作" })).toHaveTextContent("未检查更新");
+    expect(screen.getByRole("region", { name: "扫描建议与恢复" })).toHaveTextContent("未检查更新");
     expect(screen.queryByRole("button", { name: /处理 .* 个可更新项/ })).not.toBeInTheDocument();
   });
 
@@ -256,7 +258,7 @@ describe("ActionCenterPage", () => {
       rescanRequired: true,
     };
     render(<ActionCenterPage {...baseProps} audit={[interrupted]} />);
-    const pending = screen.getByRole("region", { name: "待处理操作" });
+    const pending = screen.getByRole("region", { name: "扫描建议与恢复" });
     const builder = screen.getByRole("region", { name: "操作预检设置" });
     expect(pending).toHaveTextContent("上次操作可能没做完");
     expect(pending.compareDocumentPosition(builder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

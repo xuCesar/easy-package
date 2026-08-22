@@ -1,7 +1,8 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
-import type { EnvironmentScan, ScanProgress } from "../types";
+import { mockScan } from "../mock-data";
+import type { EnvironmentScan, ProjectAnalysis, ScanProgress, ScanSettings } from "../types";
 import { useDevPkg } from "./useDevPkg";
 
 const { mocks } = vi.hoisted(() => ({
@@ -10,6 +11,7 @@ const { mocks } = vi.hoisted(() => ({
     scanEnvironment: vi.fn<(scanId: string) => Promise<EnvironmentScan>>(),
     cancelEnvironmentScan: vi.fn<(scanId: string) => Promise<void>>(),
     listenToScanProgress: vi.fn<(listener: (progress: ScanProgress) => void) => Promise<() => void>>(),
+    updateScanSettings: vi.fn<(settings: ScanSettings) => Promise<ProjectAnalysis>>(),
   },
 }));
 
@@ -137,6 +139,33 @@ describe("useDevPkg 扫描竞态", () => {
       await scanCalls[1].deferred.promise;
     });
     await waitFor(() => expect(result.current.data).toBe(nextScan));
+  });
+
+  it("联网策略切换后立即使旧更新结果失效，等待重新扫描", async () => {
+    const offlineScan = structuredClone(mockScan);
+    const registrySettings = { ...offlineScan.scanSettings, networkPolicy: "registry" as const };
+    mocks.getLatestSnapshot.mockResolvedValue(offlineScan);
+    mocks.updateScanSettings.mockResolvedValue({
+      projects: offlineScan.projects,
+      dependencyInsights: offlineScan.dependencyInsights,
+      workspaces: offlineScan.workspaces,
+      runtimeAssessments: offlineScan.runtimeAssessments,
+      healthIssues: offlineScan.healthIssues,
+      scanSettings: registrySettings,
+    });
+    const { result } = renderHook(() => useDevPkg());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    await act(async () => {
+      await result.current.updateScanSettings(registrySettings);
+    });
+
+    expect(result.current.data?.scanSettings.networkPolicy).toBe("registry");
+    expect(result.current.data?.packages.find((pkg) => pkg.id === "homebrew:git")).toMatchObject({
+      version: "2.49.0",
+      latestVersion: undefined,
+      updateStatus: "unknown",
+    });
   });
 
   it("扫描失败展示错误，且不影响后续 refresh", async () => {

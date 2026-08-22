@@ -9,6 +9,9 @@ interface DevPkgState {
   status: "initializing" | "idle" | "scanning" | "ready" | "error";
 }
 
+const invalidatePackageUpdateResults = (packages: EnvironmentScan["packages"]): EnvironmentScan["packages"] =>
+  packages.map((pkg) => ({ ...pkg, latestVersion: undefined, updateStatus: "unknown" }));
+
 export const useDevPkg = () => {
   const [state, setState] = useState<DevPkgState>({ status: "initializing" });
   const [scanProgress, setScanProgress] = useState<ScanProgress>();
@@ -118,7 +121,20 @@ export const useDevPkg = () => {
 
   const updateScanSettings = useCallback(async (settings: ScanSettings) => {
     const analysis = await api.updateScanSettings(settings);
-    setState((current) => (current.data ? { ...current, data: { ...current.data, ...analysis } } : current));
+    setState((current) => {
+      if (!current.data) return current;
+      const networkPolicyChanged = current.data.scanSettings.networkPolicy !== analysis.scanSettings.networkPolicy;
+      return {
+        ...current,
+        data: {
+          ...current.data,
+          ...analysis,
+          packages: networkPolicyChanged
+            ? invalidatePackageUpdateResults(current.data.packages)
+            : current.data.packages,
+        },
+      };
+    });
   }, []);
 
   const exportEnvironmentReport = useCallback((format: ReportFormat) => api.exportEnvironmentReport(format), []);

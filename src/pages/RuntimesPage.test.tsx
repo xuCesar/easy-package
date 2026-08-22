@@ -23,6 +23,20 @@ const installations = [
   },
 ];
 
+const installationsWithMultipleNodeVersions = [
+  installations[0],
+  {
+    id: "node:nvm",
+    runtime: "Node.js",
+    version: "20.19.4",
+    path: "~/.nvm/versions/node/v20.19.4/bin/node",
+    provider: "nvm",
+    isActive: false,
+    executionTrust: "userManaged" as const,
+  },
+  installations[1],
+];
+
 afterEach(cleanup);
 
 describe("RuntimesPage", () => {
@@ -41,5 +55,19 @@ describe("RuntimesPage", () => {
     expect(screen.queryByText("3.13.5")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("运行时提供者"), { target: { value: "pyenv" } });
     expect(screen.getByText("没有匹配的运行时")).toBeInTheDocument();
+  });
+
+  it("主视图只展示当前版本，并可进入二级页面查看其他版本", () => {
+    render(<RuntimesPage installations={installationsWithMultipleNodeVersions} />);
+
+    expect(screen.getByText("22.17.1")).toBeInTheDocument();
+    expect(screen.queryByText("20.19.4")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看 Node.js 的其他版本" }));
+
+    expect(screen.getByRole("heading", { name: "Node.js 版本" })).toBeInTheDocument();
+    expect(screen.getByText("22.17.1")).toBeInTheDocument();
+    expect(screen.getByText("20.19.4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回运行时" }));
+    expect(screen.queryByText("20.19.4")).not.toBeInTheDocument();
   });
 });
